@@ -6,7 +6,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/engine/package.json packages/engine/
 COPY apps/server/package.json apps/server/
 
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY packages/shared packages/shared
 COPY packages/engine packages/engine
