@@ -119,7 +119,7 @@ export function TableWaitingRoom({
         {isCreator && (
           <button
             onClick={handleStart}
-            disabled={occupied < 2}
+            disabled={occupied < 1}
             className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-800 disabled:text-gray-600 text-white py-2.5 rounded font-medium text-sm"
           >
             开始游戏
@@ -135,21 +135,24 @@ export function TableWaitingRoom({
       {showConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 max-w-sm">
-            <p className="text-gray-200 text-sm mb-4">
-              还有 {total - occupied} 个空位，用内置 AI 补位？
+            <p className="text-gray-200 text-sm mb-2">
+              当前还有 {total - occupied} 个空位
+            </p>
+            <p className="text-gray-400 text-xs mb-4">
+              空位将由内置 AI 对手补齐，补位后立即开始对局
             </p>
             <div className="flex gap-2">
               <button
                 onClick={handleConfirmFillAndStart}
                 className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded text-sm"
               >
-                补位并开始
+                补齐并开始
               </button>
               <button
                 onClick={() => setShowConfirm(false)}
                 className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 rounded text-sm"
               >
-                取消
+                再等等
               </button>
             </div>
           </div>
