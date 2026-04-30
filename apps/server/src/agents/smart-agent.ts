@@ -7,7 +7,7 @@ import type {
   ActionRecord,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
-import { ruleDecide, ruleFallback } from "./rule-engine";
+import { ruleFallback } from "./rule-engine";
 import { claudeDecide } from "./claude-agent";
 import { parseStyleToPersonality } from "./style-parser";
 
@@ -45,16 +45,10 @@ export class SmartAgent implements IPokerAgent {
     callAmount: number,
     minRaise: number
   ): Promise<AgentDecision> {
-    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise);
-
-    if (ruleResult.decision && ruleResult.confidence >= this.personality.claudeThreshold) {
-      return ruleResult.decision;
-    }
-
+    // A) LLM-first: stylePrompt drives decision, rule engine is only fallback
     try {
       return await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
     } catch {
-      if (ruleResult.decision) return ruleResult.decision;
       return ruleFallback(view, this.personality, validActions, callAmount);
     }
   }

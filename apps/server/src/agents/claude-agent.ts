@@ -59,7 +59,7 @@ Respond with a JSON object (no markdown, just raw JSON):
 {
   "action": "fold" | "check" | "call" | "raise",
   "amount": <number if raising, omit otherwise>,
-  "thought": "<your inner monologue as your character, 1-2 sentences>",
+  "thought": "<用你的角色口吻写一句内心独白，像真实牌手在心里嘀咕，1-2句话>",
   "confidence": <0.0-1.0>,
   "isBluffing": <true/false>
 }`;
