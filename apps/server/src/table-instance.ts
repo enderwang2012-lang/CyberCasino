@@ -188,7 +188,13 @@ export class TableInstance {
 
       this.handNumber++;
       this.checkBlindLevel();
-      await this.playHand(activePlayers);
+      try {
+        await this.playHand(activePlayers);
+      } catch (err) {
+        console.error(`[table:${this.id}] hand #${this.handNumber} error:`, err);
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
       this.checkEliminations();
 
       const remaining = this.agents.filter(
