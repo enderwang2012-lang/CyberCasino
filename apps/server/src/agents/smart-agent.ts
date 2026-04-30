@@ -49,7 +49,11 @@ export class SmartAgent implements IPokerAgent {
     try {
       return await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
     } catch {
-      return ruleFallback(view, this.personality, validActions, callAmount);
+      const fallback = ruleFallback(view, this.personality, validActions, callAmount);
+      if (fallback.thought.message === "...") {
+        fallback.thought.message = "[AI 思考中断，自动决策]";
+      }
+      return fallback;
     }
   }
 }
