@@ -86,12 +86,17 @@ export async function claudeDecide(
   const prompt = buildPrompt(view, validActions, callAmount, minRaise);
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
     const response = await getClient().messages.create({
-      model: process.env.ANTHROPIC_MODEL || "ppio/pa/claude-opus-4-6",
+      model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
       max_tokens: 300,
       system: personality.systemPrompt,
       messages: [{ role: "user", content: prompt }],
-    });
+    }, { signal: controller.signal as AbortSignal });
+
+    clearTimeout(timeout);
 
     const text = response.content[0].type === "text" ? response.content[0].text : "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
