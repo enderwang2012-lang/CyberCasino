@@ -7,7 +7,7 @@ import type {
   ActionRecord,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
-import { ruleFallback } from "./rule-engine";
+import { ruleDecide, ruleFallback } from "./rule-engine";
 import { claudeDecide } from "./claude-agent";
 import { parseStyleToPersonality } from "./style-parser";
 
@@ -45,15 +45,36 @@ export class SmartAgent implements IPokerAgent {
     callAmount: number,
     minRaise: number
   ): Promise<AgentDecision> {
-    // A) LLM-first: stylePrompt drives decision, rule engine is only fallback
+    // Hybrid: LLM decides with stylePrompt influence, rule engine provides sanity check
+    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise);
+
     try {
-      return await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
-    } catch {
-      const fallback = ruleFallback(view, this.personality, validActions, callAmount);
-      if (fallback.thought.message === "...") {
-        fallback.thought.message = "[AI 思考中断，自动决策]";
+      const llmDecision = await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
+
+      // Sanity check: if rule engine has very high confidence (>= 0.85) and
+      // LLM contradicts it, override the action but keep LLM's thought
+      if (ruleResult.decision && ruleResult.confidence >= 0.85) {
+        const ruleAction = ruleResult.decision.action.type;
+        const llmAction = llmDecision.action.type;
+
+        // Prevent catastrophic mistakes (fold premium, raise trash)
+        if (ruleAction !== llmAction) {
+          return {
+            action: ruleResult.decision.action,
+            thought: llmDecision.thought,
+          };
+        }
       }
-      return fallback;
+
+      return llmDecision;
+    } catch {
+      if (ruleResult.decision) {
+        ruleResult.decision.thought.message = ruleResult.decision.thought.message === "..."
+          ? "[AI 思考中断，自动决策]"
+          : ruleResult.decision.thought.message;
+        return ruleResult.decision;
+      }
+      return ruleFallback(view, this.personality, validActions, callAmount);
     }
   }
 }
