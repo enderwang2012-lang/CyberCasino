@@ -9,6 +9,7 @@ import type {
   TableSeat,
   SeatAgent,
   AgentConfig,
+  ActionRecord,
 } from "@cybercasino/shared";
 import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
@@ -244,6 +245,14 @@ export class TableInstance {
     let currentPhase: "preflop" | "flop" | "turn" | "river" | "showdown" = "preflop";
     const holeCards = new Map<string, Card[]>();
 
+    // Shadow state: tracks real bet/fold/allIn/chips within a hand
+    const shadow = new Map<string, { chips: number; bet: number; folded: boolean; allIn: boolean }>();
+    for (const p of gamePlayers) {
+      shadow.set(p.id, { chips: p.chips, bet: 0, folded: false, allIn: false });
+    }
+    let potTotal = 0;
+    const actionHistory: ActionRecord[] = [];
+
     const gen = gameLoop(
       gamePlayers,
       { smallBlind: this.currentSmallBlind, bigBlind: this.currentBigBlind },
@@ -252,24 +261,30 @@ export class TableInstance {
       async (playerId, validActions, currentBet, minRaise, callAmount) => {
         const agent = this.agents.find((a) => a.id === playerId)!;
         const myCards = holeCards.get(playerId) ?? [];
-        const playerViews: AgentPlayerView[] = gamePlayers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          avatar: p.avatar,
-          chips: this.playerStates.get(p.id)?.chips ?? 0,
-          bet: 0,
-          folded: false,
-          allIn: false,
-          seatIndex: p.seatIndex,
-        }));
+        const myShadow = shadow.get(playerId)!;
 
-        const pots = [{ amount: 0, eligiblePlayerIds: gamePlayers.map((p) => p.id) }];
+        const playerViews: AgentPlayerView[] = gamePlayers.map((p) => {
+          const s = shadow.get(p.id)!;
+          return {
+            id: p.id,
+            name: p.name,
+            avatar: p.avatar,
+            chips: s.chips,
+            bet: s.bet,
+            folded: s.folded,
+            allIn: s.allIn,
+            seatIndex: p.seatIndex,
+          };
+        });
+
+        const eligibleIds = gamePlayers.filter((p) => !shadow.get(p.id)!.folded).map((p) => p.id);
+        const pots = [{ amount: potTotal, eligiblePlayerIds: eligibleIds }];
 
         const view: AgentGameView = {
           myId: agent.id,
           myCards,
-          myChips: this.playerStates.get(playerId)?.chips ?? 0,
-          myBet: 0,
+          myChips: myShadow.chips,
+          myBet: myShadow.bet,
           phase: currentPhase,
           communityCards: currentPhaseCards,
           pots,
@@ -280,10 +295,37 @@ export class TableInstance {
           currentBet,
           minRaise,
           handNumber: this.handNumber,
-          actionHistory: [],
+          actionHistory: actionHistory.slice(-15),
         };
 
         const decision = await agent.decide(view, validActions, callAmount, minRaise);
+
+        // Update shadow state based on the decision
+        const action = decision.action;
+        switch (action.type) {
+          case "fold":
+            myShadow.folded = true;
+            break;
+          case "call": {
+            const toCall = Math.min(currentBet - myShadow.bet, myShadow.chips);
+            myShadow.chips -= toCall;
+            myShadow.bet += toCall;
+            potTotal += toCall;
+            if (myShadow.chips === 0) myShadow.allIn = true;
+            break;
+          }
+          case "raise": {
+            const raiseAmount = action.amount ?? currentBet + minRaise;
+            const totalBet = Math.min(raiseAmount, myShadow.bet + myShadow.chips);
+            const toAdd = totalBet - myShadow.bet;
+            myShadow.chips -= toAdd;
+            myShadow.bet = totalBet;
+            potTotal += toAdd;
+            if (myShadow.chips === 0) myShadow.allIn = true;
+            break;
+          }
+        }
+        actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount } });
 
         if (agent.agentType !== "external") {
           await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
@@ -294,6 +336,24 @@ export class TableInstance {
     );
 
     for await (const event of gen) {
+      if (event.type === "blinds-posted") {
+        // Update shadow with blind bets
+        const sbState = shadow.get(event.smallBlindPlayerId)!;
+        sbState.chips -= event.smallBlind;
+        sbState.bet = event.smallBlind;
+        if (sbState.chips === 0) sbState.allIn = true;
+        const bbState = shadow.get(event.bigBlindPlayerId)!;
+        bbState.chips -= event.bigBlind;
+        bbState.bet = event.bigBlind;
+        if (bbState.chips === 0) bbState.allIn = true;
+        potTotal += event.smallBlind + event.bigBlind;
+      }
+      if (event.type === "phase-change") {
+        // Reset bets for new betting round
+        for (const s of shadow.values()) {
+          s.bet = 0;
+        }
+      }
       if (event.type === "cards-dealt") {
         for (const [id, cards] of Object.entries(event.hands)) {
           holeCards.set(id, cards);
