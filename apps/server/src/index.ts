@@ -231,6 +231,17 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("table:stop", (tableId: string) => {
+    const uid = socketUserMap.get(socket.id);
+    if (!uid) return;
+    const table = tableManager.getTable(tableId);
+    if (!table) return;
+    if (table.creatorUserId !== uid) return;
+    tableManager.removeTable(tableId);
+    io.to(`table:${tableId}`).emit("table:stopped", tableId);
+    broadcastLobby();
+  });
+
   socket.on("disconnect", () => {
     const uid = socketUserMap.get(socket.id);
     socketUserMap.delete(socket.id);

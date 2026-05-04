@@ -56,6 +56,7 @@ export function useSocket() {
     socket.on("agent:webhookPing", (result) => setWebhookPingResult(result));
     socket.on("table:error", (error) => setTableError(error));
     socket.on("table:started", (tableId) => setTableStarted(tableId));
+    socket.on("table:stopped", () => setTableStarted(null));
     socket.on("table:seats", (data) => setSeatUpdates(data));
 
     return () => {
@@ -104,6 +105,10 @@ export function useSocket() {
     socketRef.current?.emit("table:start", tableId);
   }, []);
 
+  const stopGame = useCallback((tableId: string) => {
+    socketRef.current?.emit("table:stop", tableId);
+  }, []);
+
   const clearTableError = useCallback(() => setTableError(null), []);
 
   return {
@@ -125,6 +130,7 @@ export function useSocket() {
     leaveSeat,
     fillAI,
     startGame,
+    stopGame,
     clearTableError,
   };
 }

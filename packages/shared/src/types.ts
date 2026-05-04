@@ -206,6 +206,7 @@ export interface ServerToClientEvents {
   "agent:webhookPing": (result: WebhookPingResult) => void;
   "table:seats": (data: { tableId: string; seats: TableSeat[] }) => void;
   "table:started": (tableId: string) => void;
+  "table:stopped": (tableId: string) => void;
   "table:error": (error: string) => void;
 }
 
@@ -222,6 +223,7 @@ export interface ClientToServerEvents {
   "table:leave-seat": (tableId: string) => void;
   "table:fillAI": (tableId: string) => void;
   "table:start": (tableId: string) => void;
+  "table:stop": (tableId: string) => void;
 }
 
 export interface BlindLevel {

@@ -177,6 +177,8 @@ export class TableInstance {
       this.playerStates.set(agent.id, { chips: this.config.startingChips });
     }
 
+    let consecutiveErrors = 0;
+
     while (this.running) {
       const activePlayers = this.agents.filter(
         (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
@@ -191,8 +193,16 @@ export class TableInstance {
       this.checkBlindLevel();
       try {
         await this.playHand(activePlayers);
+        consecutiveErrors = 0;
       } catch (err) {
-        console.error(`[table:${this.id}] hand #${this.handNumber} error:`, err);
+        consecutiveErrors++;
+        console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
+        if (consecutiveErrors >= 5) {
+          console.error(`[table:${this.id}] too many consecutive errors, stopping tournament`);
+          this.emitTournamentComplete();
+          this.running = false;
+          break;
+        }
         await new Promise((r) => setTimeout(r, 2000));
         continue;
       }
