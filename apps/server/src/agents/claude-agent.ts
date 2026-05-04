@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type {
   AgentGameView,
   AgentDecision,
@@ -65,12 +65,13 @@ Respond with a JSON object (no markdown, just raw JSON):
 }`;
 }
 
-let client: Anthropic | null = null;
+let client: OpenAI | null = null;
 
-function getClient(): Anthropic {
+function getClient(): OpenAI {
   if (!client) {
-    client = new Anthropic({
-      baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
+    client = new OpenAI({
+      apiKey: process.env.LLM_API_KEY,
+      baseURL: process.env.LLM_BASE_URL || "https://api.deepseek.com",
     });
   }
   return client;
@@ -87,20 +88,22 @@ export async function claudeDecide(
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Claude API timeout (30s)")), 30000)
+      setTimeout(() => reject(new Error("LLM API timeout (30s)")), 30000)
     );
 
     const response = await Promise.race([
-      getClient().messages.create({
-        model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
+      getClient().chat.completions.create({
+        model: process.env.LLM_MODEL || "deepseek-chat",
         max_tokens: 300,
-        system: personality.systemPrompt,
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+          { role: "system", content: personality.systemPrompt },
+          { role: "user", content: prompt },
+        ],
       }),
       timeoutPromise,
     ]);
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const text = response.choices[0]?.message?.content ?? "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON in response");
 
@@ -123,7 +126,7 @@ export async function claudeDecide(
       },
     };
   } catch (error) {
-    console.error(`[claude-agent] API call failed:`, (error as Error).message ?? error);
+    console.error(`[llm-agent] API call failed:`, (error as Error).message ?? error);
     throw error;
   }
 }

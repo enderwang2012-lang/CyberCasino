@@ -10,9 +10,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@cybercasino/shared": "workspace:*",
     "@cybercasino/engine": "workspace:*",
-    "@anthropic-ai/sdk": "^0.39",
+    "@cybercasino/shared": "workspace:*",
+    "openai": "^6.35.0",
     "socket.io": "^4.8"
   },
   "devDependencies": {
