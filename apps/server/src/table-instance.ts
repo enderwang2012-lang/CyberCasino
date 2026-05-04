@@ -194,6 +194,19 @@ export class TableInstance {
 
       this.handNumber++;
       this.checkBlindLevel();
+
+      // Ensure dealer is an active player
+      const dealerAgent = this.agents[this.dealerSeatIndex];
+      if (!dealerAgent || (this.playerStates.get(dealerAgent.id)?.chips ?? 0) <= 0) {
+        for (let i = 0; i < this.agents.length; i++) {
+          const idx = (this.dealerSeatIndex + i) % this.agents.length;
+          if ((this.playerStates.get(this.agents[idx]?.id)?.chips ?? 0) > 0) {
+            this.dealerSeatIndex = idx;
+            break;
+          }
+        }
+      }
+
       try {
         await this.playHand(activePlayers);
         consecutiveErrors = 0;
@@ -220,7 +233,13 @@ export class TableInstance {
         break;
       }
 
-      this.dealerSeatIndex = (this.dealerSeatIndex + 1) % this.agents.length;
+      // Advance dealer to next active player
+      let nextDealer = this.dealerSeatIndex;
+      for (let i = 0; i < this.agents.length; i++) {
+        nextDealer = (nextDealer + 1) % this.agents.length;
+        if ((this.playerStates.get(this.agents[nextDealer]?.id)?.chips ?? 0) > 0) break;
+      }
+      this.dealerSeatIndex = nextDealer;
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
