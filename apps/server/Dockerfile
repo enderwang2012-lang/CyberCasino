@@ -1,7 +1,7 @@
 FROM oven/bun:1.3 AS base
 WORKDIR /app
 
-COPY package.json bun.lock* ./
+COPY package.json bun.lock* tsconfig.json ./
 COPY packages/shared/ ./packages/shared/
 COPY packages/engine/ ./packages/engine/
 COPY apps/server/ ./apps/server/

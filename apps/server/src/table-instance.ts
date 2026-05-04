@@ -413,6 +413,8 @@ export class TableInstance {
       winnerIds,
     });
 
+    console.log(`[highlight] hand #${this.handNumber}: potTotal=${potTotal}, bigBlind=${this.currentBigBlind}, reasons=${reasons.length > 0 ? reasons.join(",") : "none"}`);
+
     if (reasons.length > 0) {
       const playerNames = new Map<string, string>();
       for (const agent of this.agents) {
@@ -435,6 +437,7 @@ export class TableInstance {
         playerNames,
         winnerIds,
       }).then((commentary) => {
+        console.log(`[highlight] hand #${this.handNumber}: commentary generated (${commentary.length} chars)`);
         this.emit({
           type: "hand-highlight",
           handNumber: this.handNumber,
@@ -445,6 +448,14 @@ export class TableInstance {
         });
       }).catch((err) => {
         console.error(`[highlight] commentary generation failed:`, err);
+        this.emit({
+          type: "hand-highlight",
+          handNumber: this.handNumber,
+          reasons,
+          commentary: "精彩一手！这把牌打得太刺激了！",
+          potTotal,
+          involvedPlayerIds,
+        });
       });
     }
   }
