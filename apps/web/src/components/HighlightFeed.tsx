@@ -14,7 +14,8 @@ const REASON_BADGES: Record<HighlightReason, { label: string; color: string }> =
 };
 
 export function HighlightFeed({ events }: { events: GameEvent[] }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
 
   const roster = useMemo(() => {
     const rosterEvent = events.find((e) => e.type === "agent-roster");
@@ -34,7 +35,10 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   );
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (highlights.length > prevCountRef.current && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+    prevCountRef.current = highlights.length;
   }, [highlights.length]);
 
   if (highlights.length === 0) {
@@ -52,7 +56,7 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
       {highlights.map((event, idx) => {
         if (event.type !== "hand-highlight") return null;
         return (
@@ -102,7 +106,6 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
           </div>
         );
       })}
-      <div ref={bottomRef} />
     </div>
   );
 }

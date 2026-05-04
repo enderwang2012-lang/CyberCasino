@@ -278,9 +278,13 @@ function EventLine({ event, lookup }: { event: GameEvent; lookup: Map<string, Ag
 
 export function ChatFeed({ events }: { events: GameEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (events.length > prevCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevCountRef.current = events.length;
   }, [events]);
 
   const roster = useMemo(() => {

@@ -51,14 +51,14 @@ export function TableView({ tableId, events, onLeave }: TableViewProps) {
 
       <TabBar activeTab={activeTab} onTabChange={handleTabChange} hasNewHighlight={hasNewHighlight} />
 
-      <div className="flex-1 overflow-hidden relative flex flex-col">
-        <div className={`flex-1 flex flex-col ${activeTab === "live" ? "" : "hidden"}`}>
+      <div className="flex-1 overflow-hidden relative">
+        <div className={`absolute inset-0 flex flex-col ${activeTab === "live" ? "" : "invisible pointer-events-none"}`}>
           <ChatFeed events={events} />
         </div>
-        <div className={`flex-1 flex flex-col ${activeTab === "highlights" ? "" : "hidden"}`}>
+        <div className={`absolute inset-0 flex flex-col ${activeTab === "highlights" ? "" : "invisible pointer-events-none"}`}>
           <HighlightFeed events={events} />
         </div>
-        <div className={`flex-1 flex flex-col ${activeTab === "leaderboard" ? "" : "hidden"}`}>
+        <div className={`absolute inset-0 flex flex-col ${activeTab === "leaderboard" ? "" : "invisible pointer-events-none"}`}>
           <Leaderboard events={events} />
         </div>
       </div>
