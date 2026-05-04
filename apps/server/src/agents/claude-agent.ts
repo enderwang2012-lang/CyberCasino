@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import type {
   AgentGameView,
   AgentDecision,
@@ -7,6 +6,7 @@ import type {
   AgentPersonality,
   Card,
 } from "@cybercasino/shared";
+import { getClient, getModel } from "./llm-client";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -65,17 +65,6 @@ Respond with a JSON object (no markdown, just raw JSON):
 }`;
 }
 
-let client: OpenAI | null = null;
-
-function getClient(): OpenAI {
-  if (!client) {
-    client = new OpenAI({
-      apiKey: process.env.LLM_API_KEY,
-      baseURL: process.env.LLM_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return client;
-}
 
 export async function claudeDecide(
   view: AgentGameView,
@@ -93,7 +82,7 @@ export async function claudeDecide(
 
     const response = await Promise.race([
       getClient().chat.completions.create({
-        model: process.env.LLM_MODEL || "deepseek-chat",
+        model: getModel(),
         max_tokens: 300,
         messages: [
           { role: "system", content: personality.systemPrompt },

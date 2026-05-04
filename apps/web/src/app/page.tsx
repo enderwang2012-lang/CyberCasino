@@ -14,7 +14,7 @@ export default function Home() {
     connected, tables, events, userId, agentConfig,
     tableError, webhookPingResult, tableStarted, seatUpdates,
     joinTable, leaveTable, createTable, saveAgent, testWebhook,
-    sitAtTable, leaveSeat, fillAI, startGame, stopGame, clearTableError,
+    sitAtTable, leaveSeat, fillAI, startGame, clearTableError,
   } = useSocket();
 
   const [view, setView] = useState<ViewState>("lobby");
@@ -104,13 +104,11 @@ export default function Home() {
   }
 
   if (view === "table-live" && activeTableId) {
-    const isCreator = activeTable?.creatorUserId === userId;
     return (
       <TableView
         tableId={activeTableId}
         events={events}
         onLeave={handleLeave}
-        onStop={isCreator ? () => { stopGame(activeTableId); handleLeave(); } : undefined}
       />
     );
   }

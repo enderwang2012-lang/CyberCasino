@@ -10,6 +10,7 @@ import type {
   SeatAgent,
   AgentConfig,
   ActionRecord,
+  ShowdownResult,
 } from "@cybercasino/shared";
 import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
@@ -18,6 +19,8 @@ import { PokerAgent } from "./agents/agent";
 import { SmartAgent } from "./agents/smart-agent";
 import { ExternalAgent } from "./agents/external-agent";
 import { PERSONALITIES } from "./agents/personalities";
+import { detectHighlights } from "./highlight-detector";
+import { generateCommentary } from "./highlight-commentary";
 
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
@@ -263,6 +266,14 @@ export class TableInstance {
     let potTotal = 0;
     const actionHistory: ActionRecord[] = [];
 
+    // Highlight detection state
+    const playerChipsAtStart = new Map<string, number>();
+    for (const p of gamePlayers) {
+      playerChipsAtStart.set(p.id, p.chips);
+    }
+    let capturedShowdownResults: ShowdownResult[] | null = null;
+    let winnerIds: string[] = [];
+
     const gen = gameLoop(
       gamePlayers,
       { smallBlind: this.currentSmallBlind, bigBlind: this.currentBigBlind },
@@ -335,7 +346,7 @@ export class TableInstance {
             break;
           }
         }
-        actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount } });
+        actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount }, thought: decision.thought });
 
         if (agent.agentType !== "external") {
           await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
@@ -373,7 +384,11 @@ export class TableInstance {
         currentPhaseCards = event.communityCards;
         currentPhase = event.phase as typeof currentPhase;
       }
+      if (event.type === "showdown") {
+        capturedShowdownResults = event.results;
+      }
       if (event.type === "hand-complete") {
+        winnerIds = [...new Set(event.winners.map((w) => w.playerId))];
         for (const player of event.players) {
           this.playerStates.set(player.id, { chips: player.chips });
         }
@@ -383,6 +398,54 @@ export class TableInstance {
       }
 
       this.emit(event);
+    }
+
+    // Highlight detection (fire-and-forget)
+    const reasons = detectHighlights({
+      handNumber: this.handNumber,
+      actionHistory,
+      holeCards,
+      communityCards: currentPhaseCards,
+      showdownResults: capturedShowdownResults,
+      potTotal,
+      bigBlind: this.currentBigBlind,
+      playerChipsAtStart,
+      winnerIds,
+    });
+
+    if (reasons.length > 0) {
+      const playerNames = new Map<string, string>();
+      for (const agent of this.agents) {
+        playerNames.set(agent.id, agent.name);
+      }
+      const involvedPlayerIds = [...new Set([
+        ...winnerIds,
+        ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
+      ])];
+
+      generateCommentary({
+        handNumber: this.handNumber,
+        reasons,
+        actionHistory: [...actionHistory],
+        holeCards: new Map(holeCards),
+        communityCards: [...currentPhaseCards],
+        showdownResults: capturedShowdownResults,
+        potTotal,
+        bigBlind: this.currentBigBlind,
+        playerNames,
+        winnerIds,
+      }).then((commentary) => {
+        this.emit({
+          type: "hand-highlight",
+          handNumber: this.handNumber,
+          reasons,
+          commentary,
+          potTotal,
+          involvedPlayerIds,
+        });
+      }).catch((err) => {
+        console.error(`[highlight] commentary generation failed:`, err);
+      });
     }
   }
 

@@ -173,6 +173,16 @@ export interface SeatAgent {
   userId?: string;
 }
 
+// Highlight types
+export type HighlightReason =
+  | "big-pot"
+  | "bluff-success"
+  | "bluff-catch"
+  | "cooler"
+  | "bad-beat"
+  | "short-stack-comeback"
+  | "multi-way-allin";
+
 // Game events yielded by the engine
 export type GameEvent =
   | { type: "hand-start"; handNumber: number; players: PlayerState[]; dealerSeatIndex: number }
@@ -187,7 +197,8 @@ export type GameEvent =
   | { type: "player-eliminated"; playerId: string; finishPosition: number; handNumber: number }
   | { type: "blind-level-up"; level: number; smallBlind: number; bigBlind: number; handNumber: number }
   | { type: "tournament-complete"; rankings: { playerId: string; position: number; handsPlayed: number }[] }
-  | { type: "agent-roster"; agents: SeatAgent[] };
+  | { type: "agent-roster"; agents: SeatAgent[] }
+  | { type: "hand-highlight"; handNumber: number; reasons: HighlightReason[]; commentary: string; potTotal: number; involvedPlayerIds: string[] };
 
 // Socket.IO event types for client-server communication
 export interface WebhookPingResult {
