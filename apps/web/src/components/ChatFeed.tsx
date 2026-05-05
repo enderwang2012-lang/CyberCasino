@@ -73,7 +73,7 @@ function AgentTag({ id, lookup }: { id: string; lookup: Map<string, AgentLookup>
   return <span className={`${info.color} font-bold`}>[{info.avatar} {info.name}]</span>;
 }
 
-function EventLine({ event, lookup }: { event: GameEvent; lookup: Map<string, AgentLookup> }) {
+function EventLine({ event, lookup, chipsBeforeHand }: { event: GameEvent; lookup: Map<string, AgentLookup>; chipsBeforeHand: Map<string, number> }) {
   switch (event.type) {
     case "agent-roster":
       return null;
@@ -246,15 +246,19 @@ function EventLine({ event, lookup }: { event: GameEvent; lookup: Map<string, Ag
       );
 
     case "hand-complete": {
-      const merged = new Map<string, number>();
-      for (const w of event.winners) {
-        merged.set(w.playerId, (merged.get(w.playerId) ?? 0) + w.amount);
-      }
+      const netChanges = event.players
+        .map((p) => ({
+          id: p.id,
+          net: p.chips - (chipsBeforeHand.get(p.id) ?? p.chips),
+        }))
+        .filter((p) => p.net !== 0)
+        .sort((a, b) => b.net - a.net);
+
       return (
         <div className="border-t border-green-900/50 pt-2 mt-2 mb-4">
-          {[...merged.entries()].map(([id, amount]) => (
-            <div key={id} className="text-green-400 text-sm">
-              🎉 <AgentTag id={id} lookup={lookup} /> wins {amount} chips!
+          {netChanges.map(({ id, net }) => (
+            <div key={id} className={`text-sm ${net > 0 ? "text-green-400" : "text-red-400"}`}>
+              {net > 0 ? "🎉" : "💸"} <AgentTag id={id} lookup={lookup} /> {net > 0 ? `+${net}` : `${net}`}
             </div>
           ))}
           <div className="text-xs text-gray-600 mt-1">
@@ -301,6 +305,19 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     (e) => e.type !== "action-required" && e.type !== "agent-roster"
   );
 
+  // Build per-event chip snapshots: for each event, track the chips at hand-start
+  const chipsSnapshots = useMemo(() => {
+    const snapshots: Map<string, number>[] = [];
+    let current = new Map<string, number>();
+    for (const event of visibleEvents) {
+      if (event.type === "hand-start") {
+        current = new Map(event.players.map((p) => [p.id, p.chips]));
+      }
+      snapshots.push(current);
+    }
+    return snapshots;
+  }, [visibleEvents]);
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-2 font-mono text-sm">
       {visibleEvents.length === 0 && (
@@ -309,7 +326,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
         </div>
       )}
       {visibleEvents.map((event, i) => (
-        <EventLine key={i} event={event} lookup={lookup} />
+        <EventLine key={i} event={event} lookup={lookup} chipsBeforeHand={chipsSnapshots[i]} />
       ))}
       <div ref={bottomRef} />
     </div>
