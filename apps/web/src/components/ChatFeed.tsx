@@ -264,11 +264,9 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
     case "hand-highlight":
       return (
         <div className="text-center my-2 text-sm">
-          <span className="text-gray-500">───</span>
-          <span className="text-fuchsia-400 mx-2">
-            ⭐ 精彩时刻 · Hand #{event.handNumber} · 切换「精彩解说」Tab 查看
-          </span>
-          <span className="text-gray-500">───</span>
+          <span className="text-gray-500">──</span>
+          <span className="text-fuchsia-400 mx-2">⭐精彩时刻⭐</span>
+          <span className="text-gray-500">──</span>
         </div>
       );
 
