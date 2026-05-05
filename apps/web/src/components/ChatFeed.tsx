@@ -96,6 +96,7 @@ interface EventContext {
   currentChips: Map<string, number>;
   potTotal?: number;
   blindInfo?: BlindInfo;
+  netProfits?: Map<string, number>;
 }
 
 function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
@@ -206,18 +207,31 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
     case "pot-updated":
       return null;
 
-    case "showdown":
+    case "showdown": {
+      const nets = ctx.netProfits;
       return (
-        <div className="border-t border-separator pt-3 mt-3 mx-1">
-          <div className="text-warning text-[13px] text-center mb-2 font-medium">SHOWDOWN</div>
-          {event.results.map((r) => (
-            <div key={r.playerId} className="text-[13px]">
-              <AgentTag id={r.playerId} lookup={lookup} /> <CardsInline cards={r.holeCards} />{" "}
-              <span className="text-text-secondary">· {r.handName}</span>
-            </div>
-          ))}
+        <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
+          <div className="text-warning text-[13px] text-center mb-3 font-medium">SHOWDOWN</div>
+          <div className="space-y-1.5">
+            {event.results.map((r) => {
+              const net = nets?.get(r.playerId) ?? 0;
+              return (
+                <div key={r.playerId} className="flex items-center text-[14px]">
+                  <AgentTag id={r.playerId} lookup={lookup} />
+                  <span className="ml-1.5"><CardsInline cards={r.holeCards} /></span>
+                  <span className="text-text-secondary ml-1.5">· {r.handName}</span>
+                  {net !== 0 && (
+                    <span className={`ml-auto font-medium ${net > 0 ? "text-success" : "text-danger"}`}>
+                      {net > 0 ? `+${net}` : `${net}`}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
+    }
 
     case "player-eliminated":
       return (
@@ -268,31 +282,16 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
       );
 
     case "hand-complete": {
-      const netChanges = event.players
-        .map((p) => ({
-          id: p.id,
-          net: p.chips - (chipsBeforeHand.get(p.id) ?? p.chips),
-        }))
-        .filter((p) => p.net !== 0)
-        .sort((a, b) => b.net - a.net);
-
       return (
-        <div className="border-t border-separator pt-2 mt-2 mb-4 mx-1">
-          {netChanges.map(({ id, net }) => (
-            <div key={id} className={`text-[13px] ${net > 0 ? "text-success" : "text-danger"}`}>
-              <AgentTag id={id} lookup={lookup} /> {net > 0 ? `+${net}` : `${net}`}
-            </div>
-          ))}
-          <div className="text-[12px] text-text-tertiary mt-1.5 flex gap-3">
-            {event.players.map((p) => {
-              const info = lookup.get(p.id);
-              return (
-                <span key={p.id}>
-                  {info?.avatar ?? "🤖"} {p.chips}
-                </span>
-              );
-            })}
-          </div>
+        <div className="text-[12px] text-text-tertiary mt-1 mb-4 mx-1 flex gap-3">
+          {event.players.map((p) => {
+            const info = lookup.get(p.id);
+            return (
+              <span key={p.id}>
+                {info?.avatar ?? "🤖"} {p.chips}
+              </span>
+            );
+          })}
         </div>
       );
     }
@@ -414,7 +413,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
   }, [visibleEvents]);
 
   const groupedEvents = useMemo(() => {
-    const groups: Array<{ event: GameEvent; index: number; potTotal?: number }> = [];
+    const groups: Array<{ event: GameEvent; index: number; potTotal?: number; netProfits?: Map<string, number> }> = [];
     for (let i = 0; i < visibleEvents.length; i++) {
       const event = visibleEvents[i];
       if (event.type === "pot-updated") {
@@ -424,10 +423,23 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           continue;
         }
       }
+      if (event.type === "hand-complete") {
+        const prev = groups[groups.length - 1];
+        if (prev && prev.event.type === "showdown") {
+          const cbh = contexts[prev.index].chipsBeforeHand;
+          const nets = new Map<string, number>();
+          for (const p of event.players) {
+            const before = cbh.get(p.id) ?? p.chips;
+            const net = p.chips - before;
+            if (net !== 0) nets.set(p.id, net);
+          }
+          prev.netProfits = nets;
+        }
+      }
       groups.push({ event, index: i });
     }
     return groups;
-  }, [visibleEvents]);
+  }, [visibleEvents, contexts]);
 
   return (
     <div className="flex-1 overflow-y-auto px-3 py-3 text-[14px] leading-relaxed overscroll-contain bg-surface-elevated">
@@ -436,7 +448,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           等待比赛开始...
         </div>
       )}
-      {groupedEvents.map(({ event, index, potTotal }) => (
+      {groupedEvents.map(({ event, index, potTotal, netProfits }) => (
         <EventLine
           key={index}
           event={event}
@@ -448,6 +460,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
             currentChips: contexts[index].currentChips,
             potTotal,
             blindInfo: contexts[index].blindInfo,
+            netProfits,
           }}
         />
       ))}
