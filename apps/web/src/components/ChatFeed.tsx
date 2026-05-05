@@ -87,10 +87,11 @@ interface EventContext {
   holeCards: Map<string, Card[]>;
   communityCards: Card[];
   currentChips: Map<string, number>;
+  potTotal?: number;
 }
 
 function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
-  const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips } = ctx;
+  const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips, potTotal } = ctx;
 
   switch (event.type) {
     case "agent-roster":
@@ -157,15 +158,22 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
       const handName = myCards ? getHandName(myCards, communityCards) : null;
 
       return (
-        <div className="my-2 mx-1 py-2 border-l-2 border-surface-deep pl-3">
-          <div className="text-[13px]">
-            <AgentTag id={event.playerId} lookup={lookup} />
-            <span className="text-text-tertiary ml-1.5">{chips}</span>
-            {myCards && <span className="ml-1.5"><CardsInline cards={myCards} /></span>}
-            {handName && <span className="text-text-secondary ml-1">· {handName}</span>}
+        <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="text-[14px] text-text-primary">
+              <AgentTag id={event.playerId} lookup={lookup} />
+              <span className="text-text-secondary ml-1.5">{chips}</span>
+              {myCards && <span className="ml-1.5"><CardsInline cards={myCards} /></span>}
+              {handName && <span className="text-text-secondary ml-1">· {handName}</span>}
+            </div>
+            {potTotal != null && (
+              <div className="text-[13px] text-warning font-medium">
+                底池 {potTotal}
+              </div>
+            )}
           </div>
           {thought.message && thought.message !== "..." && (
-            <div className="text-[12px] text-text-tertiary mt-0.5 italic">
+            <div className="text-[13px] text-text-secondary mt-1.5 italic">
               "{thought.message}"
               {thought.isBluffing && <span className="text-danger ml-1 not-italic">诈唬</span>}
               {thought.confidence > 0 && (
@@ -175,21 +183,15 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
               )}
             </div>
           )}
-          <div className={`text-[13px] font-medium mt-0.5 ${actionColor}`}>
+          <div className={`text-[14px] font-semibold mt-1.5 ${actionColor}`}>
             {actionLabel}
           </div>
         </div>
       );
     }
 
-    case "pot-updated": {
-      const total = event.pots.reduce((s, p) => s + p.amount, 0);
-      return (
-        <div className="text-[12px] text-text-tertiary text-right px-1">
-          底池 {total}
-        </div>
-      );
-    }
+    case "pot-updated":
+      return null;
 
     case "showdown":
       return (
@@ -387,6 +389,22 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     return result;
   }, [visibleEvents]);
 
+  const groupedEvents = useMemo(() => {
+    const groups: Array<{ event: GameEvent; index: number; potTotal?: number }> = [];
+    for (let i = 0; i < visibleEvents.length; i++) {
+      const event = visibleEvents[i];
+      if (event.type === "pot-updated") {
+        const prev = groups[groups.length - 1];
+        if (prev && prev.event.type === "action-taken") {
+          prev.potTotal = event.pots.reduce((s, p) => s + p.amount, 0);
+          continue;
+        }
+      }
+      groups.push({ event, index: i });
+    }
+    return groups;
+  }, [visibleEvents]);
+
   return (
     <div className="flex-1 overflow-y-auto px-3 py-3 text-[14px] leading-relaxed overscroll-contain bg-surface-elevated">
       {visibleEvents.length === 0 && (
@@ -394,16 +412,17 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           等待比赛开始...
         </div>
       )}
-      {visibleEvents.map((event, i) => (
+      {groupedEvents.map(({ event, index, potTotal }) => (
         <EventLine
-          key={i}
+          key={index}
           event={event}
           ctx={{
             lookup,
-            chipsBeforeHand: contexts[i].chipsBeforeHand,
-            holeCards: contexts[i].holeCards,
-            communityCards: contexts[i].communityCards,
-            currentChips: contexts[i].currentChips,
+            chipsBeforeHand: contexts[index].chipsBeforeHand,
+            holeCards: contexts[index].holeCards,
+            communityCards: contexts[index].communityCards,
+            currentChips: contexts[index].currentChips,
+            potTotal,
           }}
         />
       ))}
