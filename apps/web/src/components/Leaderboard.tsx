@@ -90,22 +90,18 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
           return (
             <div
               key={entry.id}
-              className={`flex items-center gap-3 rounded-xl px-4 py-3 ${
-                entry.eliminated
-                  ? "bg-surface-elevated opacity-50"
-                  : "bg-white shadow-sm"
-              }`}
+              className="flex items-center gap-3 rounded-xl px-4 py-3 bg-white shadow-sm"
             >
               <span className="text-text-secondary text-[13px] font-medium w-6 text-center">
                 {rank}
               </span>
               <span className="text-[24px]">{entry.avatar}</span>
               <div className="flex-1 min-w-0">
-                <div className={`text-[15px] font-medium truncate ${entry.eliminated ? "text-text-tertiary" : "text-text-primary"}`}>
+                <div className="text-[15px] font-medium truncate text-text-primary">
                   {entry.name}
                 </div>
                 {entry.eliminated ? (
-                  <div className="text-[13px] text-danger/70">
+                  <div className="text-[13px] text-text-secondary">
                     第{entry.finishPosition}名淘汰 · 第{entry.eliminatedAtHand}手
                   </div>
                 ) : (
