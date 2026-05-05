@@ -207,31 +207,21 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
     case "pot-updated":
       return null;
 
-    case "showdown": {
-      const nets = ctx.netProfits;
+    case "showdown":
       return (
         <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
           <div className="text-warning text-[13px] text-center mb-3 font-medium">SHOWDOWN</div>
           <div className="space-y-1.5">
-            {event.results.map((r) => {
-              const net = nets?.get(r.playerId) ?? 0;
-              return (
-                <div key={r.playerId} className="flex items-center text-[14px]">
-                  <AgentTag id={r.playerId} lookup={lookup} />
-                  <span className="ml-1.5"><CardsInline cards={r.holeCards} /></span>
-                  <span className="text-text-secondary ml-1.5">· {r.handName}</span>
-                  {net !== 0 && (
-                    <span className={`ml-auto font-medium ${net > 0 ? "text-success" : "text-danger"}`}>
-                      {net > 0 ? `+${net}` : `${net}`}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {event.results.map((r) => (
+              <div key={r.playerId} className="flex items-center text-[14px]">
+                <AgentTag id={r.playerId} lookup={lookup} />
+                <span className="ml-1.5"><CardsInline cards={r.holeCards} /></span>
+                <span className="text-text-secondary ml-1.5">· {r.handName}</span>
+              </div>
+            ))}
           </div>
         </div>
       );
-    }
 
     case "player-eliminated":
       return (
@@ -283,12 +273,20 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
 
     case "hand-complete": {
       return (
-        <div className="text-[12px] text-text-tertiary mt-1 mb-4 mx-1 flex gap-3">
+        <div className="text-[13px] mt-1 mb-4 mx-1 flex flex-wrap gap-x-4 gap-y-1">
           {event.players.map((p) => {
             const info = lookup.get(p.id);
+            const before = chipsBeforeHand.get(p.id) ?? p.chips;
+            const net = p.chips - before;
+            const netColor = net > 0 ? "text-success" : net < 0 ? "text-danger" : "text-text-tertiary";
             return (
-              <span key={p.id}>
-                {info?.avatar ?? "🤖"} {p.chips}
+              <span key={p.id} className="text-text-secondary">
+                {info?.avatar ?? "🤖"} {info?.name ?? p.id} {p.chips}
+                {net !== 0 && (
+                  <span className={`${netColor} ml-0.5`}>
+                    ({net > 0 ? `+${net}` : `${net}`})
+                  </span>
+                )}
               </span>
             );
           })}
