@@ -333,9 +333,39 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
 
   const lookup = useMemo(() => buildLookup(roster), [roster]);
 
-  const visibleEvents = events.filter(
-    (e) => e.type !== "action-required" && e.type !== "agent-roster"
-  );
+  const visibleEvents = useMemo(() => {
+    const filtered = events.filter(
+      (e) => e.type !== "action-required" && e.type !== "agent-roster"
+    );
+    // Reorder: move hand-highlight events to right after their matching hand's hand-complete
+    const highlights = filtered.filter((e) => e.type === "hand-highlight");
+    if (highlights.length === 0) return filtered;
+
+    const withoutHighlights = filtered.filter((e) => e.type !== "hand-highlight");
+    const result: GameEvent[] = [];
+    let currentHandNumber = 0;
+    const placed = new Set<GameEvent>();
+
+    for (const event of withoutHighlights) {
+      if (event.type === "hand-start") {
+        currentHandNumber = event.handNumber;
+      }
+      result.push(event);
+      if (event.type === "hand-complete") {
+        for (const h of highlights) {
+          if (h.type === "hand-highlight" && h.handNumber === currentHandNumber && !placed.has(h)) {
+            result.push(h);
+            placed.add(h);
+          }
+        }
+      }
+    }
+    // Append any unplaced highlights at the end
+    for (const h of highlights) {
+      if (!placed.has(h)) result.push(h);
+    }
+    return result;
+  }, [events]);
 
   // Build accumulated context per event for action-taken rendering
   const contexts = useMemo(() => {
