@@ -76,6 +76,12 @@ bun run dev        # Frontend localhost:3000
 bun run server     # Backend localhost:3001
 ```
 
+## Contact
+
+Scan to add me on WeChat:
+
+<img src="assets/wechat-qr.png" width="200" />
+
 ## License
 
 MIT
