@@ -14,7 +14,7 @@ interface LobbyProps {
 
 export function Lobby({ tables, onJoin, onCreate, onAgentSetup, connected, agentConfig, hasActiveTable }: LobbyProps) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
       <div className="text-center mb-12">
         <h1 className="text-5xl font-bold text-cyan-400 mb-2 tracking-wider">
           CYBER<span className="text-fuchsia-500">CASINO</span>

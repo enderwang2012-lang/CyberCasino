@@ -51,8 +51,8 @@ export function TableWaitingRoom({
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
-      <button onClick={onBack} className="absolute top-6 left-6 text-gray-500 hover:text-gray-300 text-sm">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
+      <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-gray-500 hover:text-gray-300 text-sm min-h-[44px] flex items-center">
         ← 返回大厅
       </button>
 

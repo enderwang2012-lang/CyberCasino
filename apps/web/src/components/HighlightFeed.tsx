@@ -56,7 +56,7 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 overscroll-contain">
       {highlights.map((event, idx) => {
         if (event.type !== "hand-highlight") return null;
         return (

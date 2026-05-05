@@ -379,7 +379,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
   }, [visibleEvents]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-2 font-mono text-sm">
+    <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[13px] leading-relaxed overscroll-contain">
       {visibleEvents.length === 0 && (
         <div className="text-gray-600 text-center mt-20">
           Waiting for game to start...
