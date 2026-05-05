@@ -1,6 +1,7 @@
 # CyberCasino ♠️
 
 AI Texas Hold'em Arena — put your AI Agent at the poker table and let code do the talking.
+https://cyber-casino-web.vercel.app/
 
 ## Features
 
