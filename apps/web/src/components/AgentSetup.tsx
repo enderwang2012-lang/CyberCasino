@@ -96,43 +96,40 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
 
   if (!mode) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <button onClick={onBack} className="absolute top-6 left-6 text-gray-500 hover:text-gray-300 text-sm">
-          ← 返回大厅
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
+        <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
+          ‹ 返回
         </button>
-        <h2 className="text-2xl font-bold text-cyan-400 mb-2">选择 Agent 模式</h2>
-        <p className="text-gray-500 text-sm mb-8">你的 Agent 将代表你在牌桌上征战</p>
+        <h2 className="text-[28px] font-semibold text-text-primary mb-2 tracking-tight">选择模式</h2>
+        <p className="text-text-secondary text-[15px] mb-8">你的 Agent 将代表你在牌桌上征战</p>
 
-        <div className="flex gap-4 max-w-2xl w-full">
+        <div className="flex flex-col sm:flex-row gap-3 max-w-lg w-full">
           <button
             onClick={() => setMode("smart")}
-            className="flex-1 text-left bg-gray-900/50 hover:bg-gray-800/50 border border-cyan-700/30 hover:border-cyan-500/50 rounded-lg p-6 transition-all"
+            className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
           >
-            <div className="text-3xl mb-3">🎰</div>
-            <h3 className="text-cyan-300 font-bold text-lg mb-1">AI 代打</h3>
-            <p className="text-gray-400 text-sm mb-3">平台 AI 帮你上桌</p>
-            <ul className="text-gray-500 text-xs space-y-1">
-              <li>· 零部署，设完即打</li>
-              <li>· 风格 Prompt 自由调教</li>
-              <li>· 默认 Haiku 模型思考</li>
+            <div className="text-[32px] mb-3">🎰</div>
+            <h3 className="text-text-primary font-semibold text-[17px] mb-1">AI 代打</h3>
+            <p className="text-text-secondary text-[15px] mb-3">平台 AI 帮你上桌</p>
+            <ul className="text-text-tertiary text-[13px] space-y-1">
+              <li>零部署，设完即打</li>
+              <li>风格 Prompt 自由调教</li>
+              <li>默认模型思考</li>
             </ul>
-            <p className="text-gray-600 text-xs mt-3">适合：想快速上桌的玩家</p>
           </button>
 
           <button
             onClick={() => setMode("custom")}
-            className="flex-1 text-left bg-gray-900/50 hover:bg-gray-800/50 border border-fuchsia-700/30 hover:border-fuchsia-500/50 rounded-lg p-6 transition-all"
+            className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
           >
-            <div className="text-3xl mb-3">🔧</div>
-            <h3 className="text-fuchsia-300 font-bold text-lg mb-1">自研 Agent</h3>
-            <p className="text-gray-400 text-sm mb-3">接入你自己的 AI</p>
-            <ul className="text-gray-500 text-xs space-y-1">
-              <li>· 完全自定义决策逻辑</li>
-              <li>· 用你自己的模型和策略</li>
-              <li>· Webhook URL 接入</li>
-              <li>· 附带 Prompt 生成教程</li>
+            <div className="text-[32px] mb-3">🔧</div>
+            <h3 className="text-text-primary font-semibold text-[17px] mb-1">自研 Agent</h3>
+            <p className="text-text-secondary text-[15px] mb-3">接入你自己的 AI</p>
+            <ul className="text-text-tertiary text-[13px] space-y-1">
+              <li>完全自定义决策逻辑</li>
+              <li>用你自己的模型和策略</li>
+              <li>Webhook URL 接入</li>
             </ul>
-            <p className="text-gray-600 text-xs mt-3">适合：想深度定制的开发者</p>
           </button>
         </div>
       </div>
@@ -140,49 +137,48 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
   }
 
   const isCustom = mode === "custom";
-  const accentColor = isCustom ? "fuchsia" : "cyan";
   const canSave = name.length >= 2 && name.length <= 20 && (!isCustom || webhookUrl);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
-      <button onClick={onBack} className="absolute top-6 left-6 text-gray-500 hover:text-gray-300 text-sm">
-        ← 返回大厅
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
+      <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
+        ‹ 返回
       </button>
 
       <div className="w-full max-w-md">
-        <div className="flex items-center gap-3 mb-6">
-          <span className="text-2xl">{isCustom ? "🔧" : "🎰"}</span>
-          <h2 className={`text-xl font-bold ${isCustom ? "text-fuchsia-400" : "text-cyan-400"}`}>
-            {isCustom ? "自研 Agent" : "AI 代打"} 设置
+        <div className="flex items-center gap-3 mb-8">
+          <span className="text-[28px]">{isCustom ? "🔧" : "🎰"}</span>
+          <h2 className="text-[22px] font-semibold text-text-primary tracking-tight">
+            {isCustom ? "自研 Agent" : "AI 代打"}
           </h2>
-          <button onClick={() => setMode(null)} className="ml-auto text-gray-600 hover:text-gray-400 text-xs">
+          <button onClick={() => setMode(null)} className="ml-auto text-accent text-[13px]">
             切换模式
           </button>
         </div>
 
-        <div className="space-y-4">
-          {/* Name */}
+        <div className="space-y-5">
           <div>
-            <label className="text-gray-400 text-xs block mb-1">Agent 名称</label>
+            <label className="text-text-secondary text-[13px] block mb-2">名称</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="2-20 个字符"
               maxLength={20}
-              className="w-full bg-gray-900/50 border border-gray-700/50 rounded px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-cyan-600"
+              className="w-full bg-white rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary shadow-sm"
             />
           </div>
 
-          {/* Avatar */}
           <div>
-            <label className="text-gray-400 text-xs block mb-1">头像</label>
-            <div className="flex flex-wrap gap-2 mb-2">
+            <label className="text-text-secondary text-[13px] block mb-2">头像</label>
+            <div className="flex flex-wrap gap-2 mb-3">
               {EMOJI_PRESETS.map((e) => (
                 <button
                   key={e}
                   onClick={() => setAvatar(e)}
-                  className={`text-xl p-1.5 rounded ${avatar === e ? "bg-gray-700 ring-1 ring-cyan-500" : "hover:bg-gray-800"}`}
+                  className={`text-[22px] w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                    avatar === e ? "bg-accent/10 ring-1.5 ring-accent" : "bg-white hover:bg-surface-elevated shadow-sm"
+                  }`}
                 >
                   {e}
                 </button>
@@ -192,17 +188,16 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
               type="text"
               value={avatar}
               onChange={(e) => setAvatar(e.target.value)}
-              placeholder="或输入自定义 emoji"
+              placeholder="自定义"
               maxLength={2}
-              className="w-24 bg-gray-900/50 border border-gray-700/50 rounded px-3 py-1 text-center text-lg focus:outline-none focus:border-cyan-600"
+              className="w-20 bg-white rounded-xl px-3 py-2 text-center text-[20px] focus:outline-none focus:ring-2 focus:ring-accent/50 shadow-sm"
             />
           </div>
 
-          {/* Style Prompt */}
           <div>
-            <label className="text-gray-400 text-xs block mb-1">
+            <label className="text-text-secondary text-[13px] block mb-2">
               风格 Prompt
-              {isCustom && <span className="text-gray-600 ml-1">(会随决策请求发送给你的 Webhook)</span>}
+              {isCustom && <span className="text-text-tertiary ml-1">(随决策请求发送)</span>}
             </label>
             <textarea
               value={stylePrompt}
@@ -212,69 +207,66 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
                 : "沉稳老道，只在有把握时出手，喜欢用沉默给对手压力"
               }
               rows={3}
-              className="w-full bg-gray-900/50 border border-gray-700/50 rounded px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-cyan-600 resize-none"
+              className="w-full bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none placeholder:text-text-tertiary"
             />
           </div>
 
-          {/* Smart mode: model info */}
           {!isCustom && (
-            <div className="text-gray-600 text-xs bg-gray-900/30 rounded px-3 py-2">
-              思考模型：Haiku（默认）
+            <div className="text-text-tertiary text-[13px] bg-white rounded-xl px-4 py-3 shadow-sm">
+              思考模型：DeepSeek（默认）
             </div>
           )}
 
-          {/* Custom mode: Webhook URL */}
           {isCustom && (
             <>
               <div>
-                <label className="text-gray-400 text-xs block mb-1">Webhook URL</label>
+                <label className="text-text-secondary text-[13px] block mb-2">Webhook URL</label>
                 <div className="flex gap-2">
                   <input
                     type="url"
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
                     placeholder="https://your-webhook.com/"
-                    className="flex-1 bg-gray-900/50 border border-gray-700/50 rounded px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-fuchsia-600"
+                    className="flex-1 bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary"
                   />
                   <button
                     onClick={() => onTestWebhook(webhookUrl)}
                     disabled={!webhookUrl}
-                    className="bg-fuchsia-900/50 hover:bg-fuchsia-800/50 border border-fuchsia-700/50 text-fuchsia-300 px-3 py-2 rounded text-sm disabled:opacity-50 whitespace-nowrap"
+                    className="bg-surface-elevated hover:bg-surface-deep text-accent px-4 py-3 rounded-xl text-[15px] font-medium disabled:opacity-50 whitespace-nowrap transition-colors"
                   >
                     测试
                   </button>
                 </div>
                 {webhookPingResult && (
-                  <p className={`text-xs mt-1 ${webhookPingResult.success ? "text-green-500" : "text-red-500"}`}>
+                  <p className={`text-[13px] mt-2 ${webhookPingResult.success ? "text-success" : "text-danger"}`}>
                     {webhookPingResult.success
-                      ? `✅ 连接成功，延迟 ${webhookPingResult.latencyMs}ms`
-                      : `❌ ${webhookPingResult.error}`}
+                      ? `连接成功，延迟 ${webhookPingResult.latencyMs}ms`
+                      : webhookPingResult.error}
                   </p>
                 )}
               </div>
 
-              {/* Tutorial panel */}
-              <div className="border border-gray-800 rounded">
+              <div className="bg-white rounded-xl overflow-hidden shadow-sm">
                 <button
                   onClick={() => setShowPrompt(!showPrompt)}
-                  className="w-full text-left px-3 py-2 text-gray-500 text-xs hover:text-gray-300"
+                  className="w-full text-left px-4 py-3 text-text-secondary text-[13px] hover:text-text-primary transition-colors"
                 >
-                  {showPrompt ? "▾" : "▸"} 不知道怎么创建 Webhook？点此获取 Prompt 教程
+                  {showPrompt ? "▾" : "▸"} Webhook 创建教程
                 </button>
                 {showPrompt && (
-                  <div className="px-3 pb-3">
-                    <p className="text-gray-500 text-xs mb-2">
-                      复制下面的 Prompt，发给你的 AI（Claude / GPT / Cursor 等），它会帮你生成完整的 Webhook 服务代码和部署方案。
+                  <div className="px-4 pb-4">
+                    <p className="text-text-tertiary text-[13px] mb-3">
+                      复制下面的 Prompt 发给 AI 助手，它会帮你生成完整的 Webhook 服务。
                     </p>
                     <div className="relative">
-                      <pre className="bg-black/50 border border-gray-800 rounded p-3 text-gray-400 text-xs overflow-auto max-h-48 whitespace-pre-wrap">
+                      <pre className="bg-surface-elevated rounded-xl p-4 text-text-secondary text-[12px] overflow-auto max-h-48 whitespace-pre-wrap">
                         {WEBHOOK_PROMPT}
                       </pre>
                       <button
                         onClick={handleCopyPrompt}
-                        className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-400 px-2 py-1 rounded text-xs"
+                        className="absolute top-2 right-2 bg-white hover:bg-white/80 text-text-secondary px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors shadow-sm"
                       >
-                        {copied ? "已复制 ✓" : "复制"}
+                        {copied ? "已复制" : "复制"}
                       </button>
                     </div>
                   </div>
@@ -283,19 +275,16 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
             </>
           )}
 
-          {/* Save */}
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className={`w-full py-2.5 rounded font-medium text-sm transition-colors ${
+            className={`w-full py-3.5 rounded-full font-medium text-[17px] transition-colors ${
               canSave
-                ? isCustom
-                  ? "bg-fuchsia-600 hover:bg-fuchsia-500 text-white"
-                  : "bg-cyan-600 hover:bg-cyan-500 text-white"
-                : "bg-gray-800 text-gray-600 cursor-not-allowed"
+                ? "bg-accent hover:bg-accent-hover text-white"
+                : "bg-surface-deep text-text-tertiary cursor-not-allowed"
             }`}
           >
-            保存并准备上桌
+            保存
           </button>
         </div>
       </div>

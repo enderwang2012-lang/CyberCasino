@@ -4,13 +4,13 @@ import { useMemo, useEffect, useRef } from "react";
 import type { GameEvent, HighlightReason, SeatAgent } from "@cybercasino/shared";
 
 const REASON_BADGES: Record<HighlightReason, { label: string; color: string }> = {
-  "big-pot": { label: "大底池", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40" },
-  "bluff-success": { label: "诈唬成功", color: "bg-red-500/20 text-red-400 border-red-500/40" },
-  "bluff-catch": { label: "抓诈", color: "bg-green-500/20 text-green-400 border-green-500/40" },
-  "cooler": { label: "Cooler", color: "bg-purple-500/20 text-purple-400 border-purple-500/40" },
-  "bad-beat": { label: "Bad Beat", color: "bg-orange-500/20 text-orange-400 border-orange-500/40" },
-  "short-stack-comeback": { label: "短码翻盘", color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" },
-  "multi-way-allin": { label: "多人全下", color: "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40" },
+  "big-pot": { label: "大底池", color: "bg-warning/15 text-warning" },
+  "bluff-success": { label: "诈唬成功", color: "bg-danger/15 text-danger" },
+  "bluff-catch": { label: "抓诈", color: "bg-success/15 text-success" },
+  "cooler": { label: "Cooler", color: "bg-[#BF5AF2]/15 text-[#BF5AF2]" },
+  "bad-beat": { label: "Bad Beat", color: "bg-[#FF9F0A]/15 text-[#FF9F0A]" },
+  "short-stack-comeback": { label: "短码翻盘", color: "bg-accent/15 text-accent" },
+  "multi-way-allin": { label: "多人全下", color: "bg-[#BF5AF2]/15 text-[#BF5AF2]" },
 };
 
 export function HighlightFeed({ events }: { events: GameEvent[] }) {
@@ -43,12 +43,12 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
 
   if (highlights.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-gray-600 px-8">
-        <div className="text-4xl mb-3">🎬</div>
-        <div className="text-sm text-center">
-          比赛精彩时刻即将到来...
+      <div className="flex-1 flex flex-col items-center justify-center text-text-tertiary px-8">
+        <div className="text-[40px] mb-4">🎬</div>
+        <div className="text-[15px] text-text-secondary text-center">
+          精彩时刻即将到来
         </div>
-        <div className="text-xs text-gray-700 mt-1">
+        <div className="text-[13px] text-text-tertiary mt-1 text-center">
           大底池、诈唬对决、翻盘时刻会自动生成解说
         </div>
       </div>
@@ -56,30 +56,30 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 overscroll-contain">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain">
       {highlights.map((event, idx) => {
         if (event.type !== "hand-highlight") return null;
         return (
           <div
             key={idx}
-            className="border border-fuchsia-900/40 rounded-lg bg-gray-900/60 p-4 backdrop-blur-sm"
+            className="bg-white rounded-2xl p-5 shadow-sm"
           >
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-gray-500">
-                Hand #{event.handNumber}
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[13px] text-text-tertiary font-medium">
+                第 {event.handNumber} 手
               </div>
-              <div className="text-xs text-yellow-400/80">
-                💰 {event.potTotal.toLocaleString()}
+              <div className="text-[13px] text-warning font-medium">
+                {event.potTotal.toLocaleString()} 底池
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 mb-3">
+            <div className="flex flex-wrap gap-1.5 mb-4">
               {event.reasons.map((reason) => {
                 const badge = REASON_BADGES[reason];
                 return (
                   <span
                     key={reason}
-                    className={`text-xs px-2 py-0.5 rounded border ${badge.color}`}
+                    className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${badge.color}`}
                   >
                     {badge.label}
                   </span>
@@ -87,12 +87,12 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
               })}
             </div>
 
-            <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">
+            <div className="text-[15px] text-text-primary leading-relaxed whitespace-pre-wrap">
               {event.commentary}
             </div>
 
             {event.involvedPlayerIds.length > 0 && (
-              <div className="mt-3 flex gap-2 text-xs text-gray-500">
+              <div className="mt-4 pt-3 border-t border-separator flex gap-3 text-[13px] text-text-secondary">
                 {event.involvedPlayerIds.map((id) => {
                   const agent = agentMap.get(id);
                   return (

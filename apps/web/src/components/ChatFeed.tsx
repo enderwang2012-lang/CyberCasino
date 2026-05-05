@@ -11,17 +11,17 @@ const RANK_NAMES: Record<number, string> = {
 };
 
 const BUILTIN_COLORS: Record<string, string> = {
-  neon: "text-blue-400",
-  viper: "text-red-400",
-  ghost: "text-purple-300",
-  oracle: "text-amber-400",
-  shark: "text-cyan-300",
-  fox: "text-orange-400",
+  neon: "text-accent",
+  viper: "text-danger",
+  ghost: "text-[#BF5AF2]",
+  oracle: "text-warning",
+  shark: "text-[#64D2FF]",
+  fox: "text-[#FF9F0A]",
 };
 
 const DYNAMIC_COLORS = [
-  "text-pink-400", "text-lime-400", "text-violet-400", "text-teal-400",
-  "text-rose-400", "text-sky-400", "text-emerald-400", "text-amber-300",
+  "text-[#FF375F]", "text-success", "text-[#BF5AF2]", "text-[#64D2FF]",
+  "text-[#FF9F0A]", "text-accent", "text-[#30D158]", "text-warning",
 ];
 
 function hashColor(id: string): string {
@@ -51,17 +51,17 @@ function buildLookup(roster: SeatAgent[]): Map<string, AgentLookup> {
 }
 
 function CardDisplay({ card }: { card: Card }) {
-  const color = card.suit === "h" || card.suit === "d" ? "text-red-400" : "text-cyan-300";
+  const color = card.suit === "h" || card.suit === "d" ? "text-danger" : "text-text-primary";
   return (
-    <span className={`${color} font-bold`}>
-      [{RANK_NAMES[card.rank]}{SUIT_SYMBOLS[card.suit]}]
+    <span className={`${color} font-semibold`}>
+      {RANK_NAMES[card.rank]}{SUIT_SYMBOLS[card.suit]}
     </span>
   );
 }
 
 function CardsInline({ cards }: { cards: Card[] }) {
   return (
-    <span>
+    <span className="inline-flex gap-0.5">
       {cards.map((c, i) => (
         <CardDisplay key={i} card={c} />
       ))}
@@ -70,8 +70,8 @@ function CardsInline({ cards }: { cards: Card[] }) {
 }
 
 function AgentTag({ id, lookup }: { id: string; lookup: Map<string, AgentLookup> }) {
-  const info = lookup.get(id) ?? { name: id, avatar: "🤖", color: "text-gray-400" };
-  return <span className={`${info.color} font-bold`}>{info.avatar} {info.name}</span>;
+  const info = lookup.get(id) ?? { name: id, avatar: "🤖", color: "text-text-secondary" };
+  return <span className={`${info.color} font-medium`}>{info.avatar} {info.name}</span>;
 }
 
 function getHandName(holeCards: Card[], communityCards: Card[]): string | null {
@@ -98,90 +98,85 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
 
     case "hand-start":
       return (
-        <div className="border-t border-cyan-900/50 pt-3 mt-3">
-          <div className="text-cyan-400 text-center text-sm mb-1">
-            ╭───────────────────────────────────╮
-          </div>
-          <div className="text-cyan-300 text-center text-sm">
-            🃏 Hand #{event.handNumber} · {event.players.length} Players
-          </div>
-          <div className="text-cyan-400 text-center text-sm">
-            ╰───────────────────────────────────╯
+        <div className="pt-5 mt-3">
+          <div className="text-center">
+            <span className="text-text-secondary text-[13px] font-medium bg-white px-4 py-1.5 rounded-full shadow-sm">
+              第 {event.handNumber} 手 · {event.players.length} 人
+            </span>
           </div>
         </div>
       );
 
     case "blinds-posted":
       return (
-        <div className="space-y-0.5 text-sm">
-          <div><AgentTag id={event.smallBlindPlayerId} lookup={lookup} /> <span className="text-green-600">🟢 SB {event.smallBlind}</span></div>
-          <div><AgentTag id={event.bigBlindPlayerId} lookup={lookup} /> <span className="text-yellow-600">🟡 BB {event.bigBlind}</span></div>
+        <div className="space-y-0.5 text-[13px] text-text-secondary mt-2 px-1">
+          <div><AgentTag id={event.smallBlindPlayerId} lookup={lookup} /> <span className="text-text-tertiary">SB {event.smallBlind}</span></div>
+          <div><AgentTag id={event.bigBlindPlayerId} lookup={lookup} /> <span className="text-text-tertiary">BB {event.bigBlind}</span></div>
         </div>
       );
 
     case "cards-dealt":
       return (
-        <div className="bg-gray-900/50 border border-cyan-900/30 rounded p-2 my-2">
-          <div className="text-cyan-400 text-xs mb-1">┌─ 👁 GOD VIEW ─────────────────────┐</div>
+        <div className="bg-white rounded-xl p-3 my-2 mx-1 shadow-sm">
+          <div className="text-[11px] text-text-tertiary font-medium mb-1.5 uppercase tracking-wide">发牌</div>
           {Object.entries(event.hands).map(([id, cards]) => (
-            <div key={id} className="text-sm">
+            <div key={id} className="text-[13px] leading-relaxed">
               <AgentTag id={id} lookup={lookup} /> <CardsInline cards={cards} />
             </div>
           ))}
-          <div className="text-cyan-400 text-xs mt-1">└───────────────────────────────────┘</div>
         </div>
       );
 
     case "phase-change":
       return (
-        <div className="text-center my-2 text-sm">
-          <span className="text-gray-500">───</span>
-          <span className="text-yellow-400 mx-2">
-            {event.phase.toUpperCase()}: <CardsInline cards={event.communityCards} />
+        <div className="text-center my-3">
+          <span className="text-text-secondary text-[13px]">
+            <span className="text-text-tertiary mr-2">—</span>
+            <span className="font-medium">{event.phase.toUpperCase()}</span>
+            <span className="ml-2"><CardsInline cards={event.communityCards} /></span>
+            <span className="text-text-tertiary ml-2">—</span>
           </span>
-          <span className="text-gray-500">───</span>
         </div>
       );
 
     case "action-taken": {
       const { action, thought } = event;
-      const actionEmoji = {
-        fold: "❌",
-        check: "✅",
-        call: "📞",
-        raise: "⬆️",
-      }[action.type];
-      const actionText = action.type === "raise"
-        ? `Raise ${action.amount}`
-        : action.type.charAt(0).toUpperCase() + action.type.slice(1);
+      const actionLabel = action.type === "raise"
+        ? `加注 ${action.amount}`
+        : action.type === "call" ? "跟注"
+        : action.type === "check" ? "过牌"
+        : "弃牌";
+
+      const actionColor = action.type === "fold" ? "text-text-tertiary"
+        : action.type === "raise" ? "text-warning"
+        : action.type === "call" ? "text-success"
+        : "text-text-secondary";
 
       const chips = currentChips.get(event.playerId) ?? 0;
       const myCards = holeCards.get(event.playerId);
       const handName = myCards ? getHandName(myCards, communityCards) : null;
 
       return (
-        <div className="my-1.5 border-l-2 border-gray-800 pl-2">
-          <div className="text-sm">
+        <div className="my-2 mx-1 py-2 border-l-2 border-surface-deep pl-3">
+          <div className="text-[13px]">
             <AgentTag id={event.playerId} lookup={lookup} />
-            <span className="text-gray-500 ml-1.5">💰{chips}</span>
+            <span className="text-text-tertiary ml-1.5">{chips}</span>
             {myCards && <span className="ml-1.5"><CardsInline cards={myCards} /></span>}
-            {handName && <span className="text-gray-400 ml-1">→ {handName}</span>}
+            {handName && <span className="text-text-secondary ml-1">· {handName}</span>}
           </div>
           {thought.message && thought.message !== "..." && (
-            <div className="text-xs text-gray-400 mt-0.5">
-              💭 &quot;{thought.message}&quot;
-              {thought.isBluffing && (
-                <span className="text-red-500 ml-1">| 诈唬</span>
-              )}
+            <div className="text-[12px] text-text-tertiary mt-0.5 italic">
+              "{thought.message}"
+              {thought.isBluffing && <span className="text-danger ml-1 not-italic">诈唬</span>}
               {thought.confidence > 0 && (
-                <span className="text-gray-500 ml-1">
-                  | {Math.round(thought.confidence * 100)}%
+                <span className="text-text-tertiary ml-1 not-italic">
+                  {Math.round(thought.confidence * 100)}%
                 </span>
               )}
             </div>
           )}
-          <div className="text-sm mt-0.5">
-            <span className="text-white">{actionEmoji} {actionText}</span>
+          <div className={`text-[13px] font-medium mt-0.5 ${actionColor}`}>
+            {actionLabel}
           </div>
         </div>
       );
@@ -190,20 +185,20 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
     case "pot-updated": {
       const total = event.pots.reduce((s, p) => s + p.amount, 0);
       return (
-        <div className="text-xs text-gray-500 text-right">
-          💰 Pot: {total}
+        <div className="text-[12px] text-text-tertiary text-right px-1">
+          底池 {total}
         </div>
       );
     }
 
     case "showdown":
       return (
-        <div className="border-t border-yellow-900/50 pt-2 mt-2">
-          <div className="text-yellow-400 text-sm text-center mb-1">🏆 SHOWDOWN</div>
+        <div className="border-t border-separator pt-3 mt-3 mx-1">
+          <div className="text-warning text-[13px] text-center mb-2 font-medium">SHOWDOWN</div>
           {event.results.map((r) => (
-            <div key={r.playerId} className="text-sm">
+            <div key={r.playerId} className="text-[13px]">
               <AgentTag id={r.playerId} lookup={lookup} /> <CardsInline cards={r.holeCards} />{" "}
-              <span className="text-gray-400">→ {r.handName}</span>
+              <span className="text-text-secondary">· {r.handName}</span>
             </div>
           ))}
         </div>
@@ -211,62 +206,49 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
 
     case "player-eliminated":
       return (
-        <div className="text-center my-3 text-sm">
-          <span className="text-gray-500">────</span>
-          <span className="text-red-400 mx-2">
-            💀 <AgentTag id={event.playerId} lookup={lookup} /> 第{event.finishPosition}名淘汰 · Hand #{event.handNumber}
+        <div className="text-center my-4">
+          <span className="text-danger text-[13px] bg-danger/10 px-4 py-1.5 rounded-full">
+            <AgentTag id={event.playerId} lookup={lookup} /> 第{event.finishPosition}名淘汰
           </span>
-          <span className="text-gray-500">────</span>
         </div>
       );
 
     case "blind-level-up":
       return (
-        <div className="text-center my-3 text-sm">
-          <span className="text-gray-500">────</span>
-          <span className="text-yellow-300 mx-2">
-            ⬆️ 盲注升级 Level {event.level}: {event.smallBlind}/{event.bigBlind}
+        <div className="text-center my-4">
+          <span className="text-warning text-[13px] bg-warning/10 px-4 py-1.5 rounded-full font-medium">
+            盲注升级 {event.smallBlind}/{event.bigBlind}
           </span>
-          <span className="text-gray-500">────</span>
         </div>
       );
 
     case "tournament-complete":
       return (
-        <div className="border border-yellow-500/50 rounded my-4 p-3 bg-yellow-900/10">
-          <div className="text-yellow-400 text-center text-sm mb-2">
-            ╔═══════════════════════════════════╗
+        <div className="bg-white rounded-2xl my-4 mx-1 p-5 shadow-sm">
+          <div className="text-center mb-4">
+            <div className="text-[20px] font-semibold text-text-primary">锦标赛结束</div>
           </div>
-          <div className="text-yellow-300 text-center text-sm font-bold mb-2">
-            🏆 SNG 锦标赛结束
-          </div>
-          <div className="space-y-1">
+          <div className="space-y-2">
             {event.rankings.map((r) => {
-              const medal = r.position === 1 ? "🥇" : r.position === 2 ? "🥈" : r.position === 3 ? "🥉" : "  ";
-              const suffix = r.position === 1 ? "st" : r.position === 2 ? "nd" : r.position === 3 ? "rd" : "th";
+              const medal = r.position === 1 ? "🥇" : r.position === 2 ? "🥈" : r.position === 3 ? "🥉" : "";
               return (
-                <div key={r.playerId} className="text-sm text-center">
-                  <span className="text-gray-400">{medal} {r.position}{suffix} </span>
+                <div key={r.playerId} className="text-[14px] text-center">
+                  <span className="text-text-secondary">{medal || `#${r.position}`} </span>
                   <AgentTag id={r.playerId} lookup={lookup} />
                 </div>
               );
             })}
           </div>
-          <div className="text-yellow-400 text-center text-sm mt-2">
-            ╚═══════════════════════════════════╝
-          </div>
-          <div className="text-xs text-gray-500 text-center mt-1">
-            共 {event.rankings[0]?.handsPlayed ?? 0} 手牌
+          <div className="text-[13px] text-text-tertiary text-center mt-4">
+            共 {event.rankings[0]?.handsPlayed ?? 0} 手
           </div>
         </div>
       );
 
     case "hand-highlight":
       return (
-        <div className="text-center my-2 text-sm">
-          <span className="text-gray-500">──</span>
-          <span className="text-fuchsia-400 mx-2">⭐精彩时刻⭐</span>
-          <span className="text-gray-500">──</span>
+        <div className="text-center my-2">
+          <span className="text-[12px] text-text-tertiary">— 精彩时刻 —</span>
         </div>
       );
 
@@ -280,17 +262,17 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
         .sort((a, b) => b.net - a.net);
 
       return (
-        <div className="border-t border-green-900/50 pt-2 mt-2 mb-4">
+        <div className="border-t border-separator pt-2 mt-2 mb-4 mx-1">
           {netChanges.map(({ id, net }) => (
-            <div key={id} className={`text-sm ${net > 0 ? "text-green-400" : "text-red-400"}`}>
-              {net > 0 ? "🎉" : "💸"} <AgentTag id={id} lookup={lookup} /> {net > 0 ? `+${net}` : `${net}`}
+            <div key={id} className={`text-[13px] ${net > 0 ? "text-success" : "text-danger"}`}>
+              <AgentTag id={id} lookup={lookup} /> {net > 0 ? `+${net}` : `${net}`}
             </div>
           ))}
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-[12px] text-text-tertiary mt-1.5 flex gap-3">
             {event.players.map((p) => {
               const info = lookup.get(p.id);
               return (
-                <span key={p.id} className="mr-3">
+                <span key={p.id}>
                   {info?.avatar ?? "🤖"} {p.chips}
                 </span>
               );
@@ -337,7 +319,6 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     const filtered = events.filter(
       (e) => e.type !== "action-required" && e.type !== "agent-roster"
     );
-    // Reorder: move hand-highlight events to right after their matching hand's hand-complete
     const highlights = filtered.filter((e) => e.type === "hand-highlight");
     if (highlights.length === 0) return filtered;
 
@@ -360,14 +341,12 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
         }
       }
     }
-    // Append any unplaced highlights at the end
     for (const h of highlights) {
       if (!placed.has(h)) result.push(h);
     }
     return result;
   }, [events]);
 
-  // Build accumulated context per event for action-taken rendering
   const contexts = useMemo(() => {
     const result: AccumulatedContext[] = [];
     let chipsBeforeHand = new Map<string, number>();
@@ -409,10 +388,10 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
   }, [visibleEvents]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[13px] leading-relaxed overscroll-contain">
+    <div className="flex-1 overflow-y-auto px-3 py-3 text-[14px] leading-relaxed overscroll-contain bg-surface-elevated">
       {visibleEvents.length === 0 && (
-        <div className="text-gray-600 text-center mt-20">
-          Waiting for game to start...
+        <div className="text-text-tertiary text-center mt-20 text-[15px]">
+          等待比赛开始...
         </div>
       )}
       {visibleEvents.map((event, i) => (

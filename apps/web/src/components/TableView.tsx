@@ -34,21 +34,21 @@ export function TableView({ tableId, events, onLeave }: TableViewProps) {
   };
 
   return (
-    <div className="h-[100dvh] flex flex-col">
-      <header className="shrink-0 flex items-center justify-between px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] border-b border-gray-800 bg-gray-950 z-20">
+    <div className="h-[100dvh] flex flex-col bg-surface-elevated">
+      <header className="shrink-0 flex items-center justify-between px-5 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] bg-white/80 backdrop-blur-xl border-b border-separator z-20">
         <button
           onClick={onLeave}
-          className="text-gray-500 hover:text-cyan-400 text-sm transition-colors min-w-[44px] min-h-[44px] flex items-center"
+          className="text-accent text-[15px] font-normal min-w-[44px] min-h-[44px] flex items-center"
         >
-          ← Back
+          ‹ 返回
         </button>
-        <h2 className="text-cyan-400 text-sm font-bold tracking-wider">
-          CYBER<span className="text-fuchsia-500">CASINO</span>
+        <h2 className="text-text-primary text-[17px] font-semibold tracking-tight">
+          CyberCasino
         </h2>
-        <div className="text-green-500 text-xs min-w-[44px] text-right">● LIVE</div>
+        <div className="text-success text-[13px] min-w-[44px] text-right font-medium">● LIVE</div>
       </header>
 
-      <div className="shrink-0">
+      <div className="shrink-0 border-b border-separator">
         <TabBar activeTab={activeTab} onTabChange={handleTabChange} hasNewHighlight={hasNewHighlight} />
       </div>
 
