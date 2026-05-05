@@ -81,6 +81,13 @@ function getHandName(holeCards: Card[], communityCards: Card[]): string | null {
   return result.name;
 }
 
+interface BlindInfo {
+  smallBlindPlayerId: string;
+  bigBlindPlayerId: string;
+  smallBlind: number;
+  bigBlind: number;
+}
+
 interface EventContext {
   lookup: Map<string, AgentLookup>;
   chipsBeforeHand: Map<string, number>;
@@ -88,6 +95,7 @@ interface EventContext {
   communityCards: Card[];
   currentChips: Map<string, number>;
   potTotal?: number;
+  blindInfo?: BlindInfo;
 }
 
 function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
@@ -109,24 +117,29 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
       );
 
     case "blinds-posted":
-      return (
-        <div className="space-y-0.5 text-[13px] text-text-secondary mt-2 px-1">
-          <div><AgentTag id={event.smallBlindPlayerId} lookup={lookup} /> <span className="text-text-tertiary">SB {event.smallBlind}</span></div>
-          <div><AgentTag id={event.bigBlindPlayerId} lookup={lookup} /> <span className="text-text-tertiary">BB {event.bigBlind}</span></div>
-        </div>
-      );
+      return null;
 
-    case "cards-dealt":
+    case "cards-dealt": {
+      const blind = ctx.blindInfo;
       return (
-        <div className="bg-white rounded-xl p-3 my-2 mx-1 shadow-sm">
-          <div className="text-[11px] text-text-tertiary font-medium mb-1.5 uppercase tracking-wide">发牌</div>
-          {Object.entries(event.hands).map(([id, cards]) => (
-            <div key={id} className="text-[13px] leading-relaxed">
-              <AgentTag id={id} lookup={lookup} /> <CardsInline cards={cards} />
-            </div>
-          ))}
+        <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
+          <div className="text-[11px] text-text-tertiary font-medium mb-2 uppercase tracking-wide">发牌</div>
+          <div className="space-y-1">
+            {Object.entries(event.hands).map(([id, cards]) => {
+              const isSB = blind?.smallBlindPlayerId === id;
+              const isBB = blind?.bigBlindPlayerId === id;
+              return (
+                <div key={id} className="flex items-center text-[14px] leading-relaxed">
+                  <AgentTag id={id} lookup={lookup} /> <span className="ml-1.5"><CardsInline cards={cards} /></span>
+                  {isSB && <span className="ml-2 text-[12px] text-text-tertiary font-medium">SB {blind.smallBlind}</span>}
+                  {isBB && <span className="ml-2 text-[12px] text-text-tertiary font-medium">BB {blind.bigBlind}</span>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
+    }
 
     case "phase-change":
       return (
@@ -294,6 +307,7 @@ interface AccumulatedContext {
   holeCards: Map<string, Card[]>;
   communityCards: Card[];
   currentChips: Map<string, number>;
+  blindInfo?: BlindInfo;
 }
 
 export function ChatFeed({ events }: { events: GameEvent[] }) {
@@ -355,6 +369,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     let holeCards = new Map<string, Card[]>();
     let communityCards: Card[] = [];
     let currentChips = new Map<string, number>();
+    let blindInfo: BlindInfo | undefined;
 
     for (const event of visibleEvents) {
       if (event.type === "hand-start") {
@@ -362,6 +377,15 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
         currentChips = new Map(event.players.map((p) => [p.id, p.chips]));
         holeCards = new Map();
         communityCards = [];
+        blindInfo = undefined;
+      }
+      if (event.type === "blinds-posted") {
+        blindInfo = {
+          smallBlindPlayerId: event.smallBlindPlayerId,
+          bigBlindPlayerId: event.bigBlindPlayerId,
+          smallBlind: event.smallBlind,
+          bigBlind: event.bigBlind,
+        };
       }
       if (event.type === "cards-dealt") {
         for (const [id, cards] of Object.entries(event.hands)) {
@@ -384,7 +408,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           currentChips.set(p.id, p.chips);
         }
       }
-      result.push({ chipsBeforeHand, holeCards, communityCards, currentChips: new Map(currentChips) });
+      result.push({ chipsBeforeHand, holeCards, communityCards, currentChips: new Map(currentChips), blindInfo });
     }
     return result;
   }, [visibleEvents]);
@@ -423,6 +447,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
             communityCards: contexts[index].communityCards,
             currentChips: contexts[index].currentChips,
             potTotal,
+            blindInfo: contexts[index].blindInfo,
           }}
         />
       ))}
