@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useMemo } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
+import { evaluateHand } from "@cybercasino/engine";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -70,10 +71,27 @@ function CardsInline({ cards }: { cards: Card[] }) {
 
 function AgentTag({ id, lookup }: { id: string; lookup: Map<string, AgentLookup> }) {
   const info = lookup.get(id) ?? { name: id, avatar: "🤖", color: "text-gray-400" };
-  return <span className={`${info.color} font-bold`}>[{info.avatar} {info.name}]</span>;
+  return <span className={`${info.color} font-bold`}>{info.avatar} {info.name}</span>;
 }
 
-function EventLine({ event, lookup, chipsBeforeHand }: { event: GameEvent; lookup: Map<string, AgentLookup>; chipsBeforeHand: Map<string, number> }) {
+function getHandName(holeCards: Card[], communityCards: Card[]): string | null {
+  const allCards = [...holeCards, ...communityCards];
+  if (allCards.length < 5) return null;
+  const result = evaluateHand(allCards);
+  return result.name;
+}
+
+interface EventContext {
+  lookup: Map<string, AgentLookup>;
+  chipsBeforeHand: Map<string, number>;
+  holeCards: Map<string, Card[]>;
+  communityCards: Card[];
+  currentChips: Map<string, number>;
+}
+
+function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
+  const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips } = ctx;
+
   switch (event.type) {
     case "agent-roster":
       return null;
@@ -96,8 +114,8 @@ function EventLine({ event, lookup, chipsBeforeHand }: { event: GameEvent; looku
     case "blinds-posted":
       return (
         <div className="space-y-0.5 text-sm">
-          <div><AgentTag id={event.smallBlindPlayerId} lookup={lookup} /> <span className="text-green-600">🟢 Small Blind {event.smallBlind}</span></div>
-          <div><AgentTag id={event.bigBlindPlayerId} lookup={lookup} /> <span className="text-yellow-600">🟡 Big Blind {event.bigBlind}</span></div>
+          <div><AgentTag id={event.smallBlindPlayerId} lookup={lookup} /> <span className="text-green-600">🟢 SB {event.smallBlind}</span></div>
+          <div><AgentTag id={event.bigBlindPlayerId} lookup={lookup} /> <span className="text-yellow-600">🟡 BB {event.bigBlind}</span></div>
         </div>
       );
 
@@ -137,24 +155,33 @@ function EventLine({ event, lookup, chipsBeforeHand }: { event: GameEvent; looku
         ? `Raise ${action.amount}`
         : action.type.charAt(0).toUpperCase() + action.type.slice(1);
 
+      const chips = currentChips.get(event.playerId) ?? 0;
+      const myCards = holeCards.get(event.playerId);
+      const handName = myCards ? getHandName(myCards, communityCards) : null;
+
       return (
-        <div className="space-y-0.5 my-1">
+        <div className="my-1.5 border-l-2 border-gray-800 pl-2">
+          <div className="text-sm">
+            <AgentTag id={event.playerId} lookup={lookup} />
+            <span className="text-gray-500 ml-1.5">💰{chips}</span>
+            {myCards && <span className="ml-1.5"><CardsInline cards={myCards} /></span>}
+            {handName && <span className="text-gray-400 ml-1">→ {handName}</span>}
+          </div>
           {thought.message && thought.message !== "..." && (
-            <div className="text-sm opacity-70">
-              <AgentTag id={event.playerId} lookup={lookup} />{" "}
-              <span className="text-gray-400">💭 &quot;{thought.message}&quot;</span>
+            <div className="text-xs text-gray-400 mt-0.5">
+              💭 &quot;{thought.message}&quot;
               {thought.isBluffing && (
-                <span className="text-red-500 text-xs ml-1">| 诈唬: YES</span>
+                <span className="text-red-500 ml-1">| 诈唬</span>
               )}
               {thought.confidence > 0 && (
-                <span className="text-gray-500 text-xs ml-1">
-                  | 信心: {Math.round(thought.confidence * 100)}%
+                <span className="text-gray-500 ml-1">
+                  | {Math.round(thought.confidence * 100)}%
                 </span>
               )}
             </div>
           )}
-          <div className="text-sm">
-            <AgentTag id={event.playerId} lookup={lookup} /> <span className="text-white">{actionEmoji} {actionText}</span>
+          <div className="text-sm mt-0.5">
+            <span className="text-white">{actionEmoji} {actionText}</span>
           </div>
         </div>
       );
@@ -280,6 +307,13 @@ function EventLine({ event, lookup, chipsBeforeHand }: { event: GameEvent; looku
   }
 }
 
+interface AccumulatedContext {
+  chipsBeforeHand: Map<string, number>;
+  holeCards: Map<string, Card[]>;
+  communityCards: Card[];
+  currentChips: Map<string, number>;
+}
+
 export function ChatFeed({ events }: { events: GameEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
@@ -305,17 +339,45 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     (e) => e.type !== "action-required" && e.type !== "agent-roster"
   );
 
-  // Build per-event chip snapshots: for each event, track the chips at hand-start
-  const chipsSnapshots = useMemo(() => {
-    const snapshots: Map<string, number>[] = [];
-    let current = new Map<string, number>();
+  // Build accumulated context per event for action-taken rendering
+  const contexts = useMemo(() => {
+    const result: AccumulatedContext[] = [];
+    let chipsBeforeHand = new Map<string, number>();
+    let holeCards = new Map<string, Card[]>();
+    let communityCards: Card[] = [];
+    let currentChips = new Map<string, number>();
+
     for (const event of visibleEvents) {
       if (event.type === "hand-start") {
-        current = new Map(event.players.map((p) => [p.id, p.chips]));
+        chipsBeforeHand = new Map(event.players.map((p) => [p.id, p.chips]));
+        currentChips = new Map(event.players.map((p) => [p.id, p.chips]));
+        holeCards = new Map();
+        communityCards = [];
       }
-      snapshots.push(current);
+      if (event.type === "cards-dealt") {
+        for (const [id, cards] of Object.entries(event.hands)) {
+          holeCards.set(id, cards);
+        }
+      }
+      if (event.type === "phase-change") {
+        communityCards = event.communityCards;
+      }
+      if (event.type === "action-taken") {
+        const { action, playerId } = event;
+        if (action.type === "call" || action.type === "raise") {
+          const chips = currentChips.get(playerId) ?? 0;
+          const cost = action.amount ?? 0;
+          currentChips.set(playerId, Math.max(0, chips - cost));
+        }
+      }
+      if (event.type === "hand-complete") {
+        for (const p of event.players) {
+          currentChips.set(p.id, p.chips);
+        }
+      }
+      result.push({ chipsBeforeHand, holeCards, communityCards, currentChips: new Map(currentChips) });
     }
-    return snapshots;
+    return result;
   }, [visibleEvents]);
 
   return (
@@ -326,7 +388,17 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
         </div>
       )}
       {visibleEvents.map((event, i) => (
-        <EventLine key={i} event={event} lookup={lookup} chipsBeforeHand={chipsSnapshots[i]} />
+        <EventLine
+          key={i}
+          event={event}
+          ctx={{
+            lookup,
+            chipsBeforeHand: contexts[i].chipsBeforeHand,
+            holeCards: contexts[i].holeCards,
+            communityCards: contexts[i].communityCards,
+            currentChips: contexts[i].currentChips,
+          }}
+        />
       ))}
       <div ref={bottomRef} />
     </div>

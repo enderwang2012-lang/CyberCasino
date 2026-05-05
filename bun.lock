@@ -27,6 +27,7 @@
       "name": "@cybercasino/web",
       "version": "0.1.0",
       "dependencies": {
+        "@cybercasino/engine": "workspace:*",
         "@cybercasino/shared": "workspace:*",
         "next": "^15",
         "react": "^19",
