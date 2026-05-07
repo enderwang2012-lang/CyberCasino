@@ -1,19 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import type { TableSeat, AgentConfig } from "@cybercasino/shared";
+import type { TableSeat, AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import { SeatSelectPopup } from "./SeatSelectPopup";
 
 interface TableWaitingRoomProps {
   tableId: string;
   seats: TableSeat[];
   userId: string | null;
   agentConfig: AgentConfig | null;
-  isCreator: boolean;
-  onSit: (tableId: string) => void;
-  onLeaveSeat: (tableId: string) => void;
-  onFillAI: (tableId: string) => void;
-  onStart: (tableId: string) => void;
+  personalities: BuiltinPersonalityInfo[];
+  onSitSelf: () => void;
+  onSitBuiltin: (personalityId: string) => void;
+  onRemoveSeat: (seatIndex: number) => void;
+  onStart: () => void;
   onBack: () => void;
+  onAgentSetup: () => void;
   error: string | null;
 }
 
@@ -22,32 +24,58 @@ export function TableWaitingRoom({
   seats,
   userId,
   agentConfig,
-  isCreator,
-  onSit,
-  onLeaveSeat,
-  onFillAI,
+  personalities,
+  onSitSelf,
+  onSitBuiltin,
+  onRemoveSeat,
   onStart,
   onBack,
+  onAgentSetup,
   error,
 }: TableWaitingRoomProps) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const myAgent = seats.find((s) => s.agent?.userId === userId);
-  const isSeated = !!myAgent;
+  const [showSelectPopup, setShowSelectPopup] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<{ seatIndex: number; name: string } | null>(null);
+
   const occupied = seats.filter((s) => s.status === "occupied").length;
   const total = seats.length;
+  const isFull = occupied === total;
 
-  function handleStart() {
-    if (occupied < total) {
-      setShowConfirm(true);
-    } else {
-      onStart(tableId);
+  const seatedPersonalityIds = seats
+    .filter((s) => s.agent?.type === "builtin")
+    .map((s) => s.agent!.id);
+
+  const myAgentSeated = seats.some((s) => s.agent?.userId === userId);
+
+  function handleSeatClick(seat: TableSeat) {
+    if (seat.status === "empty") {
+      setShowSelectPopup(true);
+      return;
+    }
+
+    if (!seat.agent) return;
+
+    if (seat.agent.type === "builtin") {
+      setConfirmRemove({ seatIndex: seat.seatIndex, name: seat.agent.name });
+    } else if (seat.agent.userId === userId) {
+      setConfirmRemove({ seatIndex: seat.seatIndex, name: seat.agent.name });
     }
   }
 
-  function handleConfirmFillAndStart() {
-    setShowConfirm(false);
-    onFillAI(tableId);
-    setTimeout(() => onStart(tableId), 300);
+  function handleSelectSelf() {
+    setShowSelectPopup(false);
+    onSitSelf();
+  }
+
+  function handleSelectBuiltin(personalityId: string) {
+    setShowSelectPopup(false);
+    onSitBuiltin(personalityId);
+  }
+
+  function handleConfirmRemove() {
+    if (confirmRemove) {
+      onRemoveSeat(confirmRemove.seatIndex);
+      setConfirmRemove(null);
+    }
   }
 
   return (
@@ -61,12 +89,13 @@ export function TableWaitingRoom({
 
       <div className="grid grid-cols-3 gap-2.5 mb-8 w-full max-w-sm">
         {seats.map((seat) => (
-          <div
+          <button
             key={seat.seatIndex}
-            className={`rounded-2xl p-4 text-center ${
+            onClick={() => handleSeatClick(seat)}
+            className={`rounded-2xl p-4 text-center transition-colors ${
               seat.status === "occupied"
-                ? "bg-white shadow-sm"
-                : "bg-white/50"
+                ? "bg-white shadow-sm active:bg-white/70"
+                : "bg-white/50 active:bg-white/30 border-2 border-dashed border-separator"
             }`}
           >
             {seat.agent ? (
@@ -83,73 +112,66 @@ export function TableWaitingRoom({
               </>
             ) : (
               <>
-                <div className="text-[28px] mb-1.5 opacity-20">💺</div>
+                <div className="text-[28px] mb-1.5 opacity-20">+</div>
                 <div className="text-text-tertiary text-[13px]">空位</div>
               </>
             )}
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 w-full max-w-sm">
-        {!isSeated && agentConfig && (
-          <button
-            onClick={() => onSit(tableId)}
-            className="w-full bg-accent hover:bg-accent-hover text-white py-3 rounded-full font-medium text-[15px] transition-colors"
-          >
-            加入 ({agentConfig.avatar} {agentConfig.name})
-          </button>
-        )}
-
-        {!isSeated && !agentConfig && (
-          <p className="text-text-tertiary text-[15px] text-center">请先配置你的 Agent</p>
-        )}
-
-        {isSeated && (
-          <button
-            onClick={() => onLeaveSeat(tableId)}
-            className="w-full bg-surface-elevated hover:bg-surface-deep text-text-secondary py-3 rounded-full text-[15px] font-medium transition-colors"
-          >
-            离开座位
-          </button>
-        )}
-
-        {isCreator && (
-          <button
-            onClick={handleStart}
-            disabled={occupied < 1}
-            className="w-full bg-success hover:bg-success/90 disabled:bg-surface-elevated disabled:text-text-tertiary text-white py-3 rounded-full font-medium text-[15px] transition-colors"
-          >
-            开始游戏
-          </button>
-        )}
+      <div className="w-full max-w-sm">
+        <button
+          onClick={onStart}
+          disabled={!isFull}
+          className={`w-full py-3 rounded-full font-medium text-[15px] transition-colors ${
+            isFull
+              ? "bg-accent hover:bg-accent-hover text-white"
+              : "bg-surface-deep text-text-tertiary cursor-not-allowed"
+          }`}
+        >
+          开始牌局
+        </button>
 
         {error && (
-          <p className="text-danger text-[13px] text-center">{error}</p>
+          <p className="text-danger text-[13px] text-center mt-3">{error}</p>
         )}
       </div>
 
-      {showConfirm && (
+      {showSelectPopup && (
+        <SeatSelectPopup
+          agentConfig={agentConfig}
+          myAgentSeated={myAgentSeated}
+          personalities={personalities}
+          seatedPersonalityIds={seatedPersonalityIds}
+          onSelectSelf={handleSelectSelf}
+          onSelectBuiltin={handleSelectBuiltin}
+          onAgentSetup={() => { setShowSelectPopup(false); onAgentSetup(); }}
+          onClose={() => setShowSelectPopup(false)}
+        />
+      )}
+
+      {confirmRemove && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-5">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-lg">
             <p className="text-text-primary text-[17px] font-semibold mb-2">
-              还有 {total - occupied} 个空位
+              确认移除
             </p>
             <p className="text-text-secondary text-[15px] mb-6">
-              空位将由内置 AI 对手补齐，补位后立即开始对局
+              将 {confirmRemove.name} 从座位上移除？
             </p>
             <div className="flex flex-col gap-2">
               <button
-                onClick={handleConfirmFillAndStart}
-                className="w-full bg-accent hover:bg-accent-hover text-white py-3 rounded-full font-medium text-[15px] transition-colors"
+                onClick={handleConfirmRemove}
+                className="w-full bg-danger hover:bg-danger/90 text-white py-3 rounded-full font-medium text-[15px] transition-colors"
               >
-                补齐并开始
+                移除
               </button>
               <button
-                onClick={() => setShowConfirm(false)}
+                onClick={() => setConfirmRemove(null)}
                 className="w-full bg-surface-elevated hover:bg-surface-deep text-text-secondary py-3 rounded-full text-[15px] font-medium transition-colors"
               >
-                再等等
+                取消
               </button>
             </div>
           </div>

@@ -89,6 +89,48 @@ export class TableInstance {
     return true;
   }
 
+  sitBuiltin(personalityId: string): boolean {
+    if (this.running) return false;
+    if (this.seats.some((s) => s.agent?.id === personalityId)) return false;
+
+    const empty = this.seats.find((s) => s.status === "empty");
+    if (!empty) return false;
+
+    const p = PERSONALITIES.find((p) => p.id === personalityId);
+    if (!p) return false;
+
+    empty.status = "occupied";
+    empty.agent = {
+      id: p.id,
+      name: p.name,
+      avatar: p.avatar,
+      type: "builtin",
+    };
+    return true;
+  }
+
+  removeSeat(seatIndex: number): SeatAgent | null {
+    if (this.running) return null;
+    const seat = this.seats[seatIndex];
+    if (!seat || seat.status === "empty") return null;
+    const agent = seat.agent ?? null;
+    seat.status = "empty";
+    seat.agent = undefined;
+    return agent;
+  }
+
+  clearAllSeats(): void {
+    if (this.running) return;
+    for (const seat of this.seats) {
+      seat.status = "empty";
+      seat.agent = undefined;
+    }
+  }
+
+  isFull(): boolean {
+    return this.seats.every((s) => s.status === "occupied");
+  }
+
   leaveSeat(userId: string): boolean {
     if (this.running) return false;
     const seat = this.seats.find((s) => s.agent?.userId === userId);
@@ -187,8 +229,8 @@ export class TableInstance {
         (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
       );
       if (activePlayers.length < 2) {
-        this.emitTournamentComplete();
         this.running = false;
+        this.emitTournamentComplete();
         break;
       }
 
@@ -215,8 +257,8 @@ export class TableInstance {
         console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
         if (consecutiveErrors >= 5) {
           console.error(`[table:${this.id}] too many consecutive errors, stopping tournament`);
-          this.emitTournamentComplete();
           this.running = false;
+          this.emitTournamentComplete();
           break;
         }
         await new Promise((r) => setTimeout(r, 2000));
@@ -228,8 +270,8 @@ export class TableInstance {
         (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
       );
       if (remaining.length < 2) {
-        this.emitTournamentComplete();
         this.running = false;
+        this.emitTournamentComplete();
         break;
       }
 

@@ -1,9 +1,10 @@
 import { createServer } from "http";
 import { Server } from "socket.io";
-import type { ServerToClientEvents, ClientToServerEvents } from "@cybercasino/shared";
+import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
+import { PERSONALITIES } from "./agents/personalities";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
 
@@ -24,8 +25,15 @@ const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
 
-const socketUserMap = new Map<string, string>(); // socketId → userId
-const userSocketMap = new Map<string, string>(); // userId → socketId (for takeover)
+const socketUserMap = new Map<string, string>();
+const userSocketMap = new Map<string, string>();
+
+const personalitiesInfo: BuiltinPersonalityInfo[] = PERSONALITIES.map((p) => ({
+  id: p.id,
+  name: p.name,
+  avatar: p.avatar,
+  style: p.style,
+}));
 
 function getClientIp(socket: { handshake: { headers: Record<string, string | string[] | undefined>; address: string } }): string {
   const forwarded = socket.handshake.headers["x-forwarded-for"];
@@ -37,7 +45,7 @@ function getClientIp(socket: { handshake: { headers: Record<string, string | str
 }
 
 function broadcastLobby() {
-  io.to("lobby").emit("lobby:tables", tableManager.listTables());
+  io.to("lobby").emit("lobby:tables", tableManager.getHomepageTables());
 }
 
 function broadcastSeats(tableId: string) {
@@ -56,15 +64,21 @@ function wireTableEvents(tableId: string) {
     if (event.type === "action-required") return;
     io.to(`table:${tableId}`).emit("game:event", event);
     if (event.type === "tournament-complete") {
+      tableManager.archiveFinishedTable(tableId);
+      const newTable = tableManager.ensurePresetTable();
+      wireTableEvents(newTable.id);
       broadcastLobby();
     }
   });
 }
 
+// Create initial preset table on startup
+const initialTable = tableManager.ensurePresetTable();
+wireTableEvents(initialTable.id);
+
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
 
-  // --- User identity (B: socket takeover — same userId kicks old socket) ---
   socket.on("user:register", (existingUserId) => {
     const identity = userStore.register(existingUserId ?? undefined);
     const uid = identity.userId;
@@ -81,6 +95,7 @@ io.on("connection", (socket) => {
     socketUserMap.set(socket.id, uid);
     userSocketMap.set(uid, socket.id);
     socket.emit("user:registered", identity);
+    socket.emit("lobby:personalities", personalitiesInfo);
   });
 
   // --- Agent config ---
@@ -109,34 +124,11 @@ io.on("connection", (socket) => {
   // --- Lobby ---
   socket.on("lobby:join", () => {
     socket.join("lobby");
-    socket.emit("lobby:tables", tableManager.listTables());
+    socket.emit("lobby:tables", tableManager.getHomepageTables());
+    socket.emit("lobby:personalities", personalitiesInfo);
   });
 
   // --- Table lifecycle ---
-  socket.on("table:create", (config) => {
-    const userId = socketUserMap.get(socket.id);
-
-    if (!userId) {
-      // Legacy auto-start mode (no user registered)
-      const table = tableManager.createTable(config, undefined, true);
-      wireTableEvents(table.id);
-      broadcastLobby();
-      table.start().catch((err) => {
-        console.error(`[table:${table.id}] error:`, err);
-      });
-      return;
-    }
-
-    if (tableManager.hasActiveTable()) {
-      socket.emit("table:error", "Already an active table");
-      return;
-    }
-
-    const table = tableManager.createTable(config, userId);
-    wireTableEvents(table.id);
-    broadcastLobby();
-  });
-
   socket.on("table:join", (tableId) => {
     const table = tableManager.getTable(tableId);
     if (!table) return;
@@ -149,6 +141,7 @@ io.on("connection", (socket) => {
 
   socket.on("table:leave", (tableId) => {
     socket.leave(`table:${tableId}`);
+    socket.emit("lobby:tables", tableManager.getHomepageTables());
   });
 
   socket.on("table:sit", (tableId) => {
@@ -161,7 +154,6 @@ io.on("connection", (socket) => {
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
 
-    // (A) Same IP can only occupy 1 seat per table
     const myIp = getClientIp(socket);
     const seats = table.getSeats();
     for (const seat of seats) {
@@ -187,38 +179,53 @@ io.on("connection", (socket) => {
     broadcastSeats(tableId);
   });
 
-  socket.on("table:leave-seat", (tableId) => {
-    const userId = socketUserMap.get(socket.id);
-    if (!userId) return;
-
+  socket.on("table:sit-builtin", (tableId, personalityId) => {
     const table = tableManager.getTable(tableId);
-    if (!table) return;
+    if (!table) { socket.emit("table:error", "Table not found"); return; }
 
-    table.leaveSeat(userId);
+    if (!table.sitBuiltin(personalityId)) {
+      socket.emit("table:error", "Cannot place AI (already seated or table full)");
+      return;
+    }
+
+    socket.join(`table:${tableId}`);
     broadcastSeats(tableId);
   });
 
-  socket.on("table:fillAI", (tableId) => {
+  socket.on("table:remove-seat", (tableId, seatIndex) => {
     const userId = socketUserMap.get(socket.id);
     const table = tableManager.getTable(tableId);
-    if (!table || table.creatorUserId !== userId) {
-      socket.emit("table:error", "Only the creator can fill AI");
-      return;
+    if (!table) { socket.emit("table:error", "Table not found"); return; }
+
+    const seats = table.getSeats();
+    const seat = seats[seatIndex];
+    if (!seat || seat.status === "empty") return;
+
+    if (seat.agent?.type === "builtin") {
+      table.removeSeat(seatIndex);
+      broadcastSeats(tableId);
+    } else if (seat.agent?.userId === userId) {
+      table.removeSeat(seatIndex);
+      broadcastSeats(tableId);
+    } else {
+      socket.emit("table:error", "只能移除自己的 AI");
     }
-    table.fillWithAI();
+  });
+
+  socket.on("table:clear-seats", (tableId) => {
+    const table = tableManager.getTable(tableId);
+    if (!table) return;
+    if (table.getStatus() !== "waiting") return;
+    table.clearAllSeats();
     broadcastSeats(tableId);
   });
 
   socket.on("table:start", (tableId) => {
-    const userId = socketUserMap.get(socket.id);
     const table = tableManager.getTable(tableId);
-    if (!table || table.creatorUserId !== userId) {
-      socket.emit("table:error", "Only the creator can start");
-      return;
-    }
+    if (!table) { socket.emit("table:error", "Table not found"); return; }
 
-    if (table.getOccupiedCount() < 2) {
-      socket.emit("table:error", "Need at least 2 players");
+    if (!table.isFull()) {
+      socket.emit("table:error", "需要6位玩家才能开始");
       return;
     }
 
@@ -231,21 +238,13 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("table:stop", (tableId: string) => {
-    const uid = socketUserMap.get(socket.id);
-    if (!uid) return;
-    const table = tableManager.getTable(tableId);
-    if (!table) return;
-    if (table.creatorUserId !== uid) return;
-    tableManager.removeTable(tableId);
-    io.to(`table:${tableId}`).emit("table:stopped", tableId);
-    broadcastLobby();
+  socket.on("table:history", () => {
+    socket.emit("table:history", tableManager.getHistoryTables());
   });
 
   socket.on("disconnect", () => {
     const uid = socketUserMap.get(socket.id);
     socketUserMap.delete(socket.id);
-    // Only remove from userSocketMap if this socket is still the active one for that user
     if (uid && userSocketMap.get(uid) === socket.id) {
       userSocketMap.delete(uid);
     }

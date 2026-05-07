@@ -11,6 +11,7 @@ import type {
   UserIdentity,
   TableSeat,
   WebhookPingResult,
+  BuiltinPersonalityInfo,
 } from "@cybercasino/shared";
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -27,6 +28,8 @@ export function useSocket() {
   const [webhookPingResult, setWebhookPingResult] = useState<WebhookPingResult | null>(null);
   const [tableStarted, setTableStarted] = useState<string | null>(null);
   const [seatUpdates, setSeatUpdates] = useState<{ tableId: string; seats: TableSeat[] } | null>(null);
+  const [personalities, setPersonalities] = useState<BuiltinPersonalityInfo[]>([]);
+  const [historyTables, setHistoryTables] = useState<TableInfo[]>([]);
 
   useEffect(() => {
     const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL);
@@ -41,6 +44,7 @@ export function useSocket() {
 
     socket.on("disconnect", () => setConnected(false));
     socket.on("lobby:tables", (t) => setTables(t));
+    socket.on("lobby:personalities", (list) => setPersonalities(list));
     socket.on("game:event", (event) => {
       setEvents((prev) => [...prev, event]);
     });
@@ -58,6 +62,7 @@ export function useSocket() {
     socket.on("table:started", (tableId) => setTableStarted(tableId));
     socket.on("table:stopped", () => setTableStarted(null));
     socket.on("table:seats", (data) => setSeatUpdates(data));
+    socket.on("table:history", (tables) => setHistoryTables(tables));
 
     return () => {
       socket.disconnect();
@@ -71,11 +76,6 @@ export function useSocket() {
 
   const leaveTable = useCallback((tableId: string) => {
     socketRef.current?.emit("table:leave", tableId);
-  }, []);
-
-  const createTable = useCallback((config: Parameters<ClientToServerEvents["table:create"]>[0]) => {
-    setTableError(null);
-    socketRef.current?.emit("table:create", config);
   }, []);
 
   const saveAgent = useCallback((config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => {
@@ -92,12 +92,18 @@ export function useSocket() {
     socketRef.current?.emit("table:sit", tableId);
   }, []);
 
-  const leaveSeat = useCallback((tableId: string) => {
-    socketRef.current?.emit("table:leave-seat", tableId);
+  const sitBuiltin = useCallback((tableId: string, personalityId: string) => {
+    setTableError(null);
+    socketRef.current?.emit("table:sit-builtin", tableId, personalityId);
   }, []);
 
-  const fillAI = useCallback((tableId: string) => {
-    socketRef.current?.emit("table:fillAI", tableId);
+  const removeSeat = useCallback((tableId: string, seatIndex: number) => {
+    setTableError(null);
+    socketRef.current?.emit("table:remove-seat", tableId, seatIndex);
+  }, []);
+
+  const clearSeats = useCallback((tableId: string) => {
+    socketRef.current?.emit("table:clear-seats", tableId);
   }, []);
 
   const startGame = useCallback((tableId: string) => {
@@ -105,8 +111,12 @@ export function useSocket() {
     socketRef.current?.emit("table:start", tableId);
   }, []);
 
-  const stopGame = useCallback((tableId: string) => {
-    socketRef.current?.emit("table:stop", tableId);
+  const getHistory = useCallback(() => {
+    socketRef.current?.emit("table:history");
+  }, []);
+
+  const refreshLobby = useCallback(() => {
+    socketRef.current?.emit("lobby:join");
   }, []);
 
   const clearTableError = useCallback(() => setTableError(null), []);
@@ -121,16 +131,19 @@ export function useSocket() {
     webhookPingResult,
     tableStarted,
     seatUpdates,
+    personalities,
+    historyTables,
     joinTable,
     leaveTable,
-    createTable,
     saveAgent,
     testWebhook,
     sitAtTable,
-    leaveSeat,
-    fillAI,
+    sitBuiltin,
+    removeSeat,
+    clearSeats,
     startGame,
-    stopGame,
+    getHistory,
+    refreshLobby,
     clearTableError,
   };
 }

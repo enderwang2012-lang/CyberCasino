@@ -6,22 +6,25 @@ import { Lobby } from "@/components/Lobby";
 import { TableView } from "@/components/TableView";
 import { AgentSetup } from "@/components/AgentSetup";
 import { TableWaitingRoom } from "@/components/TableWaitingRoom";
+import { HistoryPage } from "@/components/HistoryPage";
 
-type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live";
+type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
 
 export default function Home() {
   const {
     connected, tables, events, userId, agentConfig,
     tableError, webhookPingResult, tableStarted, seatUpdates,
-    joinTable, leaveTable, createTable, saveAgent, testWebhook,
-    sitAtTable, leaveSeat, fillAI, startGame, clearTableError,
+    personalities, historyTables,
+    joinTable, leaveTable, saveAgent, testWebhook,
+    sitAtTable, sitBuiltin, removeSeat, clearSeats,
+    startGame, getHistory, refreshLobby, clearTableError,
   } = useSocket();
 
   const [view, setView] = useState<ViewState>("lobby");
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState<ViewState>("lobby");
 
   const activeTable = tables.find((t) => t.id === activeTableId);
-  const hasActiveTable = tables.some((t) => t.status === "waiting" || t.status === "playing");
 
   useEffect(() => {
     if (tableStarted && tableStarted === activeTableId) {
@@ -35,6 +38,12 @@ export default function Home() {
       activeTable.seats = seatUpdates.seats;
     }
   }, [seatUpdates, activeTableId, activeTable]);
+
+  useEffect(() => {
+    if (view === "lobby") {
+      refreshLobby();
+    }
+  }, [view, refreshLobby]);
 
   function handleJoinTable(tableId: string) {
     const table = tables.find((t) => t.id === tableId);
@@ -60,14 +69,18 @@ export default function Home() {
     clearTableError();
   }
 
-  function handleCreate() {
-    createTable({
-      name: `Table ${tables.length + 1}`,
-      smallBlind: 50,
-      bigBlind: 100,
-      startingChips: 5000,
-      maxPlayers: 6,
-    });
+  function handleAgentSetup(from: ViewState = "lobby") {
+    setReturnTo(from);
+    setView("agent-setup");
+  }
+
+  function handleAgentSetupBack() {
+    setView(returnTo);
+  }
+
+  function handleHistory() {
+    getHistory();
+    setView("history");
   }
 
   if (view === "agent-setup") {
@@ -77,9 +90,19 @@ export default function Home() {
         webhookPingResult={webhookPingResult}
         onSave={(config) => {
           saveAgent(config);
-          setView("lobby");
+          setView(returnTo);
         }}
         onTestWebhook={testWebhook}
+        onBack={handleAgentSetupBack}
+      />
+    );
+  }
+
+  if (view === "history") {
+    return (
+      <HistoryPage
+        tables={historyTables}
+        onJoin={handleJoinTable}
         onBack={() => setView("lobby")}
       />
     );
@@ -92,23 +115,29 @@ export default function Home() {
         seats={activeTable.seats}
         userId={userId}
         agentConfig={agentConfig}
-        isCreator={activeTable.creatorUserId === userId}
-        onSit={sitAtTable}
-        onLeaveSeat={leaveSeat}
-        onFillAI={fillAI}
-        onStart={startGame}
+        personalities={personalities}
+        onSitSelf={() => sitAtTable(activeTableId)}
+        onSitBuiltin={(personalityId) => sitBuiltin(activeTableId, personalityId)}
+        onRemoveSeat={(seatIndex) => removeSeat(activeTableId, seatIndex)}
+        onStart={() => startGame(activeTableId)}
         onBack={handleLeave}
+        onAgentSetup={() => handleAgentSetup("table-waiting")}
         error={tableError}
       />
     );
   }
 
   if (view === "table-live" && activeTableId) {
+    const viewingTable = tables.find((t) => t.id === activeTableId);
+    const isFinished = viewingTable?.status === "finished";
     return (
       <TableView
         tableId={activeTableId}
+        tableName={viewingTable?.name}
         events={events}
         onLeave={handleLeave}
+        defaultTab={isFinished ? "leaderboard" : "live"}
+        isFinished={isFinished}
       />
     );
   }
@@ -117,11 +146,11 @@ export default function Home() {
     <Lobby
       tables={tables}
       onJoin={handleJoinTable}
-      onCreate={handleCreate}
-      onAgentSetup={() => setView("agent-setup")}
+      onAgentSetup={() => handleAgentSetup("lobby")}
+      onHistory={handleHistory}
+      onClearSeats={clearSeats}
       connected={connected}
       agentConfig={agentConfig}
-      hasActiveTable={hasActiveTable}
     />
   );
 }

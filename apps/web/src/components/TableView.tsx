@@ -9,12 +9,15 @@ import { Leaderboard } from "./Leaderboard";
 
 interface TableViewProps {
   tableId: string;
+  tableName?: string;
   events: GameEvent[];
   onLeave: () => void;
+  defaultTab?: TabId;
+  isFinished?: boolean;
 }
 
-export function TableView({ tableId, events, onLeave }: TableViewProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("live");
+export function TableView({ tableId, tableName, events, onLeave, defaultTab = "live", isFinished = false }: TableViewProps) {
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [hasNewHighlight, setHasNewHighlight] = useState(false);
   const lastHighlightCount = useRef(0);
 
@@ -43,9 +46,13 @@ export function TableView({ tableId, events, onLeave }: TableViewProps) {
           ‹ 返回
         </button>
         <h2 className="text-text-primary text-[17px] font-semibold tracking-tight">
-          CyberCasino
+          {tableName || "CyberCasino"}
         </h2>
-        <div className="text-success text-[13px] min-w-[44px] text-right font-medium">● LIVE</div>
+        {isFinished ? (
+          <div className="text-text-tertiary text-[13px] min-w-[44px] text-right font-medium">已结束</div>
+        ) : (
+          <div className="text-success text-[13px] min-w-[44px] text-right font-medium">● LIVE</div>
+        )}
       </header>
 
       <div className="shrink-0 border-b border-separator">

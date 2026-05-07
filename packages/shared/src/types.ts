@@ -211,6 +211,7 @@ export interface ServerToClientEvents {
   "game:event": (event: GameEvent) => void;
   "game:state": (state: GameState) => void;
   "lobby:tables": (tables: TableInfo[]) => void;
+  "lobby:personalities": (list: BuiltinPersonalityInfo[]) => void;
   "user:registered": (identity: UserIdentity) => void;
   "agent:saved": (config: AgentConfig) => void;
   "agent:config": (config: AgentConfig | null) => void;
@@ -219,22 +220,23 @@ export interface ServerToClientEvents {
   "table:started": (tableId: string) => void;
   "table:stopped": (tableId: string) => void;
   "table:error": (error: string) => void;
+  "table:history": (tables: TableInfo[]) => void;
 }
 
 export interface ClientToServerEvents {
   "lobby:join": () => void;
   "table:join": (tableId: string) => void;
   "table:leave": (tableId: string) => void;
-  "table:create": (config: TableConfig) => void;
   "user:register": (existingUserId?: string) => void;
   "agent:save": (config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => void;
   "agent:get": () => void;
   "agent:testWebhook": (url: string) => void;
   "table:sit": (tableId: string) => void;
-  "table:leave-seat": (tableId: string) => void;
-  "table:fillAI": (tableId: string) => void;
+  "table:sit-builtin": (tableId: string, personalityId: string) => void;
+  "table:remove-seat": (tableId: string, seatIndex: number) => void;
+  "table:clear-seats": (tableId: string) => void;
   "table:start": (tableId: string) => void;
-  "table:stop": (tableId: string) => void;
+  "table:history": () => void;
 }
 
 export interface BlindLevel {
@@ -264,7 +266,7 @@ export interface TableInfo {
   handNumber: number;
   status: "waiting" | "playing" | "finished";
   seats: TableSeat[];
-  creatorUserId?: string;
+  finishedAt?: number;
 }
 
 // Agent personality config
@@ -278,4 +280,11 @@ export interface AgentPersonality {
   bluffFrequency: number;  // 0 to 1
   claudeThreshold: number; // 0 to 1 — how uncertain before calling Claude
   systemPrompt: string;
+}
+
+export interface BuiltinPersonalityInfo {
+  id: string;
+  name: string;
+  avatar: string;
+  style: string;
 }

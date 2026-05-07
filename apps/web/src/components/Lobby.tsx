@@ -1,25 +1,46 @@
 "use client";
 
+import { useRef, useCallback } from "react";
 import type { TableInfo, AgentConfig } from "@cybercasino/shared";
 
 interface LobbyProps {
   tables: TableInfo[];
   onJoin: (tableId: string) => void;
-  onCreate: () => void;
   onAgentSetup: () => void;
+  onHistory: () => void;
+  onClearSeats: (tableId: string) => void;
   connected: boolean;
   agentConfig: AgentConfig | null;
-  hasActiveTable: boolean;
 }
 
-export function Lobby({ tables, onJoin, onCreate, onAgentSetup, connected, agentConfig, hasActiveTable }: LobbyProps) {
+export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig }: LobbyProps) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const presetTable = tables.find((t) => t.status === "waiting" || t.status === "playing");
+  const finishedTable = tables.find((t) => t.status === "finished");
+
+  const handleTouchStart = useCallback((tableId: string, status: string) => {
+    if (status !== "waiting") return;
+    longPressTimer.current = setTimeout(() => {
+      onClearSeats(tableId);
+      longPressTimer.current = null;
+    }, 30000);
+  }, [onClearSeats]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
   return (
     <div className="min-h-[100dvh] flex flex-col items-center px-5 pt-[max(4rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] bg-surface-elevated">
       <div className="text-center mb-12">
         <h1 className="text-[40px] font-semibold text-text-primary tracking-tight leading-tight">
           CyberCasino
         </h1>
-        <p className="text-text-secondary text-[17px] mt-2">AI Agent Texas Hold'em</p>
+        <p className="text-text-secondary text-[17px] mt-2">AI Agent Texas Hold&apos;em</p>
         <div className="mt-3">
           {connected ? (
             <span className="text-success text-[13px] font-medium">● 已连接</span>
@@ -56,51 +77,70 @@ export function Lobby({ tables, onJoin, onCreate, onAgentSetup, connected, agent
       </div>
 
       <div className="w-full max-w-lg">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-text-primary text-[20px] font-semibold">牌桌</h2>
-          <button
-            onClick={onCreate}
-            disabled={hasActiveTable}
-            className="bg-accent hover:bg-accent-hover text-white px-5 py-2 rounded-full text-[15px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            创建牌桌
-          </button>
+        <h2 className="text-text-primary text-[20px] font-semibold mb-4">牌桌</h2>
+
+        <div className="space-y-2">
+          {presetTable && (
+            <button
+              onClick={() => onJoin(presetTable.id)}
+              onTouchStart={() => handleTouchStart(presetTable.id, presetTable.status)}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
+              onMouseDown={() => handleTouchStart(presetTable.id, presetTable.status)}
+              onMouseUp={handleTouchEnd}
+              onMouseLeave={handleTouchEnd}
+              className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-text-primary text-[15px] font-medium">{presetTable.name}</span>
+                <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
+                  presetTable.status === "playing" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+                }`}>
+                  {presetTable.status === "playing" ? "进行中" : "等待中"}
+                </span>
+              </div>
+              <div className="text-text-secondary text-[13px] mt-1.5">
+                盲注 {presetTable.config.smallBlind}/{presetTable.config.bigBlind} ·{" "}
+                {presetTable.status === "waiting"
+                  ? `${presetTable.seats.filter((s) => s.status === "occupied").length}/${presetTable.seats.length} 已入座`
+                  : `${presetTable.playerCount} 人 · 第 ${presetTable.handNumber} 手`
+                }
+              </div>
+            </button>
+          )}
+
+          {finishedTable && (
+            <button
+              onClick={() => onJoin(finishedTable.id)}
+              className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-text-primary text-[15px] font-medium">{finishedTable.name}</span>
+                <span className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-surface-elevated text-text-tertiary">
+                  已结束
+                </span>
+              </div>
+              <div className="text-text-secondary text-[13px] mt-1.5">
+                共 {finishedTable.handNumber} 手
+              </div>
+            </button>
+          )}
+
+          {!presetTable && !finishedTable && (
+            <div className="text-text-tertiary text-center py-12 bg-white rounded-2xl shadow-sm">
+              <p className="text-[15px]">加载中...</p>
+            </div>
+          )}
         </div>
 
-        {tables.length === 0 ? (
-          <div className="text-text-tertiary text-center py-12 bg-white rounded-2xl shadow-sm">
-            <p className="text-[15px]">暂无牌桌</p>
-            <p className="text-[13px] text-text-tertiary mt-1">创建一个开始对局</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {tables.map((table) => (
-              <button
-                key={table.id}
-                onClick={() => onJoin(table.id)}
-                className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
-              >
-                <div className="flex justify-between items-center">
-                  <span className="text-text-primary text-[15px] font-medium">{table.name}</span>
-                  <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
-                    table.status === "playing" ? "bg-success/15 text-success" :
-                    table.status === "waiting" ? "bg-warning/15 text-warning" : "bg-surface-elevated text-text-tertiary"
-                  }`}>
-                    {table.status === "playing" ? "进行中" : table.status === "waiting" ? "等待中" : table.status.toUpperCase()}
-                  </span>
-                </div>
-                <div className="text-text-secondary text-[13px] mt-1.5">
-                  盲注 {table.config.smallBlind}/{table.config.bigBlind} ·{" "}
-                  {table.status === "waiting"
-                    ? `${table.seats.filter((s) => s.status === "occupied").length}/${table.seats.length} 已入座`
-                    : `${table.playerCount} 人`
-                  }
-                  {table.status !== "waiting" && ` · 第 ${table.handNumber} 手`}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="mt-6 text-center">
+          <button
+            onClick={onHistory}
+            className="text-text-secondary text-[14px] hover:text-accent transition-colors"
+          >
+            历史牌局 →
+          </button>
+        </div>
       </div>
     </div>
   );
