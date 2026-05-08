@@ -190,7 +190,7 @@ export type GameEvent =
   | { type: "cards-dealt"; hands: Record<string, Card[]> }
   | { type: "phase-change"; phase: GamePhase; communityCards: Card[] }
   | { type: "action-required"; playerId: string; validActions: ActionType[]; currentBet: number; minRaise: number; callAmount: number }
-  | { type: "action-taken"; playerId: string; action: Action; thought: AgentThought }
+  | { type: "action-taken"; playerId: string; action: Action; thought: AgentThought; allIn?: boolean }
   | { type: "pot-updated"; pots: Pot[] }
   | { type: "showdown"; results: ShowdownResult[] }
   | { type: "hand-complete"; winners: Winner[]; players: PlayerState[] }

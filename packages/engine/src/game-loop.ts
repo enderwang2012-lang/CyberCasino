@@ -242,7 +242,7 @@ export async function* gameLoop(
           }
         }
 
-        yield { type: "action-taken", playerId: player.id, action, thought };
+        yield { type: "action-taken", playerId: player.id, action, thought, allIn: player.allIn || undefined };
         yield { type: "pot-updated", pots: potManager.calculatePots() };
 
         if (state.filter((p) => !p.folded).length === 1) break;

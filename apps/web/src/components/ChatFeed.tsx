@@ -157,13 +157,17 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
 
     case "action-taken": {
       const { action, thought } = event;
-      const actionLabel = action.type === "raise"
+      const isAllIn = !!event.allIn;
+      const actionLabel = isAllIn
+        ? `ALL IN ${action.amount ?? ""}`
+        : action.type === "raise"
         ? `加注 ${action.amount}`
         : action.type === "call" ? "跟注"
         : action.type === "check" ? "过牌"
         : "弃牌";
 
-      const actionColor = action.type === "fold" ? "text-text-tertiary"
+      const actionColor = isAllIn ? "text-danger"
+        : action.type === "fold" ? "text-text-tertiary"
         : action.type === "raise" ? "text-warning"
         : action.type === "call" ? "text-success"
         : "text-text-secondary";
