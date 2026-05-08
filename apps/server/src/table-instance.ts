@@ -183,7 +183,7 @@ export class TableInstance {
   }
 
   private emit(event: GameEvent): void {
-    this.eventHistory.push(event);
+    this.eventHistory.push(JSON.parse(JSON.stringify(event)));
     for (const listener of this.listeners) {
       listener(event);
     }
