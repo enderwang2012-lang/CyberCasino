@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
 
@@ -99,7 +99,7 @@ interface EventContext {
   netProfits?: Map<string, number>;
 }
 
-function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
+function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventContext; isAutoRun?: boolean }) {
   const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips, potTotal } = ctx;
 
   switch (event.type) {
@@ -149,6 +149,7 @@ function EventLine({ event, ctx }: { event: GameEvent; ctx: EventContext }) {
             <span className="text-text-tertiary mr-2">—</span>
             <span className="font-medium">{event.phase.toUpperCase()}</span>
             <span className="ml-2"><CardsInline cards={event.communityCards} /></span>
+            {isAutoRun && <span className="text-text-tertiary ml-1.5 text-[12px]">自动发牌</span>}
             <span className="text-text-tertiary ml-2">—</span>
           </span>
         </div>
@@ -311,9 +312,10 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (events.length > prevCountRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      const isInitialLoad = prevCountRef.current === 0;
+      bottomRef.current?.scrollIntoView({ behavior: isInitialLoad ? "instant" : "smooth" });
     }
     prevCountRef.current = events.length;
   }, [events]);
@@ -411,7 +413,21 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
   }, [visibleEvents]);
 
   const groupedEvents = useMemo(() => {
-    const groups: Array<{ event: GameEvent; index: number; potTotal?: number; netProfits?: Map<string, number> }> = [];
+    const groups: Array<{ event: GameEvent; index: number; potTotal?: number; netProfits?: Map<string, number>; isAutoRun?: boolean }> = [];
+
+    const autoRunPhases = new Set<number>();
+    for (let i = 0; i < visibleEvents.length; i++) {
+      if (visibleEvents[i].type === "phase-change") {
+        let hasAction = false;
+        for (let j = i + 1; j < visibleEvents.length; j++) {
+          const next = visibleEvents[j];
+          if (next.type === "action-taken") { hasAction = true; break; }
+          if (next.type === "phase-change" || next.type === "showdown" || next.type === "hand-complete") break;
+        }
+        if (!hasAction) autoRunPhases.add(i);
+      }
+    }
+
     for (let i = 0; i < visibleEvents.length; i++) {
       const event = visibleEvents[i];
       if (event.type === "pot-updated") {
@@ -434,7 +450,8 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           prev.netProfits = nets;
         }
       }
-      groups.push({ event, index: i });
+
+      groups.push({ event, index: i, isAutoRun: autoRunPhases.has(i) });
     }
     return groups;
   }, [visibleEvents, contexts]);
@@ -446,10 +463,11 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           等待比赛开始...
         </div>
       )}
-      {groupedEvents.map(({ event, index, potTotal, netProfits }) => (
+      {groupedEvents.map(({ event, index, potTotal, netProfits, isAutoRun }) => (
         <EventLine
           key={index}
           event={event}
+          isAutoRun={isAutoRun}
           ctx={{
             lookup,
             chipsBeforeHand: contexts[index].chipsBeforeHand,
