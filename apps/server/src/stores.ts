@@ -1,23 +1,56 @@
 import type { UserIdentity, AgentConfig } from "@cybercasino/shared";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+const DATA_DIR = join(import.meta.dirname, "..", "data");
+const USERS_FILE = join(DATA_DIR, "users.json");
 
 let agentCounter = 0;
 
+function ensureDataDir() {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function loadUsers(): Map<string, UserIdentity> {
+  ensureDataDir();
+  try {
+    const raw = readFileSync(USERS_FILE, "utf-8");
+    const arr: UserIdentity[] = JSON.parse(raw);
+    return new Map(arr.map((u) => [u.userId, u]));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveUsers(users: Map<string, UserIdentity>) {
+  ensureDataDir();
+  const arr = Array.from(users.values());
+  writeFileSync(USERS_FILE, JSON.stringify(arr, null, 2));
+}
+
 export class UserStore {
-  private users = new Map<string, UserIdentity>();
+  private users = loadUsers();
 
-  register(existingUserId?: string): UserIdentity {
-    if (existingUserId) {
-      const existing = this.users.get(existingUserId);
-      if (existing) return existing;
-    }
+  upsert(identity: UserIdentity): UserIdentity {
+    const existing = this.users.get(identity.userId);
+    if (existing) return existing;
 
-    const userId = existingUserId ?? `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const identity: UserIdentity = { userId, createdAt: Date.now() };
-    this.users.set(userId, identity);
+    this.users.set(identity.userId, identity);
+    saveUsers(this.users);
     return identity;
   }
 
   get(userId: string): UserIdentity | undefined {
+    return this.users.get(userId);
+  }
+
+  getOrReload(userId: string): UserIdentity | undefined {
+    const cached = this.users.get(userId);
+    if (cached) return cached;
+
+    this.users = loadUsers();
     return this.users.get(userId);
   }
 }

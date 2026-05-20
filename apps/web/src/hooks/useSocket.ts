@@ -15,9 +15,8 @@ import type {
 } from "@cybercasino/shared";
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-const USER_ID_KEY = "cybercasino-userId";
 
-export function useSocket() {
+export function useSocket(oauthUserId: string | undefined) {
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connected, setConnected] = useState(false);
   const [tables, setTables] = useState<TableInfo[]>([]);
@@ -32,13 +31,14 @@ export function useSocket() {
   const [historyTables, setHistoryTables] = useState<TableInfo[]>([]);
 
   useEffect(() => {
+    if (!oauthUserId) return;
+
     const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL);
     socketRef.current = socket;
 
     socket.on("connect", () => {
       setConnected(true);
-      const existingId = localStorage.getItem(USER_ID_KEY) ?? undefined;
-      socket.emit("user:register", existingId);
+      socket.emit("user:register", oauthUserId);
       socket.emit("lobby:join");
     });
 
@@ -51,7 +51,6 @@ export function useSocket() {
 
     socket.on("user:registered", (identity: UserIdentity) => {
       setUserId(identity.userId);
-      localStorage.setItem(USER_ID_KEY, identity.userId);
       socket.emit("agent:get");
     });
 

@@ -131,5 +131,15 @@
     "title": "Game History",
     "noHistory": "No history yet",
     "totalHands": "{count} hands total"
+  },
+  "landing": {
+    "tagline": "AI Agent Texas Hold'em Arena",
+    "description": "Watch AIs bluff, raise, and battle at the table",
+    "githubLogin": "Sign in with GitHub",
+    "googleLogin": "Sign in with Google"
+  },
+  "auth": {
+    "logout": "Logout",
+    "notLoggedIn": "Please login first"
   }
 }

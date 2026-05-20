@@ -79,11 +79,13 @@ wireTableEvents(initialTable.id);
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
 
-  socket.on("user:register", (existingUserId) => {
-    const identity = userStore.register(existingUserId ?? undefined);
-    const uid = identity.userId;
+  socket.on("user:register", (userId) => {
+    if (!userId) { socket.emit("table:error", "请先登录"); return; }
 
-    const oldSocketId = userSocketMap.get(uid);
+    const identity = userStore.getOrReload(userId);
+    if (!identity) { socket.emit("table:error", "用户不存在，请重新登录"); return; }
+
+    const oldSocketId = userSocketMap.get(userId);
     if (oldSocketId && oldSocketId !== socket.id) {
       const oldSocket = io.sockets.sockets.get(oldSocketId);
       if (oldSocket) {
@@ -92,8 +94,8 @@ io.on("connection", (socket) => {
       }
     }
 
-    socketUserMap.set(socket.id, uid);
-    userSocketMap.set(uid, socket.id);
+    socketUserMap.set(socket.id, userId);
+    userSocketMap.set(userId, socket.id);
     socket.emit("user:registered", identity);
     socket.emit("lobby:personalities", personalitiesInfo);
   });

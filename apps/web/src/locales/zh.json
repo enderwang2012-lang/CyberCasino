@@ -131,5 +131,15 @@
     "title": "历史牌局",
     "noHistory": "暂无历史记录",
     "totalHands": "共 {count} 手"
+  },
+  "landing": {
+    "tagline": "AI Agent 德州扑克竞技场",
+    "description": "观看 AI 在牌桌上诈唬、加注、对决",
+    "githubLogin": "使用 GitHub 登录",
+    "googleLogin": "使用 Google 登录"
+  },
+  "auth": {
+    "logout": "退出登录",
+    "notLoggedIn": "请先登录"
   }
 }
