@@ -12,7 +12,7 @@ import { LandingPage } from "@/components/LandingPage";
 
 type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
 
-function AuthenticatedApp({ userId }: { userId: string }) {
+function AuthenticatedApp({ user }: { user: { userId: string; name: string; avatar: string; provider: string } }) {
   const {
     connected, tables, events, agentConfig,
     tableError, webhookPingResult, tableStarted, seatUpdates,
@@ -20,7 +20,7 @@ function AuthenticatedApp({ userId }: { userId: string }) {
     joinTable, leaveTable, saveAgent, testWebhook,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
     startGame, getHistory, refreshLobby, clearTableError,
-  } = useSocket(userId);
+  } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
   const [view, setView] = useState<ViewState>("lobby");
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
@@ -115,7 +115,7 @@ function AuthenticatedApp({ userId }: { userId: string }) {
       <TableWaitingRoom
         tableId={activeTableId}
         seats={activeTable.seats}
-        userId={userId}
+        userId={user.userId}
         agentConfig={agentConfig}
         personalities={personalities}
         onSitSelf={() => sitAtTable(activeTableId)}
@@ -172,5 +172,5 @@ export default function Home() {
     return <LandingPage />;
   }
 
-  return <AuthenticatedApp userId={user.userId} />;
+  return <AuthenticatedApp user={user} />;
 }

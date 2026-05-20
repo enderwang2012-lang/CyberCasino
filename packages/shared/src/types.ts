@@ -232,7 +232,7 @@ export interface ClientToServerEvents {
   "lobby:join": () => void;
   "table:join": (tableId: string) => void;
   "table:leave": (tableId: string) => void;
-  "user:register": (userId: string) => void;
+  "user:register": (userId: string, userInfo?: { name: string; avatar: string; provider: AuthProvider }) => void;
   "agent:save": (config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => void;
   "agent:get": () => void;
   "agent:testWebhook": (url: string) => void;

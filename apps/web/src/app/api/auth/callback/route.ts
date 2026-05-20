@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import type { UserIdentity, AuthProvider } from "@cybercasino/shared";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
-
-const USERS_FILE = join(process.cwd(), "..", "server", "data", "users.json");
 
 const JWT_HEADER = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
 
@@ -17,32 +12,6 @@ function signJwt(payload: Record<string, unknown>): string {
   const signingInput = `${JWT_HEADER}.${payloadB64}`;
   const signature = createHmac("sha256", JWT_SECRET).update(signingInput).digest("base64url");
   return `${signingInput}.${signature}`;
-}
-
-function ensureDataDir(dir: string) {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
-
-function upsertUser(identity: UserIdentity): UserIdentity {
-  const dir = join(USERS_FILE, "..");
-  ensureDataDir(dir);
-
-  let users: UserIdentity[] = [];
-  try {
-    const raw = readFileSync(USERS_FILE, "utf-8");
-    users = JSON.parse(raw);
-  } catch {
-    // file doesn't exist yet
-  }
-
-  const existing = users.find((u) => u.userId === identity.userId);
-  if (existing) return existing;
-
-  users.push(identity);
-  writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  return identity;
 }
 
 async function exchangeGithubCode(code: string): Promise<{ accessToken: string } | null> {
@@ -153,17 +122,6 @@ export async function GET(request: Request): Promise<NextResponse> {
     name = user.name;
     avatar = user.picture;
   }
-
-  // Upsert user
-  const providerType: AuthProvider = provider as AuthProvider;
-  const identity: UserIdentity = {
-    userId,
-    name,
-    avatar,
-    provider: providerType,
-    createdAt: Date.now(),
-  };
-  upsertUser(identity);
 
   // Sign JWT and set cookie
   const token = signJwt({ userId, name, avatar, provider });

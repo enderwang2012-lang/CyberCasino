@@ -46,13 +46,6 @@ export class UserStore {
     return this.users.get(userId);
   }
 
-  getOrReload(userId: string): UserIdentity | undefined {
-    const cached = this.users.get(userId);
-    if (cached) return cached;
-
-    this.users = loadUsers();
-    return this.users.get(userId);
-  }
 }
 
 export class AgentStore {

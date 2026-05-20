@@ -16,7 +16,10 @@ import type {
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
-export function useSocket(oauthUserId: string | undefined) {
+export function useSocket(
+  oauthUserId: string | undefined,
+  oauthUserInfo?: { name: string; avatar: string; provider: string },
+) {
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connected, setConnected] = useState(false);
   const [tables, setTables] = useState<TableInfo[]>([]);
@@ -38,7 +41,7 @@ export function useSocket(oauthUserId: string | undefined) {
 
     socket.on("connect", () => {
       setConnected(true);
-      socket.emit("user:register", oauthUserId);
+      socket.emit("user:register", oauthUserId, oauthUserInfo as any);
       socket.emit("lobby:join");
     });
 
