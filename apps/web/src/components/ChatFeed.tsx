@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -100,6 +101,7 @@ interface EventContext {
 }
 
 function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventContext; isAutoRun?: boolean }) {
+  const { t } = useLanguage();
   const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips, potTotal } = ctx;
 
   switch (event.type) {
@@ -111,7 +113,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
         <div className="pt-5 mt-3">
           <div className="text-center">
             <span className="text-text-secondary text-[13px] font-medium bg-white px-4 py-1.5 rounded-full shadow-sm">
-              第 {event.handNumber} 手 · {event.players.length} 人
+              {t("chatFeed.handInfo", { handNumber: event.handNumber, players: event.players.length })}
             </span>
           </div>
         </div>
@@ -124,7 +126,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
       const blind = ctx.blindInfo;
       return (
         <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
-          <div className="text-[11px] text-text-tertiary font-medium mb-2 uppercase tracking-wide">发牌</div>
+          <div className="text-[11px] text-text-tertiary font-medium mb-2 uppercase tracking-wide">{t("chatFeed.deal")}</div>
           <div className="space-y-1">
             {Object.entries(event.hands).map(([id, cards]) => {
               const isSB = blind?.smallBlindPlayerId === id;
@@ -149,7 +151,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
             <span className="text-text-tertiary mr-2">—</span>
             <span className="font-medium">{event.phase.toUpperCase()}</span>
             <span className="ml-2"><CardsInline cards={event.communityCards} /></span>
-            {isAutoRun && <span className="text-text-tertiary ml-1.5 text-[12px]">自动发牌</span>}
+            {isAutoRun && <span className="text-text-tertiary ml-1.5 text-[12px]">{t("chatFeed.autoDeal")}</span>}
             <span className="text-text-tertiary ml-2">—</span>
           </span>
         </div>
@@ -159,12 +161,12 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
       const { action, thought } = event;
       const isAllIn = !!event.allIn;
       const actionLabel = isAllIn
-        ? `ALL IN ${action.amount ?? ""}`
+        ? t("chatFeed.allIn", { amount: action.amount ?? "" })
         : action.type === "raise"
-        ? `加注 ${action.amount}`
-        : action.type === "call" ? "跟注"
-        : action.type === "check" ? "过牌"
-        : "弃牌";
+        ? t("chatFeed.raise", { amount: action.amount ?? 0 })
+        : action.type === "call" ? t("chatFeed.call")
+        : action.type === "check" ? t("chatFeed.check")
+        : t("chatFeed.fold");
 
       const actionColor = isAllIn ? "text-danger"
         : action.type === "fold" ? "text-text-tertiary"
@@ -187,14 +189,14 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
             </div>
             {potTotal != null && (
               <div className="text-[13px] text-warning font-medium">
-                底池 {potTotal}
+                {t("chatFeed.pot", { amount: potTotal })}
               </div>
             )}
           </div>
           {thought.message && thought.message !== "..." && (
             <div className="text-[13px] text-text-secondary mt-1.5 italic">
               "{thought.message}"
-              {thought.isBluffing && <span className="text-danger ml-1 not-italic">诈唬</span>}
+              {thought.isBluffing && <span className="text-danger ml-1 not-italic">{t("chatFeed.bluff")}</span>}
               {thought.confidence > 0 && (
                 <span className="text-text-tertiary ml-1 not-italic">
                   {Math.round(thought.confidence * 100)}%
@@ -215,7 +217,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
     case "showdown":
       return (
         <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
-          <div className="text-warning text-[13px] text-center mb-3 font-medium">SHOWDOWN</div>
+          <div className="text-warning text-[13px] text-center mb-3 font-medium">{t("chatFeed.showdown")}</div>
           <div className="space-y-1.5">
             {event.results.map((r) => (
               <div key={r.playerId} className="flex items-center text-[14px]">
@@ -232,7 +234,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
       return (
         <div className="text-center my-4">
           <span className="text-danger text-[13px] bg-danger/10 px-4 py-1.5 rounded-full">
-            <AgentTag id={event.playerId} lookup={lookup} /> 第{event.finishPosition}名淘汰
+            <AgentTag id={event.playerId} lookup={lookup} /> {t("chatFeed.eliminated", { player: "", position: event.finishPosition })}
           </span>
         </div>
       );
@@ -241,7 +243,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
       return (
         <div className="text-center my-4">
           <span className="text-warning text-[13px] bg-warning/10 px-4 py-1.5 rounded-full font-medium">
-            盲注升级 {event.smallBlind}/{event.bigBlind}
+            {t("chatFeed.blindLevelUp", { small: event.smallBlind, big: event.bigBlind })}
           </span>
         </div>
       );
@@ -250,7 +252,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
       return (
         <div className="bg-white rounded-2xl my-4 mx-1 p-5 shadow-sm">
           <div className="text-center mb-4">
-            <div className="text-[20px] font-semibold text-text-primary">锦标赛结束</div>
+            <div className="text-[20px] font-semibold text-text-primary">{t("chatFeed.tournamentEnd")}</div>
           </div>
           <div className="space-y-2">
             {event.rankings.map((r) => {
@@ -264,7 +266,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
             })}
           </div>
           <div className="text-[13px] text-text-tertiary text-center mt-4">
-            共 {event.rankings[0]?.handsPlayed ?? 0} 手
+            {t("chatFeed.totalHands", { count: event.rankings[0]?.handsPlayed ?? 0 })}
           </div>
         </div>
       );
@@ -272,7 +274,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
     case "hand-highlight":
       return (
         <div className="text-center my-2">
-          <span className="text-[12px] text-text-tertiary">— 精彩时刻 —</span>
+          <span className="text-[12px] text-text-tertiary">{t("chatFeed.highlightMoment")}</span>
         </div>
       );
 
@@ -313,6 +315,7 @@ interface AccumulatedContext {
 }
 
 export function ChatFeed({ events }: { events: GameEvent[] }) {
+  const { t } = useLanguage();
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
 
@@ -464,7 +467,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
     <div className="flex-1 overflow-y-auto px-3 py-3 text-[14px] leading-relaxed overscroll-contain bg-surface-elevated">
       {visibleEvents.length === 0 && (
         <div className="text-text-tertiary text-center mt-20 text-[15px]">
-          等待比赛开始...
+          {t("chatFeed.waitingForGame")}
         </div>
       )}
       {groupedEvents.map(({ event, index, potTotal, netProfits, isAutoRun }) => (

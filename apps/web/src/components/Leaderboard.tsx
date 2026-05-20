@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { GameEvent, SeatAgent } from "@cybercasino/shared";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LeaderboardEntry {
   id: string;
@@ -14,6 +15,8 @@ interface LeaderboardEntry {
 }
 
 export function Leaderboard({ events }: { events: GameEvent[] }) {
+  const { t } = useLanguage();
+
   const entries = useMemo(() => {
     const roster: SeatAgent[] = [];
     const rosterEvent = events.find((e) => e.type === "agent-roster");
@@ -73,7 +76,7 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
   if (entries.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-[15px]">
-        等待比赛开始...
+        {t("leaderboard.waitingForGame")}
       </div>
     );
   }
@@ -102,7 +105,7 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
                 </div>
                 {entry.eliminated ? (
                   <div className="text-[13px] text-text-secondary">
-                    第{entry.finishPosition}名淘汰 · 第{entry.eliminatedAtHand}手
+                    {t("leaderboard.eliminated", { position: entry.finishPosition ?? 0, hand: entry.eliminatedAtHand ?? 0 })}
                   </div>
                 ) : (
                   <div className="text-[13px] text-text-secondary">

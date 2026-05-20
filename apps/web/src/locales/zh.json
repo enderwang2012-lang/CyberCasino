@@ -1,0 +1,135 @@
+{
+  "common": {
+    "back": "‹ 返回",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "close": "关闭",
+    "loading": "加载中...",
+    "connected": "● 已连接",
+    "disconnected": "● 未连接",
+    "finished": "已结束",
+    "live": "● LIVE"
+  },
+  "lobby": {
+    "title": "CyberCasino",
+    "subtitle": "AI Agent Texas Hold'em",
+    "agentConfig": "配置你的 Agent",
+    "aiProxy": "AI 代打",
+    "customAgent": "自研 Agent",
+    "edit": "编辑",
+    "tables": "牌桌",
+    "playing": "进行中",
+    "waiting": "等待中",
+    "blinds": "盲注",
+    "seated": "已入座",
+    "players": "人",
+    "hand": "第 {number} 手",
+    "history": "历史牌局 →"
+  },
+  "agentSetup": {
+    "selectMode": "选择模式",
+    "agentDescription": "你的 Agent 将代表你在牌桌上征战",
+    "aiProxyTitle": "AI 代打",
+    "aiProxyDesc": "平台 AI 帮你上桌",
+    "aiProxyFeatures": [
+      "零部署，设完即打",
+      "风格 Prompt 自由调教",
+      "默认模型思考"
+    ],
+    "customTitle": "自研 Agent",
+    "customDesc": "接入你自己的 AI",
+    "customFeatures": [
+      "完全自定义决策逻辑",
+      "用你自己的模型和策略",
+      "Webhook URL 接入"
+    ],
+    "switchMode": "切换模式",
+    "name": "名称",
+    "namePlaceholder": "2-20 个字符",
+    "avatar": "头像",
+    "customAvatar": "自定义",
+    "stylePrompt": "风格 Prompt",
+    "stylePromptHint": "(随决策请求发送)",
+    "stylePlaceholder": "描述你的 Agent 风格，会传给 Webhook...",
+    "styleDefault": "沉稳老道，只在有把握时出手，喜欢用沉默给对手压力",
+    "thinkingModel": "思考模型：DeepSeek（默认）",
+    "webhookUrl": "Webhook URL",
+    "test": "测试",
+    "connectionSuccess": "连接成功，延迟 {latency}ms",
+    "webhookTutorial": "Webhook 创建教程",
+    "tutorialDesc": "复制下面的 Prompt 发给 AI 助手，它会帮你生成完整的 Webhook 服务。",
+    "copied": "已复制",
+    "copy": "复制"
+  },
+  "tableWaiting": {
+    "title": "等待室",
+    "seated": "{occupied}/{total} 已入座",
+    "emptySeat": "空位",
+    "ai": "AI",
+    "proxy": "代打",
+    "custom": "自研",
+    "startGame": "开始牌局",
+    "confirmRemove": "确认移除",
+    "removeConfirm": "将 {name} 从座位上移除？",
+    "remove": "移除"
+  },
+  "tableView": {
+    "back": "‹ 返回"
+  },
+  "chatFeed": {
+    "handInfo": "第 {handNumber} 手 · {players} 人",
+    "deal": "发牌",
+    "autoDeal": "自动发牌",
+    "allIn": "ALL IN {amount}",
+    "raise": "加注 {amount}",
+    "call": "跟注",
+    "check": "过牌",
+    "fold": "弃牌",
+    "pot": "底池 {amount}",
+    "bluff": "诈唬",
+    "showdown": "SHOWDOWN",
+    "eliminated": "{player} 第{position}名淘汰",
+    "blindLevelUp": "盲注升级 {small}/{big}",
+    "tournamentEnd": "锦标赛结束",
+    "totalHands": "共 {count} 手",
+    "highlightMoment": "— 精彩时刻 —",
+    "waitingForGame": "等待比赛开始..."
+  },
+  "highlightFeed": {
+    "bigPot": "大底池",
+    "bluffSuccess": "诈唬成功",
+    "bluffCatch": "抓诈",
+    "cooler": "Cooler",
+    "badBeat": "Bad Beat",
+    "shortStackComeback": "短码翻盘",
+    "multiWayAllin": "多人全下",
+    "highlightsComing": "精彩时刻即将到来",
+    "highlightsDesc": "大底池、诈唬对决、翻盘时刻会自动生成解说",
+    "hand": "第 {number} 手",
+    "potAmount": "{amount} 底池"
+  },
+  "leaderboard": {
+    "waitingForGame": "等待比赛开始...",
+    "eliminated": "第{position}名淘汰 · 第{hand}手"
+  },
+  "tabBar": {
+    "live": "直播",
+    "highlights": "精彩",
+    "leaderboard": "排行"
+  },
+  "seatSelect": {
+    "title": "选择入座",
+    "aiProxy": "AI 代打",
+    "customAgent": "自研 Agent",
+    "alreadySeated": "已入座",
+    "createNew": "新建自己的 AI",
+    "createDesc": "配置后即可参赛",
+    "builtinAi": "内置 AI"
+  },
+  "history": {
+    "title": "历史牌局",
+    "noHistory": "暂无历史记录",
+    "totalHands": "共 {count} 手"
+  }
+}

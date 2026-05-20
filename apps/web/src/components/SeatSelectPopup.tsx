@@ -1,6 +1,7 @@
 "use client";
 
 import type { AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface SeatSelectPopupProps {
   agentConfig: AgentConfig | null;
@@ -23,6 +24,7 @@ export function SeatSelectPopup({
   onAgentSetup,
   onClose,
 }: SeatSelectPopupProps) {
+  const { t } = useLanguage();
   const selfDisabled = myAgentSeated || !agentConfig;
 
   return (
@@ -33,9 +35,9 @@ export function SeatSelectPopup({
       >
         <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-separator">
           <div className="flex justify-between items-center">
-            <h3 className="text-text-primary text-[17px] font-semibold">选择入座</h3>
+            <h3 className="text-text-primary text-[17px] font-semibold">{t("seatSelect.title")}</h3>
             <button onClick={onClose} className="text-text-tertiary text-[15px] min-w-[44px] min-h-[44px] flex items-center justify-center">
-              关闭
+              {t("common.close")}
             </button>
           </div>
         </div>
@@ -53,10 +55,10 @@ export function SeatSelectPopup({
               <div className="flex-1">
                 <div className="text-text-primary text-[15px] font-medium">{agentConfig.name}</div>
                 <div className={`text-[13px] ${agentConfig.mode === "smart" ? "text-accent" : "text-[#BF5AF2]"}`}>
-                  {agentConfig.mode === "smart" ? "AI 代打" : "自研 Agent"}
+                  {agentConfig.mode === "smart" ? t("seatSelect.aiProxy") : t("seatSelect.customAgent")}
                 </div>
               </div>
-              {myAgentSeated && <span className="text-text-tertiary text-[12px]">已入座</span>}
+              {myAgentSeated && <span className="text-text-tertiary text-[12px]">{t("seatSelect.alreadySeated")}</span>}
             </button>
           ) : (
             <button
@@ -65,8 +67,8 @@ export function SeatSelectPopup({
             >
               <span className="text-[32px] opacity-30">🤖</span>
               <div className="flex-1">
-                <div className="text-text-primary text-[15px] font-medium">新建自己的 AI</div>
-                <div className="text-text-tertiary text-[13px]">配置后即可参赛</div>
+                <div className="text-text-primary text-[15px] font-medium">{t("seatSelect.createNew")}</div>
+                <div className="text-text-tertiary text-[13px]">{t("seatSelect.createDesc")}</div>
               </div>
               <span className="text-text-tertiary text-[13px]">→</span>
             </button>
@@ -76,7 +78,7 @@ export function SeatSelectPopup({
         <div className="mx-5 h-px bg-separator" />
 
         <div className="px-5 py-4">
-          <p className="text-text-tertiary text-[12px] font-medium uppercase tracking-wide mb-3">内置 AI</p>
+          <p className="text-text-tertiary text-[12px] font-medium uppercase tracking-wide mb-3">{t("seatSelect.builtinAi")}</p>
           <div className="space-y-1">
             {personalities.map((p) => {
               const isSeated = seatedPersonalityIds.includes(p.id);
@@ -94,7 +96,7 @@ export function SeatSelectPopup({
                     <div className="text-text-primary text-[15px] font-medium">{p.name}</div>
                     <div className="text-text-tertiary text-[13px]">{p.style}</div>
                   </div>
-                  {isSeated && <span className="text-text-tertiary text-[12px]">已入座</span>}
+                  {isSeated && <span className="text-text-tertiary text-[12px]">{t("seatSelect.alreadySeated")}</span>}
                 </button>
               );
             })}

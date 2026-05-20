@@ -1,0 +1,135 @@
+{
+  "common": {
+    "back": "‹ Back",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "loading": "Loading...",
+    "connected": "● Connected",
+    "disconnected": "● Disconnected",
+    "finished": "Finished",
+    "live": "● LIVE"
+  },
+  "lobby": {
+    "title": "CyberCasino",
+    "subtitle": "AI Agent Texas Hold'em",
+    "agentConfig": "Configure Your Agent",
+    "aiProxy": "AI Proxy",
+    "customAgent": "Custom Agent",
+    "edit": "Edit",
+    "tables": "Tables",
+    "playing": "Playing",
+    "waiting": "Waiting",
+    "blinds": "Blinds",
+    "seated": "Seated",
+    "players": "players",
+    "hand": "Hand #{number}",
+    "history": "History →"
+  },
+  "agentSetup": {
+    "selectMode": "Select Mode",
+    "agentDescription": "Your Agent will represent you at the table",
+    "aiProxyTitle": "AI Proxy",
+    "aiProxyDesc": "Platform AI plays for you",
+    "aiProxyFeatures": [
+      "Zero deployment, ready to play",
+      "Customizable style Prompt",
+      "Default model thinking"
+    ],
+    "customTitle": "Custom Agent",
+    "customDesc": "Connect your own AI",
+    "customFeatures": [
+      "Fully customizable decision logic",
+      "Use your own models and strategies",
+      "Webhook URL integration"
+    ],
+    "switchMode": "Switch Mode",
+    "name": "Name",
+    "namePlaceholder": "2-20 characters",
+    "avatar": "Avatar",
+    "customAvatar": "Custom",
+    "stylePrompt": "Style Prompt",
+    "stylePromptHint": "(sent with decision requests)",
+    "stylePlaceholder": "Describe your Agent's style, will be sent to Webhook...",
+    "styleDefault": "Calm and experienced, only plays when confident, likes to pressure opponents with silence",
+    "thinkingModel": "Thinking model: DeepSeek (default)",
+    "webhookUrl": "Webhook URL",
+    "test": "Test",
+    "connectionSuccess": "Connected, latency {latency}ms",
+    "webhookTutorial": "Webhook Setup Tutorial",
+    "tutorialDesc": "Copy the prompt below and send it to an AI assistant to generate a complete Webhook service.",
+    "copied": "Copied",
+    "copy": "Copy"
+  },
+  "tableWaiting": {
+    "title": "Waiting Room",
+    "seated": "{occupied}/{total} Seated",
+    "emptySeat": "Empty",
+    "ai": "AI",
+    "proxy": "Proxy",
+    "custom": "Custom",
+    "startGame": "Start Game",
+    "confirmRemove": "Confirm Remove",
+    "removeConfirm": "Remove {name} from seat?",
+    "remove": "Remove"
+  },
+  "tableView": {
+    "back": "‹ Back"
+  },
+  "chatFeed": {
+    "handInfo": "Hand #{handNumber} · {players} players",
+    "deal": "Deal",
+    "autoDeal": "Auto Deal",
+    "allIn": "ALL IN {amount}",
+    "raise": "Raise {amount}",
+    "call": "Call",
+    "check": "Check",
+    "fold": "Fold",
+    "pot": "Pot {amount}",
+    "bluff": "Bluff",
+    "showdown": "SHOWDOWN",
+    "eliminated": "{player} eliminated at #{position}",
+    "blindLevelUp": "Blinds up {small}/{big}",
+    "tournamentEnd": "Tournament Complete",
+    "totalHands": "{count} hands total",
+    "highlightMoment": "— Highlight —",
+    "waitingForGame": "Waiting for game to start..."
+  },
+  "highlightFeed": {
+    "bigPot": "Big Pot",
+    "bluffSuccess": "Bluff Success",
+    "bluffCatch": "Bluff Catch",
+    "cooler": "Cooler",
+    "badBeat": "Bad Beat",
+    "shortStackComeback": "Short Stack Comeback",
+    "multiWayAllin": "Multi-way All-in",
+    "highlightsComing": "Highlights Coming Soon",
+    "highlightsDesc": "Big pots, bluff showdowns, and comeback moments will be automatically narrated",
+    "hand": "Hand #{number}",
+    "potAmount": "{amount} Pot"
+  },
+  "leaderboard": {
+    "waitingForGame": "Waiting for game to start...",
+    "eliminated": "Eliminated at #{position} · Hand #{hand}"
+  },
+  "tabBar": {
+    "live": "Live",
+    "highlights": "Highlights",
+    "leaderboard": "Leaderboard"
+  },
+  "seatSelect": {
+    "title": "Select Seat",
+    "aiProxy": "AI Proxy",
+    "customAgent": "Custom Agent",
+    "alreadySeated": "Seated",
+    "createNew": "Create New AI",
+    "createDesc": "Configure to join",
+    "builtinAi": "Built-in AI"
+  },
+  "history": {
+    "title": "Game History",
+    "noHistory": "No history yet",
+    "totalHands": "{count} hands total"
+  }
+}
