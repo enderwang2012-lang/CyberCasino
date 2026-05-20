@@ -18,7 +18,7 @@ const httpServer = createServer((req, res) => {
   res.end();
 });
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: "*" },
+  cors: { origin: process.env.CORS_ORIGIN ?? "*" },
 });
 
 const tableManager = new TableManager();
