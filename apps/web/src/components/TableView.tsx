@@ -6,6 +6,7 @@ import { ChatFeed } from "./ChatFeed";
 import { TabBar, type TabId } from "./TabBar";
 import { HighlightFeed } from "./HighlightFeed";
 import { Leaderboard } from "./Leaderboard";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface TableViewProps {
   tableId: string;
@@ -17,6 +18,7 @@ interface TableViewProps {
 }
 
 export function TableView({ tableId, tableName, events, onLeave, defaultTab = "live", isFinished = false }: TableViewProps) {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [hasNewHighlight, setHasNewHighlight] = useState(false);
   const lastHighlightCount = useRef(0);
@@ -43,15 +45,15 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "l
           onClick={onLeave}
           className="text-accent text-[15px] font-normal min-w-[44px] min-h-[44px] flex items-center"
         >
-          ‹ 返回
+          {t("common.back")}
         </button>
         <h2 className="text-text-primary text-[17px] font-semibold tracking-tight">
           {tableName || "CyberCasino"}
         </h2>
         {isFinished ? (
-          <div className="text-text-tertiary text-[13px] min-w-[44px] text-right font-medium">已结束</div>
+          <div className="text-text-tertiary text-[13px] min-w-[44px] text-right font-medium">{t("common.finished")}</div>
         ) : (
-          <div className="text-success text-[13px] min-w-[44px] text-right font-medium">● LIVE</div>
+          <div className="text-success text-[13px] min-w-[44px] text-right font-medium">{t("common.live")}</div>
         )}
       </header>
 

@@ -2,6 +2,7 @@
 
 import { useRef, useCallback } from "react";
 import type { TableInfo, AgentConfig } from "@cybercasino/shared";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LobbyProps {
   tables: TableInfo[];
@@ -14,6 +15,7 @@ interface LobbyProps {
 }
 
 export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig }: LobbyProps) {
+  const { t } = useLanguage();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const presetTable = tables.find((t) => t.status === "waiting" || t.status === "playing");
@@ -38,14 +40,14 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
     <div className="min-h-[100dvh] flex flex-col items-center px-5 pt-[max(4rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] bg-surface-elevated">
       <div className="text-center mb-12">
         <h1 className="text-[40px] font-semibold text-text-primary tracking-tight leading-tight">
-          CyberCasino
+          {t("lobby.title")}
         </h1>
-        <p className="text-text-secondary text-[17px] mt-2">AI Agent Texas Hold&apos;em</p>
+        <p className="text-text-secondary text-[17px] mt-2">{t("lobby.subtitle")}</p>
         <div className="mt-3">
           {connected ? (
-            <span className="text-success text-[13px] font-medium">● 已连接</span>
+            <span className="text-success text-[13px] font-medium">{t("common.connected")}</span>
           ) : (
-            <span className="text-danger text-[13px] font-medium">● 未连接</span>
+            <span className="text-danger text-[13px] font-medium">{t("common.disconnected")}</span>
           )}
         </div>
       </div>
@@ -61,15 +63,15 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
               <div className="flex-1">
                 <span className="text-text-primary text-[15px] font-medium">{agentConfig.name}</span>
                 <span className={`ml-2 text-[13px] ${agentConfig.mode === "smart" ? "text-accent" : "text-[#BF5AF2]"}`}>
-                  {agentConfig.mode === "smart" ? "AI 代打" : "自研 Agent"}
+                  {agentConfig.mode === "smart" ? t("lobby.aiProxy") : t("lobby.customAgent")}
                 </span>
               </div>
-              <span className="text-text-tertiary text-[13px]">编辑</span>
+              <span className="text-text-tertiary text-[13px]">{t("lobby.edit")}</span>
             </div>
           ) : (
             <div className="flex items-center gap-4">
               <span className="text-[28px] opacity-30">🤖</span>
-              <span className="text-text-secondary text-[15px]">配置你的 Agent</span>
+              <span className="text-text-secondary text-[15px]">{t("lobby.agentConfig")}</span>
               <span className="ml-auto text-text-tertiary text-[13px]">→</span>
             </div>
           )}
@@ -77,7 +79,7 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
       </div>
 
       <div className="w-full max-w-lg">
-        <h2 className="text-text-primary text-[20px] font-semibold mb-4">牌桌</h2>
+        <h2 className="text-text-primary text-[20px] font-semibold mb-4">{t("lobby.tables")}</h2>
 
         <div className="space-y-2">
           {presetTable && (
@@ -96,14 +98,14 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
                 <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
                   presetTable.status === "playing" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
                 }`}>
-                  {presetTable.status === "playing" ? "进行中" : "等待中"}
+                  {presetTable.status === "playing" ? t("lobby.playing") : t("lobby.waiting")}
                 </span>
               </div>
               <div className="text-text-secondary text-[13px] mt-1.5">
-                盲注 {presetTable.config.smallBlind}/{presetTable.config.bigBlind} ·{" "}
+                {t("lobby.blinds")} {presetTable.config.smallBlind}/{presetTable.config.bigBlind} ·{" "}
                 {presetTable.status === "waiting"
-                  ? `${presetTable.seats.filter((s) => s.status === "occupied").length}/${presetTable.seats.length} 已入座`
-                  : `${presetTable.playerCount} 人 · 第 ${presetTable.handNumber} 手`
+                  ? `${presetTable.seats.filter((s) => s.status === "occupied").length}/${presetTable.seats.length} ${t("lobby.seated")}`
+                  : `${presetTable.playerCount} ${t("lobby.players")} · ${t("lobby.hand", { number: presetTable.handNumber })}`
                 }
               </div>
             </button>
@@ -117,18 +119,18 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
               <div className="flex justify-between items-center">
                 <span className="text-text-primary text-[15px] font-medium">{finishedTable.name}</span>
                 <span className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-surface-elevated text-text-tertiary">
-                  已结束
+                  {t("common.finished")}
                 </span>
               </div>
               <div className="text-text-secondary text-[13px] mt-1.5">
-                共 {finishedTable.handNumber} 手
+                {t("chatFeed.totalHands", { count: finishedTable.handNumber })}
               </div>
             </button>
           )}
 
           {!presetTable && !finishedTable && (
             <div className="text-text-tertiary text-center py-12 bg-white rounded-2xl shadow-sm">
-              <p className="text-[15px]">加载中...</p>
+              <p className="text-[15px]">{t("common.loading")}</p>
             </div>
           )}
         </div>
@@ -138,7 +140,7 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
             onClick={onHistory}
             className="text-text-secondary text-[14px] hover:text-accent transition-colors"
           >
-            历史牌局 →
+            {t("lobby.history")}
           </button>
         </div>
       </div>

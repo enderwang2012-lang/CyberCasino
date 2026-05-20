@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { TableSeat, AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { SeatSelectPopup } from "./SeatSelectPopup";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface TableWaitingRoomProps {
   tableId: string;
@@ -33,6 +34,7 @@ export function TableWaitingRoom({
   onAgentSetup,
   error,
 }: TableWaitingRoomProps) {
+  const { t } = useLanguage();
   const [showSelectPopup, setShowSelectPopup] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ seatIndex: number; name: string } | null>(null);
 
@@ -81,11 +83,11 @@ export function TableWaitingRoom({
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center px-5 py-8 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
       <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
-        ‹ 返回
+        {t("common.back")}
       </button>
 
-      <h2 className="text-[28px] font-semibold text-text-primary mb-1 tracking-tight">等待室</h2>
-      <p className="text-text-secondary text-[15px] mb-8">{occupied}/{total} 已入座</p>
+      <h2 className="text-[28px] font-semibold text-text-primary mb-1 tracking-tight">{t("tableWaiting.title")}</h2>
+      <p className="text-text-secondary text-[15px] mb-8">{t("tableWaiting.seated", { occupied, total })}</p>
 
       <div className="grid grid-cols-3 gap-2.5 mb-8 w-full max-w-sm">
         {seats.map((seat) => (
@@ -106,14 +108,14 @@ export function TableWaitingRoom({
                   seat.agent.type === "builtin" ? "text-text-tertiary" :
                   seat.agent.type === "smart" ? "text-accent" : "text-[#BF5AF2]"
                 }`}>
-                  {seat.agent.type === "builtin" ? "AI" :
-                   seat.agent.type === "smart" ? "代打" : "自研"}
+                  {seat.agent.type === "builtin" ? t("tableWaiting.ai") :
+                   seat.agent.type === "smart" ? t("tableWaiting.proxy") : t("tableWaiting.custom")}
                 </div>
               </>
             ) : (
               <>
                 <div className="text-[28px] mb-1.5 opacity-20">+</div>
-                <div className="text-text-tertiary text-[13px]">空位</div>
+                <div className="text-text-tertiary text-[13px]">{t("tableWaiting.emptySeat")}</div>
               </>
             )}
           </button>
@@ -130,7 +132,7 @@ export function TableWaitingRoom({
               : "bg-surface-deep text-text-tertiary cursor-not-allowed"
           }`}
         >
-          开始牌局
+          {t("tableWaiting.startGame")}
         </button>
 
         {error && (
@@ -155,23 +157,23 @@ export function TableWaitingRoom({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-5">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-lg">
             <p className="text-text-primary text-[17px] font-semibold mb-2">
-              确认移除
+              {t("tableWaiting.confirmRemove")}
             </p>
             <p className="text-text-secondary text-[15px] mb-6">
-              将 {confirmRemove.name} 从座位上移除？
+              {t("tableWaiting.removeConfirm", { name: confirmRemove.name })}
             </p>
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleConfirmRemove}
                 className="w-full bg-danger hover:bg-danger/90 text-white py-3 rounded-full font-medium text-[15px] transition-colors"
               >
-                移除
+                {t("tableWaiting.remove")}
               </button>
               <button
                 onClick={() => setConfirmRemove(null)}
                 className="w-full bg-surface-elevated hover:bg-surface-deep text-text-secondary py-3 rounded-full text-[15px] font-medium transition-colors"
               >
-                取消
+                {t("common.cancel")}
               </button>
             </div>
           </div>

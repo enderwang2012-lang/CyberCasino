@@ -1,5 +1,7 @@
 "use client";
 
+import { useLanguage } from "@/contexts/LanguageContext";
+
 export type TabId = "live" | "highlights" | "leaderboard";
 
 interface TabBarProps {
@@ -8,13 +10,15 @@ interface TabBarProps {
   hasNewHighlight: boolean;
 }
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "live", label: "直播" },
-  { id: "highlights", label: "精彩" },
-  { id: "leaderboard", label: "排行" },
-];
-
 export function TabBar({ activeTab, onTabChange, hasNewHighlight }: TabBarProps) {
+  const { t } = useLanguage();
+
+  const TABS: { id: TabId; label: string }[] = [
+    { id: "live", label: t("tabBar.live") },
+    { id: "highlights", label: t("tabBar.highlights") },
+    { id: "leaderboard", label: t("tabBar.leaderboard") },
+  ];
+
   return (
     <div className="flex items-center justify-center px-4 py-2.5 bg-white/80 backdrop-blur-xl">
       <div className="flex bg-surface-elevated rounded-lg p-0.5 w-full max-w-sm">

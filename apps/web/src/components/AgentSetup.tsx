@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AgentConfig, AgentMode, WebhookPingResult } from "@cybercasino/shared";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const EMOJI_PRESETS = ["🦈", "🐺", "🦊", "🐉", "🤖", "👾", "🎭", "🔥", "💀", "🌙", "⚡", "🃏"];
 
@@ -67,6 +68,7 @@ interface AgentSetupProps {
 }
 
 export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebhook, onBack }: AgentSetupProps) {
+  const { t } = useLanguage();
   const [mode, setMode] = useState<AgentMode | null>(agentConfig?.mode ?? null);
   const [name, setName] = useState(agentConfig?.name ?? "");
   const [avatar, setAvatar] = useState(agentConfig?.avatar ?? "🤖");
@@ -98,10 +100,10 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
         <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
-          ‹ 返回
+          {t("common.back")}
         </button>
-        <h2 className="text-[28px] font-semibold text-text-primary mb-2 tracking-tight">选择模式</h2>
-        <p className="text-text-secondary text-[15px] mb-8">你的 Agent 将代表你在牌桌上征战</p>
+        <h2 className="text-[28px] font-semibold text-text-primary mb-2 tracking-tight">{t("agentSetup.selectMode")}</h2>
+        <p className="text-text-secondary text-[15px] mb-8">{t("agentSetup.agentDescription")}</p>
 
         <div className="flex flex-col sm:flex-row gap-3 max-w-lg w-full">
           <button
@@ -109,12 +111,12 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
             className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
           >
             <div className="text-[32px] mb-3">🎰</div>
-            <h3 className="text-text-primary font-semibold text-[17px] mb-1">AI 代打</h3>
-            <p className="text-text-secondary text-[15px] mb-3">平台 AI 帮你上桌</p>
+            <h3 className="text-text-primary font-semibold text-[17px] mb-1">{t("agentSetup.aiProxyTitle")}</h3>
+            <p className="text-text-secondary text-[15px] mb-3">{t("agentSetup.aiProxyDesc")}</p>
             <ul className="text-text-tertiary text-[13px] space-y-1">
-              <li>零部署，设完即打</li>
-              <li>风格 Prompt 自由调教</li>
-              <li>默认模型思考</li>
+              {t("agentSetup.aiProxyFeatures").split("\n").map((feature, i) => (
+                <li key={i}>{feature}</li>
+              ))}
             </ul>
           </button>
 
@@ -123,12 +125,12 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
             className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
           >
             <div className="text-[32px] mb-3">🔧</div>
-            <h3 className="text-text-primary font-semibold text-[17px] mb-1">自研 Agent</h3>
-            <p className="text-text-secondary text-[15px] mb-3">接入你自己的 AI</p>
+            <h3 className="text-text-primary font-semibold text-[17px] mb-1">{t("agentSetup.customTitle")}</h3>
+            <p className="text-text-secondary text-[15px] mb-3">{t("agentSetup.customDesc")}</p>
             <ul className="text-text-tertiary text-[13px] space-y-1">
-              <li>完全自定义决策逻辑</li>
-              <li>用你自己的模型和策略</li>
-              <li>Webhook URL 接入</li>
+              {t("agentSetup.customFeatures").split("\n").map((feature, i) => (
+                <li key={i}>{feature}</li>
+              ))}
             </ul>
           </button>
         </div>
@@ -142,35 +144,35 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
       <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
-        ‹ 返回
+        {t("common.back")}
       </button>
 
       <div className="w-full max-w-md">
         <div className="flex items-center gap-3 mb-8">
           <span className="text-[28px]">{isCustom ? "🔧" : "🎰"}</span>
           <h2 className="text-[22px] font-semibold text-text-primary tracking-tight">
-            {isCustom ? "自研 Agent" : "AI 代打"}
+            {isCustom ? t("agentSetup.customTitle") : t("agentSetup.aiProxyTitle")}
           </h2>
           <button onClick={() => setMode(null)} className="ml-auto text-accent text-[13px]">
-            切换模式
+            {t("agentSetup.switchMode")}
           </button>
         </div>
 
         <div className="space-y-5">
           <div>
-            <label className="text-text-secondary text-[13px] block mb-2">名称</label>
+            <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.name")}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="2-20 个字符"
+              placeholder={t("agentSetup.namePlaceholder")}
               maxLength={20}
               className="w-full bg-white rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary shadow-sm"
             />
           </div>
 
           <div>
-            <label className="text-text-secondary text-[13px] block mb-2">头像</label>
+            <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.avatar")}</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {EMOJI_PRESETS.map((e) => (
                 <button
@@ -188,7 +190,7 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
               type="text"
               value={avatar}
               onChange={(e) => setAvatar(e.target.value)}
-              placeholder="自定义"
+              placeholder={t("agentSetup.customAvatar")}
               maxLength={2}
               className="w-20 bg-white rounded-xl px-3 py-2 text-center text-[20px] focus:outline-none focus:ring-2 focus:ring-accent/50 shadow-sm"
             />
@@ -196,15 +198,15 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
 
           <div>
             <label className="text-text-secondary text-[13px] block mb-2">
-              风格 Prompt
-              {isCustom && <span className="text-text-tertiary ml-1">(随决策请求发送)</span>}
+              {t("agentSetup.stylePrompt")}
+              {isCustom && <span className="text-text-tertiary ml-1">{t("agentSetup.stylePromptHint")}</span>}
             </label>
             <textarea
               value={stylePrompt}
               onChange={(e) => setStylePrompt(e.target.value)}
               placeholder={isCustom
-                ? "描述你的 Agent 风格，会传给 Webhook..."
-                : "沉稳老道，只在有把握时出手，喜欢用沉默给对手压力"
+                ? t("agentSetup.stylePlaceholder")
+                : t("agentSetup.styleDefault")
               }
               rows={3}
               className="w-full bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none placeholder:text-text-tertiary"
@@ -213,14 +215,14 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
 
           {!isCustom && (
             <div className="text-text-tertiary text-[13px] bg-white rounded-xl px-4 py-3 shadow-sm">
-              思考模型：DeepSeek（默认）
+              {t("agentSetup.thinkingModel")}
             </div>
           )}
 
           {isCustom && (
             <>
               <div>
-                <label className="text-text-secondary text-[13px] block mb-2">Webhook URL</label>
+                <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.webhookUrl")}</label>
                 <div className="flex gap-2">
                   <input
                     type="url"
@@ -234,13 +236,13 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
                     disabled={!webhookUrl}
                     className="bg-surface-elevated hover:bg-surface-deep text-accent px-4 py-3 rounded-xl text-[15px] font-medium disabled:opacity-50 whitespace-nowrap transition-colors"
                   >
-                    测试
+                    {t("agentSetup.test")}
                   </button>
                 </div>
                 {webhookPingResult && (
                   <p className={`text-[13px] mt-2 ${webhookPingResult.success ? "text-success" : "text-danger"}`}>
                     {webhookPingResult.success
-                      ? `连接成功，延迟 ${webhookPingResult.latencyMs}ms`
+                      ? t("agentSetup.connectionSuccess", { latency: webhookPingResult.latencyMs ?? 0 })
                       : webhookPingResult.error}
                   </p>
                 )}
@@ -251,12 +253,12 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
                   onClick={() => setShowPrompt(!showPrompt)}
                   className="w-full text-left px-4 py-3 text-text-secondary text-[13px] hover:text-text-primary transition-colors"
                 >
-                  {showPrompt ? "▾" : "▸"} Webhook 创建教程
+                  {showPrompt ? "▾" : "▸"} {t("agentSetup.webhookTutorial")}
                 </button>
                 {showPrompt && (
                   <div className="px-4 pb-4">
                     <p className="text-text-tertiary text-[13px] mb-3">
-                      复制下面的 Prompt 发给 AI 助手，它会帮你生成完整的 Webhook 服务。
+                      {t("agentSetup.tutorialDesc")}
                     </p>
                     <div className="relative">
                       <pre className="bg-surface-elevated rounded-xl p-4 text-text-secondary text-[12px] overflow-auto max-h-48 whitespace-pre-wrap">
@@ -266,7 +268,7 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
                         onClick={handleCopyPrompt}
                         className="absolute top-2 right-2 bg-white hover:bg-white/80 text-text-secondary px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors shadow-sm"
                       >
-                        {copied ? "已复制" : "复制"}
+                        {copied ? t("agentSetup.copied") : t("agentSetup.copy")}
                       </button>
                     </div>
                   </div>
@@ -284,7 +286,7 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
                 : "bg-surface-deep text-text-tertiary cursor-not-allowed"
             }`}
           >
-            保存
+            {t("common.save")}
           </button>
         </div>
       </div>
