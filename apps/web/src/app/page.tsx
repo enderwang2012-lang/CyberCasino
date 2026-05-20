@@ -1,24 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/hooks/useSocket";
 import { Lobby } from "@/components/Lobby";
 import { TableView } from "@/components/TableView";
 import { AgentSetup } from "@/components/AgentSetup";
 import { TableWaitingRoom } from "@/components/TableWaitingRoom";
 import { HistoryPage } from "@/components/HistoryPage";
+import { LandingPage } from "@/components/LandingPage";
 
 type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
 
-export default function Home() {
+function AuthenticatedApp({ userId }: { userId: string }) {
   const {
-    connected, tables, events, userId, agentConfig,
+    connected, tables, events, agentConfig,
     tableError, webhookPingResult, tableStarted, seatUpdates,
     personalities, historyTables,
     joinTable, leaveTable, saveAgent, testWebhook,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
     startGame, getHistory, refreshLobby, clearTableError,
-  } = useSocket();
+  } = useSocket(userId);
 
   const [view, setView] = useState<ViewState>("lobby");
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
@@ -153,4 +155,22 @@ export default function Home() {
       agentConfig={agentConfig}
     />
   );
+}
+
+export default function Home() {
+  const { loading, user } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] bg-surface-elevated flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LandingPage />;
+  }
+
+  return <AuthenticatedApp userId={user.userId} />;
 }

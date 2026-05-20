@@ -123,8 +123,13 @@ export interface Winner {
 
 export type AgentMode = "smart" | "custom";
 
+export type AuthProvider = "github" | "google";
+
 export interface UserIdentity {
   userId: string;
+  name: string;
+  avatar: string;
+  provider: AuthProvider;
   createdAt: number;
 }
 
@@ -227,7 +232,7 @@ export interface ClientToServerEvents {
   "lobby:join": () => void;
   "table:join": (tableId: string) => void;
   "table:leave": (tableId: string) => void;
-  "user:register": (existingUserId?: string) => void;
+  "user:register": (userId: string) => void;
   "agent:save": (config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => void;
   "agent:get": () => void;
   "agent:testWebhook": (url: string) => void;
