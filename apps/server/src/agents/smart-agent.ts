@@ -43,13 +43,14 @@ export class SmartAgent implements IPokerAgent {
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
-    minRaise: number
+    minRaise: number,
+    language: "zh" | "en" = "zh"
   ): Promise<AgentDecision> {
     // Hybrid: LLM decides with stylePrompt influence, rule engine provides sanity check
-    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise);
+    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise, language);
 
     try {
-      const llmDecision = await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
+      const llmDecision = await claudeDecide(view, this.personality, validActions, callAmount, minRaise, language);
 
       // Sanity check: if rule engine has very high confidence (>= 0.85) and
       // LLM contradicts it, override the action but keep LLM's thought
@@ -70,11 +71,11 @@ export class SmartAgent implements IPokerAgent {
     } catch {
       if (ruleResult.decision) {
         ruleResult.decision.thought.message = ruleResult.decision.thought.message === "..."
-          ? "[AI 思考中断，自动决策]"
+          ? (language === "zh" ? "[AI 思考中断，自动决策]" : "[AI thinking interrupted, auto decision]")
           : ruleResult.decision.thought.message;
         return ruleResult.decision;
       }
-      return ruleFallback(view, this.personality, validActions, callAmount);
+      return ruleFallback(view, this.personality, validActions, callAmount, language);
     }
   }
 }

@@ -108,9 +108,9 @@ export function useSocket(
     socketRef.current?.emit("table:clear-seats", tableId);
   }, []);
 
-  const startGame = useCallback((tableId: string) => {
+  const startGame = useCallback((tableId: string, language?: "zh" | "en") => {
     setTableError(null);
-    socketRef.current?.emit("table:start", tableId);
+    socketRef.current?.emit("table:start", tableId, language);
   }, []);
 
   const getHistory = useCallback(() => {

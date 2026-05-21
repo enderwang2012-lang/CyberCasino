@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { AgentConfig, AgentMode, WebhookPingResult } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useHeader } from "@/contexts/HeaderContext";
 
 const EMOJI_PRESETS = ["🦈", "🐺", "🦊", "🐉", "🤖", "👾", "🎭", "🔥", "💀", "🌙", "⚡", "🃏"];
 
@@ -69,6 +70,11 @@ interface AgentSetupProps {
 
 export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebhook, onBack }: AgentSetupProps) {
   const { t } = useLanguage();
+  const { setVisible } = useHeader();
+  useEffect(() => {
+    setVisible(false);
+    return () => setVisible(true);
+  }, [setVisible]);
   const [mode, setMode] = useState<AgentMode | null>(agentConfig?.mode ?? null);
   const [name, setName] = useState(agentConfig?.name ?? "");
   const [avatar, setAvatar] = useState(agentConfig?.avatar ?? "🤖");

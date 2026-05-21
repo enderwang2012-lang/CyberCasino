@@ -64,7 +64,7 @@ function pick(arr: string[]): string {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-const PERSONA_LINES: Record<string, {
+const PERSONA_LINES_ZH: Record<string, {
   premium: string[];
   good: string[];
   trash: string[];
@@ -143,6 +143,85 @@ const PERSONA_LINES: Record<string, {
   },
 };
 
+const PERSONA_LINES_EN: Record<string, {
+  premium: string[];
+  good: string[];
+  trash: string[];
+  bluff: string[];
+  monster: string[];
+  weak: string[];
+  freeCard: string[];
+  fold: string[];
+  strongCall: string[];
+}> = {
+  neon: {
+    premium: ["Finally a premium hand", "Patience pays off", "This hand is worth fighting for"],
+    good: ["Decent, let's see the flop", "No rush, take it slow", "Worth a look"],
+    trash: ["Not my hand, pass", "Patience is a virtue", "Wait for the next one"],
+    bluff: ["Sometimes you gotta surprise them", "...let me try something", "Taking a risk this time"],
+    monster: ["Stay calm, don't let them see", "Easy now, don't scare the fish", "Perfect board"],
+    weak: ["Not worth the risk", "The wise choice is to fold", "Chips matter more than ego"],
+    freeCard: ["Free card? Why not", "Look if it costs nothing", "No bet, so let's see"],
+    fold: ["Discipline first", "Doesn't meet my standards", "No shame in folding"],
+    strongCall: ["Confident, I'm in", "Math is on my side", "Worth following"],
+  },
+  viper: {
+    premium: ["Time to strike! Raise!", "Haha, let me shake things up", "About time I applied pressure"],
+    good: ["Not bad, I'll stick around", "Let me see what you've got", "Interesting..."],
+    trash: ["Ugh, trash hand...", "Forget it", "Not my day"],
+    bluff: ["Come on! Who's scared!", "Bluffing is half the fun", "Pressure's on them"],
+    monster: ["ALL IN! Wait no... just raise", "The prey is hooked", "Time to collect!"],
+    weak: ["Bad cards CAN be played, but nah", "I'll let you off this time", "Waste of ammo"],
+    freeCard: ["Free peek? Absolutely", "Free card, why not", "No cost, I'll look"],
+    fold: ["Hmph, I'll get you next time", "Tactical retreat", "I'm out"],
+    strongCall: ["Call! What's there to fear!", "Let's go let's go", "You raise, I call"],
+  },
+  ghost: {
+    premium: ["...act like nothing's happening", "Calm outside, thrilled inside", "A smile behind the mask"],
+    good: ["Keep them guessing...", "Between truth and deception", "Maintain the mystery"],
+    trash: ["This hand... but maybe I can act", "True masters don't look at cards", "It's not the cards, it's the show"],
+    bluff: ["Watch my performance", "Who's hunting who?", "Everything is illusion"],
+    monster: ["...intentionally show weakness", "Make them think I'm bluffing", "Reverse psychology"],
+    weak: ["Know when to walk away", "Even bluffers need timing", "No act this time"],
+    freeCard: ["Reading their expressions...", "Information is worth more than chips", "Let's observe first"],
+    fold: ["Vanishing into the shadows...", "A ghost never overstays", "Next strike will be fatal"],
+    strongCall: ["Call without showing emotion", "They'll never guess what I have", "Cold and steady"],
+  },
+  oracle: {
+    premium: ["Positive EV, raise is optimal", "EV+, executing standard strategy", "The math says raise"],
+    good: ["Good pot odds, worth investing", "Implied odds look favorable", "Probability's on my side"],
+    trash: ["Negative EV, fold", "Outside GTO range", "Math doesn't support continuing"],
+    bluff: ["Range balancing requires occasional bluffs", "To maintain range balance...", "GTO dictates bluff frequency here"],
+    monster: ["Control pot size, maximize EV", "Value bet across all three streets", "Perfect value extraction opportunity"],
+    weak: ["Negative expected value, fold decisively", "Sunk cost doesn't affect decisions", "Cut losses, optimal line"],
+    freeCard: ["Zero-cost information", "Information value > zero", "Check and gather more data"],
+    fold: ["Probability doesn't support continuing", "Clear fold decision", "EV-, no hesitation"],
+    strongCall: ["Pot odds justify a call", "Positive EV call", "Math demands I follow"],
+  },
+  shark: {
+    premium: ["Smelling blood...", "Prey spotted", "Ready to harvest"],
+    good: ["Not bad, let's find the fish", "Looking for weak spots", "Testing the opponents"],
+    trash: ["No weakness to exploit", "No prey at this table", "Not worth engaging"],
+    bluff: ["Bullying weak players is the best", "Let's see who breaks first", "Apply the pressure"],
+    monster: ["Hehehe... hooked", "Feeding time for the shark", "Perfect ambush timing"],
+    weak: ["No opportunity this time", "Can't eat fish every hand", "Save ammo for the soft targets"],
+    freeCard: ["Observing the prey's weakness...", "Gathering intel", "Who's trembling?"],
+    fold: ["Don't waste bullets", "Even hunters must wait", "Next target"],
+    strongCall: ["Following the prey's rhythm", "Bite and don't let go", "Don't let the prey escape"],
+  },
+  fox: {
+    premium: ["Hehe, going serious this time~", "The fox smiles", "Interesting, interesting~"],
+    good: ["Maybe play around?", "Whatever the mood", "Left or right today~"],
+    trash: ["Boring... fold", "No fun no fun", "Bring on the excitement next hand"],
+    bluff: ["Hahahaha nobody can read me", "True or false? Guess!", "Style switch!"],
+    monster: ["Pretending to be hesitant...", "Sigh... okay... I'll just call (fake)", "Deliberately checking cards repeatedly"],
+    weak: ["Slipping away~", "Not fun this hand", "Try a different strategy next time"],
+    freeCard: ["Free stuff is the best~", "Free peek", "No cost? Awesome~"],
+    fold: ["Boring~ fold", "Hmph~ not playing", "I'll come back with a new trick"],
+    strongCall: ["Call~ call~ call~", "Fun fun", "Keep going~"],
+  },
+};
+
 function makeThought(
   message: string,
   confidence: number,
@@ -151,13 +230,18 @@ function makeThought(
   return { message, confidence, isBluffing };
 }
 
+function getLines(language: "zh" | "en") {
+  return language === "zh" ? PERSONA_LINES_ZH : PERSONA_LINES_EN;
+}
+
 function personalizedThought(
   personalityId: string,
-  category: keyof typeof PERSONA_LINES["neon"],
+  category: keyof typeof PERSONA_LINES_ZH["neon"],
   confidence: number,
-  isBluffing: boolean
+  isBluffing: boolean,
+  language: "zh" | "en" = "zh"
 ): AgentThought {
-  const lines = PERSONA_LINES[personalityId];
+  const lines = getLines(language)[personalityId];
   const message = lines ? pick(lines[category]) : "...";
   return { message, confidence, isBluffing };
 }
@@ -167,7 +251,8 @@ export function ruleDecide(
   personality: AgentPersonality,
   validActions: ActionType[],
   callAmount: number,
-  minRaise: number
+  minRaise: number,
+  language: "zh" | "en" = "zh"
 ): RuleResult {
   const { myCards, phase, communityCards, pots, smallBlind, bigBlind } = view;
   const potSize = pots.reduce((s, p) => s + p.amount, 0);
@@ -182,7 +267,7 @@ export function ruleDecide(
           confidence: 0.9,
           decision: {
             action: { type: "raise", amount },
-            thought: personalizedThought(pid, "premium", 0.85, false),
+            thought: personalizedThought(pid, "premium", 0.85, false, language),
           },
         };
       }
@@ -190,7 +275,7 @@ export function ruleDecide(
         confidence: 0.9,
         decision: {
           action: { type: "call" },
-          thought: personalizedThought(pid, "premium", 0.8, false),
+          thought: personalizedThought(pid, "premium", 0.8, false, language),
         },
       };
     }
@@ -202,7 +287,7 @@ export function ruleDecide(
           confidence: 0.7,
           decision: {
             action: { type: "raise", amount },
-            thought: personalizedThought(pid, "bluff", 0.3, true),
+            thought: personalizedThought(pid, "bluff", 0.3, true, language),
           },
         };
       }
@@ -210,7 +295,7 @@ export function ruleDecide(
         confidence: 0.8,
         decision: {
           action: { type: "fold" },
-          thought: personalizedThought(pid, "fold", 0.1, false),
+          thought: personalizedThought(pid, "fold", 0.1, false, language),
         },
       };
     }
@@ -221,7 +306,7 @@ export function ruleDecide(
           confidence: 0.7,
           decision: {
             action: validActions.includes("call") ? { type: "call" } : { type: "check" },
-            thought: personalizedThought(pid, "good", 0.55, false),
+            thought: personalizedThought(pid, "good", 0.55, false, language),
           },
         };
       }
@@ -239,7 +324,7 @@ export function ruleDecide(
         confidence: 0.95,
         decision: {
           action: { type: "raise", amount },
-          thought: personalizedThought(pid, "monster", 0.95, false),
+          thought: personalizedThought(pid, "monster", 0.95, false, language),
         },
       };
     }
@@ -247,7 +332,7 @@ export function ruleDecide(
       confidence: 0.9,
       decision: {
         action: validActions.includes("call") ? { type: "call" } : { type: "check" },
-        thought: personalizedThought(pid, "strongCall", 0.9, false),
+        thought: personalizedThought(pid, "strongCall", 0.9, false, language),
       },
     };
   }
@@ -258,7 +343,7 @@ export function ruleDecide(
         confidence: 0.75,
         decision: {
           action: { type: "fold" },
-          thought: personalizedThought(pid, "weak", 0.15, false),
+          thought: personalizedThought(pid, "weak", 0.15, false, language),
         },
       };
     }
@@ -268,7 +353,7 @@ export function ruleDecide(
         confidence: 0.6,
         decision: {
           action: { type: "raise", amount },
-          thought: personalizedThought(pid, "bluff", 0.2, true),
+          thought: personalizedThought(pid, "bluff", 0.2, true, language),
         },
       };
     }
@@ -277,7 +362,7 @@ export function ruleDecide(
         confidence: 0.7,
         decision: {
           action: { type: "check" },
-          thought: personalizedThought(pid, "freeCard", 0.2, false),
+          thought: personalizedThought(pid, "freeCard", 0.2, false, language),
         },
       };
     }
@@ -291,6 +376,7 @@ export function ruleFallback(
   personality: AgentPersonality,
   validActions: ActionType[],
   callAmount: number,
+  language: "zh" | "en" = "zh"
 ): AgentDecision {
   const pid = personality.id;
   const { aggression } = personality;
@@ -298,19 +384,19 @@ export function ruleFallback(
   if (callAmount === 0 && validActions.includes("check")) {
     return {
       action: { type: "check" },
-      thought: personalizedThought(pid, "freeCard", 0.3, false),
+      thought: personalizedThought(pid, "freeCard", 0.3, false, language),
     };
   }
 
   if (callAmount <= view.bigBlind * 2 && Math.random() < aggression) {
     return {
       action: validActions.includes("call") ? { type: "call" } : { type: "check" },
-      thought: personalizedThought(pid, "good", 0.4, false),
+      thought: personalizedThought(pid, "good", 0.4, false, language),
     };
   }
 
   return {
     action: { type: "fold" },
-    thought: personalizedThought(pid, "fold", 0.15, false),
+    thought: personalizedThought(pid, "fold", 0.15, false, language),
   };
 }

@@ -7,6 +7,7 @@ import { TabBar, type TabId } from "./TabBar";
 import { HighlightFeed } from "./HighlightFeed";
 import { Leaderboard } from "./Leaderboard";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useHeader } from "@/contexts/HeaderContext";
 
 interface TableViewProps {
   tableId: string;
@@ -19,6 +20,11 @@ interface TableViewProps {
 
 export function TableView({ tableId, tableName, events, onLeave, defaultTab = "live", isFinished = false }: TableViewProps) {
   const { t } = useLanguage();
+  const { setVisible } = useHeader();
+  useEffect(() => {
+    setVisible(false);
+    return () => setVisible(true);
+  }, [setVisible]);
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [hasNewHighlight, setHasNewHighlight] = useState(false);
   const lastHighlightCount = useRef(0);

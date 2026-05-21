@@ -43,19 +43,20 @@ export class PokerAgent implements IPokerAgent {
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
-    minRaise: number
+    minRaise: number,
+    language: "zh" | "en" = "zh"
   ): Promise<AgentDecision> {
-    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise);
+    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise, language);
 
     if (ruleResult.decision && ruleResult.confidence >= this.personality.claudeThreshold) {
       return ruleResult.decision;
     }
 
     try {
-      return await claudeDecide(view, this.personality, validActions, callAmount, minRaise);
+      return await claudeDecide(view, this.personality, validActions, callAmount, minRaise, language);
     } catch {
       if (ruleResult.decision) return ruleResult.decision;
-      return ruleFallback(view, this.personality, validActions, callAmount);
+      return ruleFallback(view, this.personality, validActions, callAmount, language);
     }
   }
 }

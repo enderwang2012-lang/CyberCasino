@@ -18,7 +18,13 @@ function cardStr(c: Card): string {
   return `${RANK_NAMES[c.rank]}${SUIT_SYMBOLS[c.suit]}`;
 }
 
-function buildPrompt(view: AgentGameView, validActions: ActionType[], callAmount: number, minRaise: number): string {
+function buildPrompt(
+  view: AgentGameView,
+  validActions: ActionType[],
+  callAmount: number,
+  minRaise: number,
+  language: "zh" | "en",
+): string {
   const myCards = view.myCards.map(cardStr).join(" ");
   const community = view.communityCards.length > 0
     ? view.communityCards.map(cardStr).join(" ")
@@ -34,6 +40,11 @@ function buildPrompt(view: AgentGameView, validActions: ActionType[], callAmount
     .slice(-10)
     .map((a) => `  ${a.playerId}: ${a.action.type}${a.action.amount ? ` ${a.action.amount}` : ""}`)
     .join("\n");
+
+  const isZh = language === "zh";
+  const thoughtHint = isZh
+    ? "用你的角色口吻写一句内心独白，像真实牌手在心里嘀咕，1-2句话"
+    : "Write an inner monologue in your character's voice, like a real poker player talking to themselves, 1-2 sentences";
 
   return `You are in a Texas Hold'em poker game.
 
@@ -59,7 +70,7 @@ Respond with a JSON object (no markdown, just raw JSON):
 {
   "action": "fold" | "check" | "call" | "raise",
   "amount": <number if raising, omit otherwise>,
-  "thought": "<用你的角色口吻写一句内心独白，像真实牌手在心里嘀咕，1-2句话>",
+  "thought": "<${thoughtHint}>",
   "confidence": <0.0-1.0>,
   "isBluffing": <true/false>
 }`;
@@ -71,9 +82,10 @@ export async function claudeDecide(
   personality: AgentPersonality,
   validActions: ActionType[],
   callAmount: number,
-  minRaise: number
+  minRaise: number,
+  language: "zh" | "en" = "zh"
 ): Promise<AgentDecision> {
-  const prompt = buildPrompt(view, validActions, callAmount, minRaise);
+  const prompt = buildPrompt(view, validActions, callAmount, minRaise, language);
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>

@@ -226,7 +226,7 @@ io.on("connection", (socket) => {
     broadcastSeats(tableId);
   });
 
-  socket.on("table:start", (tableId) => {
+  socket.on("table:start", (tableId, language) => {
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
 
@@ -239,7 +239,7 @@ io.on("connection", (socket) => {
     broadcastLobby();
 
     const agentConfigs = tableManager.getAgentConfigs(tableId);
-    table.start(agentConfigs).catch((err) => {
+    table.start(agentConfigs, language ?? "zh").catch((err) => {
       console.error(`[table:${tableId}] error:`, err);
     });
   });

@@ -240,7 +240,7 @@ export interface ClientToServerEvents {
   "table:sit-builtin": (tableId: string, personalityId: string) => void;
   "table:remove-seat": (tableId: string, seatIndex: number) => void;
   "table:clear-seats": (tableId: string) => void;
-  "table:start": (tableId: string) => void;
+  "table:start": (tableId: string, language?: "zh" | "en") => void;
   "table:history": () => void;
 }
 

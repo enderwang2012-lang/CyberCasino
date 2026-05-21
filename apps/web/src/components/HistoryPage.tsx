@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import type { TableInfo } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useHeader } from "@/contexts/HeaderContext";
 
 interface HistoryPageProps {
   tables: TableInfo[];
@@ -11,6 +13,11 @@ interface HistoryPageProps {
 
 export function HistoryPage({ tables, onJoin, onBack }: HistoryPageProps) {
   const { t } = useLanguage();
+  const { setVisible } = useHeader();
+  useEffect(() => {
+    setVisible(false);
+    return () => setVisible(true);
+  }, [setVisible]);
 
   return (
     <div className="min-h-[100dvh] flex flex-col items-center px-5 pt-[max(4rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] bg-surface-elevated">

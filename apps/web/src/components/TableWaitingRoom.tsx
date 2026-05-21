@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { TableSeat, AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { SeatSelectPopup } from "./SeatSelectPopup";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useHeader } from "@/contexts/HeaderContext";
 
 interface TableWaitingRoomProps {
   tableId: string;
@@ -35,6 +36,11 @@ export function TableWaitingRoom({
   error,
 }: TableWaitingRoomProps) {
   const { t } = useLanguage();
+  const { setVisible } = useHeader();
+  useEffect(() => {
+    setVisible(false);
+    return () => setVisible(true);
+  }, [setVisible]);
   const [showSelectPopup, setShowSelectPopup] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ seatIndex: number; name: string } | null>(null);
 

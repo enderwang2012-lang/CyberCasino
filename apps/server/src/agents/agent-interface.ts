@@ -14,7 +14,8 @@ export interface IPokerAgent {
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
-    minRaise: number
+    minRaise: number,
+    language?: "zh" | "en"
   ): Promise<AgentDecision>;
   recordAction(record: ActionRecord): void;
   clearHistory(): void;

@@ -43,13 +43,14 @@ export class ExternalAgent implements IPokerAgent {
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
-    minRaise: number
+    minRaise: number,
+    language: "zh" | "en" = "zh"
   ): Promise<AgentDecision> {
     try {
       return await this.callWebhook(view, validActions, callAmount, minRaise);
     } catch (err) {
       console.warn(`[ExternalAgent:${this.id}] webhook failed, falling back to rules:`, err);
-      return this.fallbackDecide(view, validActions, callAmount, minRaise);
+      return this.fallbackDecide(view, validActions, callAmount, minRaise, language);
     }
   }
 
@@ -110,7 +111,8 @@ export class ExternalAgent implements IPokerAgent {
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
-    minRaise: number
+    minRaise: number,
+    language: "zh" | "en" = "zh"
   ): AgentDecision {
     const personality = parseStyleToPersonality(
       this.id,
@@ -119,8 +121,8 @@ export class ExternalAgent implements IPokerAgent {
       this.stylePrompt
     );
 
-    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise);
-    const decision = ruleResult.decision ?? ruleFallback(view, personality, validActions, callAmount);
+    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language);
+    const decision = ruleResult.decision ?? ruleFallback(view, personality, validActions, callAmount, language);
 
     return {
       action: decision.action,

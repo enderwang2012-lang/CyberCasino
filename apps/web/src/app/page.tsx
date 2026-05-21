@@ -9,6 +9,7 @@ import { AgentSetup } from "@/components/AgentSetup";
 import { TableWaitingRoom } from "@/components/TableWaitingRoom";
 import { HistoryPage } from "@/components/HistoryPage";
 import { LandingPage } from "@/components/LandingPage";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
 
@@ -22,6 +23,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     startGame, getHistory, refreshLobby, clearTableError,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
+  const { language } = useLanguage();
   const [view, setView] = useState<ViewState>("lobby");
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState<ViewState>("lobby");
@@ -121,7 +123,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         onSitSelf={() => sitAtTable(activeTableId)}
         onSitBuiltin={(personalityId) => sitBuiltin(activeTableId, personalityId)}
         onRemoveSeat={(seatIndex) => removeSeat(activeTableId, seatIndex)}
-        onStart={() => startGame(activeTableId)}
+        onStart={() => startGame(activeTableId, language)}
         onBack={handleLeave}
         onAgentSetup={() => handleAgentSetup("table-waiting")}
         error={tableError}

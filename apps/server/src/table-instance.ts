@@ -54,6 +54,7 @@ export class TableInstance {
   private currentBigBlind: number;
   private blindSchedule: BlindSchedule;
   private autoStart: boolean;
+  private language: "zh" | "en" = "zh";
 
   constructor(id: string, config: TableConfig, creatorUserId?: string, autoStart = false) {
     this.id = id;
@@ -191,9 +192,10 @@ export class TableInstance {
 
   // --- Game control ---
 
-  async start(agentConfigs?: Map<string, AgentConfig>): Promise<void> {
+  async start(agentConfigs?: Map<string, AgentConfig>, language: "zh" | "en" = "zh"): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.language = language;
 
     if (this.autoStart) {
       const count = Math.min(this.config.maxPlayers, PERSONALITIES.length);
@@ -380,7 +382,7 @@ export class TableInstance {
           actionHistory: actionHistory.slice(-15),
         };
 
-        const decision = await agent.decide(view, validActions, callAmount, minRaise);
+        const decision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
 
         // Update shadow state based on the decision
         const action = decision.action;
