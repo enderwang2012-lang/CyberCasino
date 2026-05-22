@@ -14,7 +14,14 @@ import type {
   BuiltinPersonalityInfo,
 } from "@cybercasino/shared";
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+function getServerUrl() {
+  if (process.env.NEXT_PUBLIC_SERVER_URL) {
+    const url = process.env.NEXT_PUBLIC_SERVER_URL;
+    return url.startsWith("http") ? url : `https://${url}`;
+  }
+  if (typeof window !== "undefined") return window.location.origin;
+  return "http://localhost:3001";
+}
 
 export function useSocket(
   oauthUserId: string | undefined,
@@ -36,7 +43,7 @@ export function useSocket(
   useEffect(() => {
     if (!oauthUserId) return;
 
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL);
+    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(getServerUrl());
     socketRef.current = socket;
 
     socket.on("connect", () => {

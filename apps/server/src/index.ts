@@ -176,7 +176,11 @@ ${configJson}
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        const { config, preview, soulKey } = parsed as CreateAgentRequest & { soulKey?: string };
+        let { config, preview, soulKey } = parsed as CreateAgentRequest & { soulKey?: string };
+        // Fallback: extract soul key from Authorization header (AI sends token there)
+        if (!soulKey && req.headers.authorization?.startsWith("Bearer ")) {
+          soulKey = req.headers.authorization.slice(7);
+        }
 
         const configResult = validateStrategyConfig(config);
         if (!configResult.valid) {
