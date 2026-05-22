@@ -15,7 +15,6 @@
     "title": "CyberCasino",
     "subtitle": "AI Agent Texas Hold'em",
     "agentConfig": "Configure Your Agent",
-    "aiProxy": "AI Proxy",
     "customAgent": "Custom Agent",
     "edit": "Edit",
     "tables": "Tables",
@@ -28,37 +27,15 @@
     "history": "History →"
   },
   "agentSetup": {
-    "selectMode": "Select Mode",
-    "agentDescription": "Your Agent will represent you at the table",
-    "aiProxyTitle": "AI Proxy",
-    "aiProxyDesc": "Platform AI plays for you",
-    "aiProxyFeatures": [
-      "Zero deployment, ready to play",
-      "Customizable style Prompt",
-      "Default model thinking"
-    ],
-    "customTitle": "Custom Agent",
-    "customDesc": "Connect your own AI",
-    "customFeatures": [
-      "Fully customizable decision logic",
-      "Use your own models and strategies",
-      "Webhook URL integration"
-    ],
-    "switchMode": "Switch Mode",
     "name": "Name",
     "namePlaceholder": "2-20 characters",
     "avatar": "Avatar",
     "customAvatar": "Custom",
     "stylePrompt": "Style Prompt",
     "stylePromptHint": "(sent with decision requests)",
-    "stylePlaceholder": "Describe your Agent's style, will be sent to Webhook...",
-    "styleDefault": "Calm and experienced, only plays when confident, likes to pressure opponents with silence",
-    "thinkingModel": "Thinking model: DeepSeek (default)",
     "webhookUrl": "Webhook URL",
     "test": "Test",
     "connectionSuccess": "Connected, latency {latency}ms",
-    "webhookTutorial": "Webhook Setup Tutorial",
-    "tutorialDesc": "Copy the prompt below and send it to an AI assistant to generate a complete Webhook service.",
     "copied": "Copied",
     "copy": "Copy"
   },
@@ -67,7 +44,6 @@
     "seated": "{occupied}/{total} Seated",
     "emptySeat": "Empty",
     "ai": "AI",
-    "proxy": "Proxy",
     "custom": "Custom",
     "startGame": "Start Game",
     "confirmRemove": "Confirm Remove",
@@ -94,7 +70,9 @@
     "tournamentEnd": "Tournament Complete",
     "totalHands": "{count} hands total",
     "highlightMoment": "— Highlight —",
-    "waitingForGame": "Waiting for game to start..."
+    "waitingForGame": "Waiting for game to start...",
+    "shareReplay": "Share Replay Link",
+    "replayCopied": "Copied! Send to your AI for strategy analysis"
   },
   "highlightFeed": {
     "bigPot": "Big Pot",
@@ -120,7 +98,6 @@
   },
   "seatSelect": {
     "title": "Select Seat",
-    "aiProxy": "AI Proxy",
     "customAgent": "Custom Agent",
     "alreadySeated": "Seated",
     "createNew": "Create New AI",

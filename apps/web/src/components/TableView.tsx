@@ -69,7 +69,7 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "l
 
       <div className="flex-1 min-h-0 relative">
         <div className={`absolute inset-0 flex flex-col ${activeTab === "live" ? "" : "invisible pointer-events-none"}`}>
-          <ChatFeed events={events} />
+          <ChatFeed events={events} tableId={tableId} />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "highlights" ? "" : "invisible pointer-events-none"}`}>
           <HighlightFeed events={events} />

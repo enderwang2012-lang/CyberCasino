@@ -26,7 +26,7 @@ export class ExternalAgent implements IPokerAgent {
     this.id = config.id;
     this.name = config.name;
     this.avatar = config.avatar;
-    this.webhookUrl = config.webhookUrl!;
+    this.webhookUrl = config.webhookUrl ?? "";
     this.stylePrompt = config.stylePrompt;
     this.config = config;
   }

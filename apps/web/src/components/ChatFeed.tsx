@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo, useState } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -82,6 +82,27 @@ function getHandName(holeCards: Card[], communityCards: Card[]): string | null {
   return result.name;
 }
 
+function ReplayButton({ tableId }: { tableId: string }) {
+  const { t } = useLanguage();
+  const [copied, setCopied] = useState(false);
+  const replayUrl = `${process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001"}/api/replay/${tableId}`;
+  return (
+    <div className="mt-4 text-center">
+      <button
+        onClick={() => {
+          navigator.clipboard.writeText(replayUrl).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
+        }}
+        className="text-[13px] text-accent bg-accent/10 px-4 py-2 rounded-full font-medium active:scale-95 transition-transform"
+      >
+        {copied ? t("chatFeed.replayCopied") : t("chatFeed.shareReplay")}
+      </button>
+    </div>
+  );
+}
+
 interface BlindInfo {
   smallBlindPlayerId: string;
   bigBlindPlayerId: string;
@@ -100,7 +121,7 @@ interface EventContext {
   netProfits?: Map<string, number>;
 }
 
-function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventContext; isAutoRun?: boolean }) {
+function EventLine({ event, ctx, isAutoRun, tableId }: { event: GameEvent; ctx: EventContext; isAutoRun?: boolean; tableId?: string }) {
   const { t } = useLanguage();
   const { lookup, chipsBeforeHand, holeCards, communityCards, currentChips, potTotal } = ctx;
 
@@ -268,6 +289,7 @@ function EventLine({ event, ctx, isAutoRun }: { event: GameEvent; ctx: EventCont
           <div className="text-[13px] text-text-tertiary text-center mt-4">
             {t("chatFeed.totalHands", { count: event.rankings[0]?.handsPlayed ?? 0 })}
           </div>
+          {tableId && <ReplayButton tableId={tableId} />}
         </div>
       );
 
@@ -314,7 +336,7 @@ interface AccumulatedContext {
   blindInfo?: BlindInfo;
 }
 
-export function ChatFeed({ events }: { events: GameEvent[] }) {
+export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: string }) {
   const { t } = useLanguage();
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
@@ -475,6 +497,7 @@ export function ChatFeed({ events }: { events: GameEvent[] }) {
           key={index}
           event={event}
           isAutoRun={isAutoRun}
+          tableId={tableId}
           ctx={{
             lookup,
             chipsBeforeHand: contexts[index].chipsBeforeHand,

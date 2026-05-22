@@ -121,8 +121,6 @@ export interface Winner {
 
 // --- External Agent types ---
 
-export type AgentMode = "smart" | "custom";
-
 export type AuthProvider = "github" | "google";
 
 export interface UserIdentity {
@@ -138,7 +136,6 @@ export interface AgentConfig {
   userId: string;
   name: string;
   avatar: string;
-  mode: AgentMode;
   stylePrompt: string;
   webhookUrl?: string;
   webhookVerified?: boolean;
@@ -174,7 +171,7 @@ export interface SeatAgent {
   id: string;
   name: string;
   avatar: string;
-  type: "smart" | "custom" | "builtin";
+  type: "custom" | "builtin";
   userId?: string;
 }
 
@@ -292,4 +289,35 @@ export interface BuiltinPersonalityInfo {
   name: string;
   avatar: string;
   style: string;
+}
+
+// --- Replay types ---
+
+export interface ReplayHandAction {
+  playerId: string;
+  phase: GamePhase;
+  action: ActionType;
+  amount?: number;
+  thought?: string;
+}
+
+export interface ReplayHand {
+  handNumber: number;
+  smallBlind: number;
+  bigBlind: number;
+  holeCards: Record<string, Card[]>;
+  communityCards: Card[][];
+  actions: ReplayHandAction[];
+  showdown?: ShowdownResult[];
+  winners: Winner[];
+}
+
+export interface ReplayData {
+  tableId: string;
+  tableName: string;
+  config: TableConfig;
+  players: { id: string; name: string; avatar: string; type: string }[];
+  hands: ReplayHand[];
+  rankings: { playerId: string; position: number }[];
+  totalHands: number;
 }

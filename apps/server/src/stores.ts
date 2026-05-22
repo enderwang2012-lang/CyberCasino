@@ -34,6 +34,9 @@ function loadAgents(): Map<string, AgentConfig> {
   try {
     const raw = readFileSync(AGENTS_FILE, "utf-8");
     const arr: AgentConfig[] = JSON.parse(raw);
+    for (const a of arr) {
+      delete (a as any).mode;
+    }
     return new Map(arr.map((a) => [a.userId, a]));
   } catch {
     return new Map();

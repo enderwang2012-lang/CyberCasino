@@ -9,7 +9,7 @@ export interface IPokerAgent {
   readonly id: string;
   readonly name: string;
   readonly avatar: string;
-  readonly agentType: "builtin" | "smart" | "external";
+  readonly agentType: "builtin" | "external";
   decide(
     view: AgentGameView,
     validActions: ActionType[],
