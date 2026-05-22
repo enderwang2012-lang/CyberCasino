@@ -32,15 +32,35 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
+  // Get user's existing V2 agent
+  const mineMatch = req.url?.match(/^\/api\/agents\/mine\?userId=(.+)$/);
+  if (mineMatch && req.method === "GET") {
+    const userId = decodeURIComponent(mineMatch[1]);
+    const agent = agentStore.getV2ByUserId(userId);
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify(agent ? { agent } : { agent: null }));
+    return;
+  }
+
   // Generate soul URL
   if (req.url === "/api/agents/soul" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
       try {
-        const { userId, name, avatar } = JSON.parse(body);
+        const { userId, name, avatar, agentId } = JSON.parse(body);
         const key = crypto.randomBytes(16).toString("hex");
-        soulStore.set(key, { userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now() });
+        const soulEntry: { userId: string; name: string; avatar: string; createdAt: number; agent?: AgentConfigV2; existingConfig?: import("@cybercasino/shared").StrategyConfig } = {
+          userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now(),
+        };
+        // Edit mode: attach existing config so AI knows what to modify
+        if (agentId) {
+          const existing = agentStore.getV2ByUserId(userId);
+          if (existing && existing.id === agentId) {
+            soulEntry.existingConfig = existing.strategy;
+          }
+        }
+        soulStore.set(key, soulEntry);
         const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({ soulUrl: `${baseUrl}/api/agents/soul/${key}`, key }));
@@ -92,6 +112,29 @@ const httpServer = createServer((req, res) => {
         .replace("{API_TOKEN}", key)
         .replace(/\{NAME\}/g, soul.name)
         .replace(/\{AVATAR\}/g, soul.avatar);
+
+      // Edit mode: inject existing config context
+      if (soul.existingConfig) {
+        const configJson = JSON.stringify(soul.existingConfig, null, 2);
+        const editSection = `## 编辑模式
+
+这是一个**修改任务**。牌手「${soul.name}」已有完整策略配置，你不需要从零创建。
+
+以下是当前配置：
+
+\`\`\`json
+${configJson}
+\`\`\`
+
+**你的任务：**
+1. 先快速总结当前牌手的风格特点（2-3 句）
+2. 然后问用户想怎么调整："想怎么改？比如调整松紧度、改变某个位置的起手牌范围、修改性格/语气、或者降低犯错率？"
+
+改动时**在现有配置基础上修改**，不要重新设计。用户没说改的部分保持原样。`;
+        template = template.replace("{CONFIG_CONTEXT}", editSection);
+      } else {
+        template = template.replace("{CONFIG_CONTEXT}", "");
+      }
 
       const prompt = template;
 
@@ -212,8 +255,8 @@ const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
 
-// Soul store: key → { userId, name, avatar, createdAt, agent?: AgentConfigV2 }
-const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number; agent?: import("@cybercasino/shared").AgentConfigV2 }>();
+// Soul store: key → { userId, name, avatar, createdAt, agent?, existingConfig? }
+const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number; agent?: import("@cybercasino/shared").AgentConfigV2; existingConfig?: import("@cybercasino/shared").StrategyConfig }>();
 
 const socketUserMap = new Map<string, string>();
 const userSocketMap = new Map<string, string>();

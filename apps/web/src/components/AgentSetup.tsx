@@ -40,8 +40,38 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   const [polling, setPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [existingAgent, setExistingAgent] = useState<AgentConfigV2 | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState(true);
+  const [editing, setEditing] = useState(false);
+
   const soulLocked = !!soulUrl;
   const isReady = !!agent;
+
+  // ── Fetch existing agent on mount ──
+  useEffect(() => {
+    async function fetchExisting() {
+      try {
+        const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        if (data.agent) {
+          setExistingAgent(data.agent);
+        }
+      } catch { /* ignore */ }
+      setLoadingExisting(false);
+    }
+    fetchExisting();
+  }, [userId]);
+
+  // ── Start editing existing agent ──
+  function handleStartEdit() {
+    if (!existingAgent) return;
+    setName(existingAgent.name);
+    setAvatar(existingAgent.avatar);
+    setEditing(true);
+    setAgent(null);
+    setSoulUrl(null);
+    setSoulKey(null);
+  }
 
   // ── Poll soul status until agent is ready ──
   useEffect(() => {
@@ -77,7 +107,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       const res = await fetch(`${getServerUrl()}/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, name: name.trim(), avatar }),
+        body: JSON.stringify({ userId, name: name.trim(), avatar, agentId: editing && existingAgent ? existingAgent.id : undefined }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -173,14 +203,87 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
 
       <div className="w-full max-w-md">
         <h2 className="text-[24px] font-semibold text-text-primary mb-1 tracking-tight">
-          {isZh ? "创建 AI 牌手" : "Create AI Player"}
+          {editing
+            ? (isZh ? "编辑 AI 牌手" : "Edit AI Player")
+            : (isZh ? "创建 AI 牌手" : "Create AI Player")}
         </h2>
         <p className="text-text-secondary text-[15px] mb-6">
-          {isZh
-            ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造"
-            : "Name your player, then hand the soul to AI for shaping"}
+          {editing
+            ? (isZh ? "将修改后的「灵魂」发给 AI 助手，Ta 会在现有配置基础上调整" : "Send the updated soul to AI. They will adjust based on the current config.")
+            : (isZh
+              ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造"
+              : "Name your player, then hand the soul to AI for shaping")}
         </p>
 
+        {/* Loading */}
+        {loadingExisting && (
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* Existing agent view (before editing) */}
+        {!loadingExisting && existingAgent && !editing && !soulUrl && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[36px]">{existingAgent.avatar}</span>
+              <div>
+                <div className="text-text-primary text-[18px] font-semibold">{existingAgent.name}</div>
+                <div className="text-text-secondary text-[13px]">{existingAgent.description ?? ""}</div>
+              </div>
+              <div className="ml-auto">
+                <div className="bg-green-100 text-green-700 text-[12px] font-medium px-2.5 py-1 rounded-full">
+                  {isZh ? "已就绪" : "Ready"}
+                </div>
+              </div>
+            </div>
+
+            {/* Strategy summary */}
+            {existingAgent.strategy.preflop?.ranges && (
+              <>
+                <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
+                  {isZh ? "策略概览" : "Strategy Overview"}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  {Object.entries(existingAgent.strategy.preflop.ranges).slice(0, 6).map(([pos, range]) => (
+                    <div key={pos} className="bg-surface-elevated rounded-lg px-2 py-2">
+                      <div className="text-text-tertiary text-[11px]">{pos}</div>
+                      <div className="text-text-primary text-[13px] font-medium">
+                        {range.raise?.length ?? 0}R / {range.call?.length ?? 0}C
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-text-tertiary text-[12px]">
+                  {isZh
+                    ? `${existingAgent.strategy.postflop?.length ?? 0} 条翻牌后规则`
+                    : `${existingAgent.strategy.postflop?.length ?? 0} postflop rules`}
+                  {existingAgent.strategy.expression?.thoughtLanguage && ` · ${existingAgent.strategy.expression.thoughtLanguage.toUpperCase()}`}
+                  {existingAgent.strategy.imperfection && ` · ${(existingAgent.strategy.imperfection.baseMistakeRate * 100).toFixed(0)}% mistake rate`}
+                </div>
+              </>
+            )}
+
+            <div className="border-t border-surface-elevated my-4" />
+
+            <button
+              onClick={handleStartEdit}
+              className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors mb-3"
+            >
+              {isZh ? "编辑牌手" : "Edit Player"}
+            </button>
+            <button
+              onClick={onCreated}
+              className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
+            >
+              {isZh ? "回到大厅" : "Back to Lobby"}
+            </button>
+          </div>
+        )}
+
+        {/* Create / Edit form */}
+        {!loadingExisting && (!existingAgent || editing || soulUrl) && (
+          <>
         {/* Name & Avatar card — with status badge */}
         <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 relative">
           {/* Status badge */}
@@ -251,7 +354,9 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
           <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
             {/* Soul link */}
             <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
-              {isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant"}
+              {editing
+              ? (isZh ? "复制「灵魂」给 AI 助手（修改模式）" : "Copy Soul to AI Assistant (Edit Mode)")
+              : (isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant")}
             </div>
 
             <div className="flex items-center gap-2 mb-3">
@@ -267,9 +372,13 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
             </div>
 
             <p className="text-text-secondary text-[13px] mb-4">
-              {isZh
-                ? "把链接发给 AI 助手，Ta 会读懂牌手的灵魂并自动生成完整配置"
-                : "Send this link to your AI. They will understand the soul and auto-generate the config."}
+              {editing
+                ? (isZh
+                  ? "把链接发给 AI 助手，Ta 会分析当前配置并针对性地调整"
+                  : "Send this link to your AI. They will analyze the current config and make targeted adjustments.")
+                : (isZh
+                  ? "把链接发给 AI 助手，Ta 会读懂牌手的灵魂并自动生成完整配置"
+                  : "Send this link to your AI. They will understand the soul and auto-generate the config.")}
             </p>
 
             {/* Divider */}
@@ -285,7 +394,9 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
                   {isZh ? "灵魂生成中..." : "Soul is being shaped..."}
                 </p>
                 <p className="text-text-tertiary text-[12px] mt-1">
-                  {isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul"}
+                  {editing
+                    ? (isZh ? "AI 正在根据你的需求调整牌手配置" : "AI is adjusting the player config based on your feedback")
+                    : (isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul")}
                 </p>
                 {polling && (
                   <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mt-3" />
@@ -293,6 +404,8 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
     </div>
