@@ -111,11 +111,9 @@ export function TableWaitingRoom({
                 <div className="text-[28px] mb-1.5">{seat.agent.avatar}</div>
                 <div className="text-text-primary text-[13px] font-medium truncate">{seat.agent.name}</div>
                 <div className={`text-[11px] mt-0.5 font-medium ${
-                  seat.agent.type === "builtin" ? "text-text-tertiary" :
-                  seat.agent.type === "smart" ? "text-accent" : "text-[#BF5AF2]"
+                  seat.agent.type === "builtin" ? "text-text-tertiary" : "text-[#BF5AF2]"
                 }`}>
-                  {seat.agent.type === "builtin" ? t("tableWaiting.ai") :
-                   seat.agent.type === "smart" ? t("tableWaiting.proxy") : t("tableWaiting.custom")}
+                  {seat.agent.type === "builtin" ? t("tableWaiting.ai") : t("tableWaiting.custom")}
                 </div>
               </>
             ) : (

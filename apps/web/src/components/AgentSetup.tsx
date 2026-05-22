@@ -1,64 +1,129 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { AgentConfig, AgentMode, WebhookPingResult } from "@cybercasino/shared";
+import type { AgentConfig, WebhookPingResult } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useHeader } from "@/contexts/HeaderContext";
 
 const EMOJI_PRESETS = ["🦈", "🐺", "🦊", "🐉", "🤖", "👾", "🎭", "🔥", "💀", "🌙", "⚡", "🃏"];
 
-const WEBHOOK_PROMPT = `帮我创建一个 HTTP Webhook 服务，用于接入 CyberCasino 平台的 AI 德州扑克对战，你将化身 poker 高手替我征战。
+type WizardStep = "interview" | "review" | "configure";
 
-## 平台协议
+const ARCHETYPES = [
+  { id: "tag", emoji: "🎯", labelZh: "紧凶 (TAG)", labelEn: "Tight-Aggressive (TAG)", descZh: "只打好牌，但一旦出手就很凶", descEn: "Only play premium hands, but play them hard" },
+  { id: "lag", emoji: "🔥", labelZh: "松凶 (LAG)", labelEn: "Loose-Aggressive (LAG)", descZh: "什么牌都玩，持续施加压力", descEn: "Play many hands, apply constant pressure" },
+  { id: "rock", emoji: "🪨", labelZh: "岩石 (Rock)", labelEn: "Rock", descZh: "极度保守，只玩坚果，等待时机", descEn: "Ultra-tight, only play the nuts" },
+  { id: "maniac", emoji: "🤪", labelZh: "疯子 (Maniac)", labelEn: "Maniac", descZh: "什么牌都加注，高频率诈唬", descEn: "Raise everything, bluff constantly" },
+  { id: "balanced", emoji: "⚖️", labelZh: "均衡 (Balanced)", labelEn: "Balanced", descZh: "攻守平衡，难以被看穿", descEn: "Balanced approach, hard to read" },
+];
 
-平台会向你的 Webhook URL 发送 HTTP POST 请求，Content-Type 为 application/json。
-
-### 1. 心跳检测（ping）
-请求：{ "type": "ping", "timestamp": 1714300000000 }
-期望响应：{ "status": "ok" }
-
-### 2. 决策请求（decision）
-请求字段：
-{
-  "type": "decision",
-  "stylePrompt": "你的风格描述...",
-  "gameView": {
-    "myId": "agent-1",
-    "myCards": [{ "rank": 14, "suit": "s" }, { "rank": 13, "suit": "h" }],
-    "communityCards": [...],
-    "phase": "flop",
-    "pots": [{ "amount": 600 }],
-    "players": [...],
-    "currentBet": 200,
-    "bigBlind": 100,
-    "dealerSeatIndex": 0
+const QUESTIONS = [
+  {
+    id: "marginal",
+    zh: "翻牌前拿到边缘牌（如 KJo），你倾向？",
+    en: "Pre-flop with a marginal hand (e.g. KJo), you tend to?",
+    options: [
+      { id: "raise", zh: "加注抢盲", en: "Raise to steal blinds" },
+      { id: "call", zh: "平跟看看", en: "Call and see" },
+      { id: "fold", zh: "直接弃牌", en: "Fold" },
+    ],
   },
-  "validActions": ["fold", "call", "raise"],
-  "callAmount": 100,
-  "minRaise": 100
+  {
+    id: "pressure",
+    zh: "对手连续下注，你手里有中对，你会？",
+    en: "Opponent keeps betting, you have middle pair. You?",
+    options: [
+      { id: "reraise", zh: "反加回去", en: "Re-raise" },
+      { id: "call", zh: "跟注观望", en: "Call and observe" },
+      { id: "fold", zh: "果断弃牌", en: "Fold decisively" },
+    ],
+  },
+  {
+    id: "river",
+    zh: "河牌圈什么都没中，你会？",
+    en: "River brought nothing, you missed everything. You?",
+    options: [
+      { id: "bluff", zh: "演一手，开诈", en: "Run a bluff" },
+      { id: "giveup", zh: "放弃这一局", en: "Give up the hand" },
+    ],
+  },
+];
+
+function generateStylePrompt(archetype: string, answers: Record<string, string>, language: "zh" | "en"): string {
+  const isZh = language === "zh";
+
+  const archetypeLines: Record<string, { zh: string; en: string }> = {
+    tag: {
+      zh: "紧凶型选手。起手牌范围较窄，只玩优质手牌。但一旦入池，打法激进，加注尺度偏大。",
+      en: "Tight-Aggressive player. Narrow starting hand range, only plays premium hands. But once in the pot, plays aggressively with larger raise sizing.",
+    },
+    lag: {
+      zh: "松凶型选手。起手牌范围很宽，几乎任何两张牌都可能入池。频繁加注和再加注，持续给对手压力。",
+      en: "Loose-Aggressive player. Wide starting hand range, can enter with almost any two cards. Frequently raises and re-raises, constantly applying pressure.",
+    },
+    rock: {
+      zh: "岩石型选手。极度保守，只玩坚果牌。不轻易下注，但中了大牌会慢打引诱对手。",
+      en: "Rock player. Ultra-conservative, only plays the nuts. Rarely bets, but slow-plays big hands to trap opponents.",
+    },
+    maniac: {
+      zh: "疯子型选手。几乎每手牌都加注，诈唬频率极高，打法不可预测。享受高风险高波动的游戏。",
+      en: "Maniac player. Raises almost every hand, bluffs at very high frequency, unpredictable. Enjoys high-risk, high-variance play.",
+    },
+    balanced: {
+      zh: "均衡型选手。攻守平衡，根据不同局面灵活调整。有时紧有时松，让对手难以判断你的范围。",
+      en: "Balanced player. Well-rounded offense and defense, adjusts flexibly to situations. Alternates between tight and loose, making your range hard to read.",
+    },
+  };
+
+  const parts: string[] = [archetypeLines[archetype]?.[isZh ? "zh" : "en"] ?? ""];
+
+  if (answers.marginal === "raise") parts.push(isZh ? "面对边缘牌倾向于加注抢主动权。" : "Prefers to raise and seize initiative with marginal hands.");
+  else if (answers.marginal === "fold") parts.push(isZh ? "面对边缘牌会果断弃牌，不纠结。" : "Decisively folds marginal hands, no hesitation.");
+  else parts.push(isZh ? "面对边缘牌倾向于先跟注看翻牌。" : "Prefers to call and see the flop with marginal hands.");
+
+  if (answers.pressure === "reraise") parts.push(isZh ? "面对压力不退缩，敢于反加回去。" : "Doesn't fold under pressure, dares to re-raise.");
+  else if (answers.pressure === "fold") parts.push(isZh ? "面对持续压力会选择止损离场。" : "Cuts losses and exits under sustained pressure.");
+  else parts.push(isZh ? "面对压力耐心跟注，等待时机。" : "Patiently calls under pressure, waits for the right moment.");
+
+  if (answers.river === "bluff") parts.push(isZh ? "善于在河牌圈发动诈唬，即使没中牌也能演。" : "Skilled at river bluffs, can represent strong hands even when missing.");
+  else parts.push(isZh ? "河牌没中就不强求，稳扎稳打。" : "Doesn't force it when missing on the river, plays steady.");
+
+  return parts.join(" ");
 }
 
-关键：stylePrompt 是用户在平台上自定义的风格描述，你的决策逻辑必须参考这个字段来调整打法风格。
+const CF_WORKER_CODE = `// CyberCasino Webhook - Cloudflare Worker
+// Deploy: npx wrangler deploy
 
-期望响应：
-{ "action": "raise", "amount": 400, "thought": "你的内心独白" }
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const body = await request.json() as any;
 
-- action 必须是 validActions 中的一个
-- amount 仅 raise 时需要，金额 ≥ currentBet + minRaise
-- thought 用第一人称自然表达，像真实牌手的内心独白
-- 超时 15 秒
+    // Ping check
+    if (body.type === "ping") {
+      return Response.json({ status: "ok" });
+    }
 
-牌面编码：rank 2-14（11=J, 12=Q, 13=K, 14=A），suit h♥ d♦ c♣ s♠
+    // Decision request
+    if (body.type === "decision") {
+      const { gameView, validActions, callAmount, stylePrompt } = body;
+      const myCards = gameView.myCards;
+      const phase = gameView.phase;
+      const communityCards = gameView.communityCards;
 
-## 技术要求
-- 无技术栈限制，建议零依赖方便快速部署
-- 必须读取并使用 stylePrompt 动态调整决策风格
+      // TODO: Call your own LLM here with stylePrompt + game state
+      // const response = await fetch("https://api.openai.com/v1/chat/completions", { ... })
+      // Then parse the LLM response into action/amount/thought
 
-## 最终交付
-1. 完整代码（可直接运行）
-2. 启动命令
-3. 获取公网 URL 的方案（本地 + ngrok/cloudflared，或云部署）
-4. 最终告诉我：把 URL 填入 CyberCasino 平台即可对战`;
+      // Simple fallback: always call if possible
+      const action = validActions.includes("call") ? "call" : validActions[0];
+      const thought = "Let me think about this hand...";
+
+      return Response.json({ action, thought });
+    }
+
+    return Response.json({ error: "Unknown request type" }, { status: 400 });
+  },
+};`;
 
 interface AgentSetupProps {
   agentConfig: AgentConfig | null;
@@ -69,102 +134,199 @@ interface AgentSetupProps {
 }
 
 export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebhook, onBack }: AgentSetupProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { setVisible } = useHeader();
   useEffect(() => {
     setVisible(false);
     return () => setVisible(true);
   }, [setVisible]);
-  const [mode, setMode] = useState<AgentMode | null>(agentConfig?.mode ?? null);
+
+  const isZh = language === "zh";
+
+  // Wizard state
+  const [step, setStep] = useState<WizardStep>("interview");
+  const [archetype, setArchetype] = useState("");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [stylePrompt, setStylePrompt] = useState(agentConfig?.stylePrompt ?? "");
+
+  // Config state
   const [name, setName] = useState(agentConfig?.name ?? "");
   const [avatar, setAvatar] = useState(agentConfig?.avatar ?? "🤖");
-  const [stylePrompt, setStylePrompt] = useState(agentConfig?.stylePrompt ?? "");
   const [webhookUrl, setWebhookUrl] = useState(agentConfig?.webhookUrl ?? "");
-  const [showPrompt, setShowPrompt] = useState(false);
+  const [showTemplate, setShowTemplate] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  function handleSave() {
-    if (!mode || name.length < 2 || name.length > 20) return;
-    if (mode === "custom" && !webhookUrl) return;
+  function handleInterviewComplete() {
+    const prompt = generateStylePrompt(archetype, answers, language);
+    setStylePrompt(prompt);
+    setStep("review");
+  }
 
+  function handleSave() {
+    if (name.length < 2 || name.length > 20) return;
     onSave({
       name,
       avatar,
-      mode,
       stylePrompt,
-      webhookUrl: mode === "custom" ? webhookUrl : undefined,
+      webhookUrl: webhookUrl || undefined,
     });
   }
 
-  function handleCopyPrompt() {
-    navigator.clipboard.writeText(WEBHOOK_PROMPT);
+  function handleCopyTemplate() {
+    navigator.clipboard.writeText(CF_WORKER_CODE);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
-  if (!mode) {
+  const currentQuestion = (() => {
+    const unanswered = QUESTIONS.find((q) => answers[q.id] === undefined);
+    return unanswered ?? null;
+  })();
+
+  // ── Step 1: Interview ──
+  if (step === "interview") {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
         <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
           {t("common.back")}
         </button>
-        <h2 className="text-[28px] font-semibold text-text-primary mb-2 tracking-tight">{t("agentSetup.selectMode")}</h2>
-        <p className="text-text-secondary text-[15px] mb-8">{t("agentSetup.agentDescription")}</p>
 
-        <div className="flex flex-col sm:flex-row gap-3 max-w-lg w-full">
-          <button
-            onClick={() => setMode("smart")}
-            className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
-          >
-            <div className="text-[32px] mb-3">🎰</div>
-            <h3 className="text-text-primary font-semibold text-[17px] mb-1">{t("agentSetup.aiProxyTitle")}</h3>
-            <p className="text-text-secondary text-[15px] mb-3">{t("agentSetup.aiProxyDesc")}</p>
-            <ul className="text-text-tertiary text-[13px] space-y-1">
-              {t("agentSetup.aiProxyFeatures").split("\n").map((feature, i) => (
-                <li key={i}>{feature}</li>
-              ))}
-            </ul>
-          </button>
+        <div className="w-full max-w-md">
+          <h2 className="text-[24px] font-semibold text-text-primary mb-1 tracking-tight">
+            {isZh ? "定制你的 Agent" : "Customize Your Agent"}
+          </h2>
+          <p className="text-text-secondary text-[15px] mb-8">
+            {isZh ? "回答几个问题，AI 帮你生成策略" : "Answer a few questions, AI generates your strategy"}
+          </p>
+
+          {/* Archetype selection */}
+          {!archetype ? (
+            <>
+              <p className="text-text-secondary text-[13px] mb-3 font-medium">
+                {isZh ? "第一步：选择风格原型" : "Step 1: Choose a style archetype"}
+              </p>
+              <div className="space-y-2 mb-6">
+                {ARCHETYPES.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => setArchetype(a.id)}
+                    className="w-full text-left bg-white hover:bg-white/80 rounded-xl p-4 transition-colors shadow-sm flex items-center gap-3"
+                  >
+                    <span className="text-[28px]">{a.emoji}</span>
+                    <div className="flex-1">
+                      <div className="text-text-primary text-[15px] font-medium">
+                        {isZh ? a.labelZh : a.labelEn}
+                      </div>
+                      <div className="text-text-tertiary text-[13px]">
+                        {isZh ? a.descZh : a.descEn}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : currentQuestion ? (
+            <>
+              <p className="text-text-secondary text-[13px] mb-2 font-medium">
+                {isZh ? `第二步：场景问答 (${Object.keys(answers).length + 1}/${QUESTIONS.length})` : `Step 2: Scenarios (${Object.keys(answers).length + 1}/${QUESTIONS.length})`}
+              </p>
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+                <p className="text-text-primary text-[16px] font-medium mb-5">
+                  {isZh ? currentQuestion.zh : currentQuestion.en}
+                </p>
+                <div className="space-y-2">
+                  {currentQuestion.options.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: opt.id }))}
+                      className="w-full text-left bg-surface-elevated hover:bg-surface-deep rounded-xl px-4 py-3 text-text-primary text-[15px] transition-colors"
+                    >
+                      {isZh ? opt.zh : opt.en}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <div className="text-[40px] mb-4">{isZh ? "✅" : "✅"}</div>
+              <p className="text-text-primary text-[17px] font-medium mb-2">
+                {isZh ? "策略分析完成" : "Strategy analysis complete"}
+              </p>
+              <p className="text-text-secondary text-[14px] mb-6">
+                {isZh ? "点击查看 AI 为你生成的策略" : "Click to see your generated strategy"}
+              </p>
+              <button
+                onClick={handleInterviewComplete}
+                className="bg-accent hover:bg-accent-hover text-white px-8 py-3 rounded-full font-medium text-[15px] transition-colors"
+              >
+                {isZh ? "查看策略 →" : "View Strategy →"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step 2: Review generated stylePrompt ──
+  if (step === "review") {
+    return (
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
+        <button onClick={() => setStep("interview")} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
+          {t("common.back")}
+        </button>
+
+        <div className="w-full max-w-md">
+          <h2 className="text-[24px] font-semibold text-text-primary mb-2 tracking-tight">
+            {isZh ? "确认策略" : "Confirm Strategy"}
+          </h2>
+          <p className="text-text-secondary text-[15px] mb-6">
+            {isZh ? "以下是 AI 生成的风格描述，你可以直接使用或修改" : "Here's your AI-generated style description. Use as-is or edit."}
+          </p>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[20px]">{ARCHETYPES.find((a) => a.id === archetype)?.emoji}</span>
+              <span className="text-text-primary font-semibold text-[15px]">
+                {isZh ? ARCHETYPES.find((a) => a.id === archetype)?.labelZh : ARCHETYPES.find((a) => a.id === archetype)?.labelEn}
+              </span>
+            </div>
+            <textarea
+              value={stylePrompt}
+              onChange={(e) => setStylePrompt(e.target.value)}
+              rows={5}
+              className="w-full bg-surface-elevated rounded-xl px-4 py-3 text-text-primary text-[14px] focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none"
+            />
+          </div>
 
           <button
-            onClick={() => setMode("custom")}
-            className="flex-1 text-left bg-white hover:bg-white/80 rounded-2xl p-6 transition-colors shadow-sm"
+            onClick={() => setStep("configure")}
+            className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"
           >
-            <div className="text-[32px] mb-3">🔧</div>
-            <h3 className="text-text-primary font-semibold text-[17px] mb-1">{t("agentSetup.customTitle")}</h3>
-            <p className="text-text-secondary text-[15px] mb-3">{t("agentSetup.customDesc")}</p>
-            <ul className="text-text-tertiary text-[13px] space-y-1">
-              {t("agentSetup.customFeatures").split("\n").map((feature, i) => (
-                <li key={i}>{feature}</li>
-              ))}
-            </ul>
+            {isZh ? "继续配置 →" : "Continue →"}
           </button>
         </div>
       </div>
     );
   }
 
-  const isCustom = mode === "custom";
-  const canSave = name.length >= 2 && name.length <= 20 && (!isCustom || webhookUrl);
+  // ── Step 3: Name + Avatar + Webhook URL + Template + Save ──
+  const canSave = name.length >= 2 && name.length <= 20;
 
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
-      <button onClick={onBack} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
+      <button onClick={() => setStep("review")} className="absolute top-[max(1.5rem,env(safe-area-inset-top))] left-5 text-accent text-[15px] min-h-[44px] flex items-center">
         {t("common.back")}
       </button>
 
       <div className="w-full max-w-md">
-        <div className="flex items-center gap-3 mb-8">
-          <span className="text-[28px]">{isCustom ? "🔧" : "🎰"}</span>
-          <h2 className="text-[22px] font-semibold text-text-primary tracking-tight">
-            {isCustom ? t("agentSetup.customTitle") : t("agentSetup.aiProxyTitle")}
-          </h2>
-          <button onClick={() => setMode(null)} className="ml-auto text-accent text-[13px]">
-            {t("agentSetup.switchMode")}
-          </button>
-        </div>
+        <h2 className="text-[24px] font-semibold text-text-primary mb-6 tracking-tight">
+          {isZh ? "配置 Agent" : "Configure Agent"}
+        </h2>
 
         <div className="space-y-5">
+          {/* Name */}
           <div>
             <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.name")}</label>
             <input
@@ -177,6 +339,7 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
             />
           </div>
 
+          {/* Avatar */}
           <div>
             <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.avatar")}</label>
             <div className="flex flex-wrap gap-2 mb-3">
@@ -202,87 +365,101 @@ export function AgentSetup({ agentConfig, webhookPingResult, onSave, onTestWebho
             />
           </div>
 
+          {/* Style Prompt (read-only summary from interview) */}
           <div>
             <label className="text-text-secondary text-[13px] block mb-2">
               {t("agentSetup.stylePrompt")}
-              {isCustom && <span className="text-text-tertiary ml-1">{t("agentSetup.stylePromptHint")}</span>}
+              <span className="text-text-tertiary ml-1">{t("agentSetup.stylePromptHint")}</span>
             </label>
             <textarea
               value={stylePrompt}
               onChange={(e) => setStylePrompt(e.target.value)}
-              placeholder={isCustom
-                ? t("agentSetup.stylePlaceholder")
-                : t("agentSetup.styleDefault")
-              }
               rows={3}
               className="w-full bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none placeholder:text-text-tertiary"
             />
           </div>
 
-          {!isCustom && (
-            <div className="text-text-tertiary text-[13px] bg-white rounded-xl px-4 py-3 shadow-sm">
-              {t("agentSetup.thinkingModel")}
+          {/* Webhook URL */}
+          <div>
+            <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.webhookUrl")}</label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://your-worker.workers.dev/"
+                className="flex-1 bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary"
+              />
+              <button
+                onClick={() => onTestWebhook(webhookUrl)}
+                disabled={!webhookUrl}
+                className="bg-surface-elevated hover:bg-surface-deep text-accent px-4 py-3 rounded-xl text-[15px] font-medium disabled:opacity-50 whitespace-nowrap transition-colors"
+              >
+                {t("agentSetup.test")}
+              </button>
             </div>
-          )}
+            {webhookPingResult && (
+              <p className={`text-[13px] mt-2 ${webhookPingResult.success ? "text-success" : "text-danger"}`}>
+                {webhookPingResult.success
+                  ? t("agentSetup.connectionSuccess", { latency: webhookPingResult.latencyMs ?? 0 })
+                  : webhookPingResult.error}
+              </p>
+            )}
+          </div>
 
-          {isCustom && (
-            <>
-              <div>
-                <label className="text-text-secondary text-[13px] block mb-2">{t("agentSetup.webhookUrl")}</label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={webhookUrl}
-                    onChange={(e) => setWebhookUrl(e.target.value)}
-                    placeholder="https://your-webhook.com/"
-                    className="flex-1 bg-surface rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary"
-                  />
+          {/* Cloudflare Worker Template */}
+          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+            <button
+              onClick={() => setShowTemplate(!showTemplate)}
+              className="w-full text-left px-4 py-3 text-text-secondary text-[13px] hover:text-text-primary transition-colors flex items-center gap-2"
+            >
+              <span className="text-lg">⚡</span>
+              <span className="flex-1 font-medium">
+                {isZh ? "一键部署：Cloudflare Workers 模板" : "One-click deploy: Cloudflare Workers Template"}
+              </span>
+              <span>{showTemplate ? "▾" : "▸"}</span>
+            </button>
+            {showTemplate && (
+              <div className="px-4 pb-4">
+                <div className="flex gap-2 mb-3">
+                  <div className="flex-1 bg-[#F48120]/10 rounded-lg px-3 py-2 text-[12px] text-text-secondary">
+                    <span className="font-semibold text-text-primary">Cloudflare Workers</span>
+                    {" · "}{isZh ? "免费 10万次/天" : "Free 100k req/day"}
+                  </div>
+                </div>
+                <p className="text-text-tertiary text-[12px] mb-3">
+                  {isZh
+                    ? "1. 安装 wrangler：npm i -g wrangler"
+                    : "1. Install wrangler: npm i -g wrangler"}
+                  <br />
+                  {isZh
+                    ? "2. 复制下方代码到 index.ts"
+                    : "2. Copy the code below to index.ts"}
+                  <br />
+                  {isZh
+                    ? "3. 运行 npx wrangler deploy"
+                    : "3. Run npx wrangler deploy"}
+                  <br />
+                  {isZh
+                    ? "4. 把得到的 URL 填入上方 Webhook URL"
+                    : "4. Paste the URL into the Webhook URL field above"}
+                </p>
+                <div className="relative">
+                  <pre className="bg-surface-elevated rounded-xl p-4 text-text-secondary text-[11px] overflow-auto max-h-64 whitespace-pre-wrap">
+                    {CF_WORKER_CODE}
+                  </pre>
                   <button
-                    onClick={() => onTestWebhook(webhookUrl)}
-                    disabled={!webhookUrl}
-                    className="bg-surface-elevated hover:bg-surface-deep text-accent px-4 py-3 rounded-xl text-[15px] font-medium disabled:opacity-50 whitespace-nowrap transition-colors"
+                    onClick={handleCopyTemplate}
+                    className="absolute top-2 right-2 bg-white hover:bg-white/80 text-text-secondary px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors shadow-sm"
                   >
-                    {t("agentSetup.test")}
+                    {copied ? t("agentSetup.copied") : t("agentSetup.copy")}
                   </button>
                 </div>
-                {webhookPingResult && (
-                  <p className={`text-[13px] mt-2 ${webhookPingResult.success ? "text-success" : "text-danger"}`}>
-                    {webhookPingResult.success
-                      ? t("agentSetup.connectionSuccess", { latency: webhookPingResult.latencyMs ?? 0 })
-                      : webhookPingResult.error}
-                  </p>
-                )}
               </div>
+            )}
+          </div>
 
-              <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-                <button
-                  onClick={() => setShowPrompt(!showPrompt)}
-                  className="w-full text-left px-4 py-3 text-text-secondary text-[13px] hover:text-text-primary transition-colors"
-                >
-                  {showPrompt ? "▾" : "▸"} {t("agentSetup.webhookTutorial")}
-                </button>
-                {showPrompt && (
-                  <div className="px-4 pb-4">
-                    <p className="text-text-tertiary text-[13px] mb-3">
-                      {t("agentSetup.tutorialDesc")}
-                    </p>
-                    <div className="relative">
-                      <pre className="bg-surface-elevated rounded-xl p-4 text-text-secondary text-[12px] overflow-auto max-h-48 whitespace-pre-wrap">
-                        {WEBHOOK_PROMPT}
-                      </pre>
-                      <button
-                        onClick={handleCopyPrompt}
-                        className="absolute top-2 right-2 bg-white hover:bg-white/80 text-text-secondary px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors shadow-sm"
-                      >
-                        {copied ? t("agentSetup.copied") : t("agentSetup.copy")}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
+          {/* Save */}
           <button
             onClick={handleSave}
             disabled={!canSave}

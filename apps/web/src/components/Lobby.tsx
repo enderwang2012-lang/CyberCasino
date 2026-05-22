@@ -62,8 +62,8 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
               <span className="text-[28px]">{agentConfig.avatar}</span>
               <div className="flex-1">
                 <span className="text-text-primary text-[15px] font-medium">{agentConfig.name}</span>
-                <span className={`ml-2 text-[13px] ${agentConfig.mode === "smart" ? "text-accent" : "text-[#BF5AF2]"}`}>
-                  {agentConfig.mode === "smart" ? t("lobby.aiProxy") : t("lobby.customAgent")}
+                <span className="ml-2 text-[13px] text-[#BF5AF2]">
+                  {t("lobby.customAgent")}
                 </span>
               </div>
               <span className="text-text-tertiary text-[13px]">{t("lobby.edit")}</span>

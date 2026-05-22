@@ -9,12 +9,40 @@ import { PERSONALITIES } from "./agents/personalities";
 const PORT = parseInt(process.env.PORT ?? "3001");
 
 const httpServer = createServer((req, res) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders);
+    res.end();
+    return;
+  }
+
   if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({ status: "ok" }));
     return;
   }
-  res.writeHead(404);
+
+  const replayMatch = req.url?.match(/^\/api\/replay\/(.+)$/);
+  if (replayMatch && req.method === "GET") {
+    const tableId = replayMatch[1];
+    const table = tableManager.getTable(tableId);
+    if (!table || table.getStatus() !== "finished") {
+      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Table not found or not finished" }));
+      return;
+    }
+    const replayData = table.getReplayData();
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify(replayData));
+    return;
+  }
+
+  res.writeHead(404, corsHeaders);
   res.end();
 });
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {

@@ -54,8 +54,8 @@ export function SeatSelectPopup({
               <span className="text-[32px]">{agentConfig.avatar}</span>
               <div className="flex-1">
                 <div className="text-text-primary text-[15px] font-medium">{agentConfig.name}</div>
-                <div className={`text-[13px] ${agentConfig.mode === "smart" ? "text-accent" : "text-[#BF5AF2]"}`}>
-                  {agentConfig.mode === "smart" ? t("seatSelect.aiProxy") : t("seatSelect.customAgent")}
+                <div className="text-[13px] text-[#BF5AF2]">
+                  {t("seatSelect.customAgent")}
                 </div>
               </div>
               {myAgentSeated && <span className="text-text-tertiary text-[12px]">{t("seatSelect.alreadySeated")}</span>}

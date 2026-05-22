@@ -11,12 +11,14 @@ import type {
   AgentConfig,
   ActionRecord,
   ShowdownResult,
+  ReplayData,
+  ReplayHand,
+  ReplayHandAction,
 } from "@cybercasino/shared";
 import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
 import type { IPokerAgent } from "./agents/agent-interface";
 import { PokerAgent } from "./agents/agent";
-import { SmartAgent } from "./agents/smart-agent";
 import { ExternalAgent } from "./agents/external-agent";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
@@ -84,7 +86,7 @@ export class TableInstance {
       id: agentConfig.id,
       name: agentConfig.name,
       avatar: agentConfig.avatar,
-      type: agentConfig.mode === "smart" ? "smart" : "custom",
+      type: "custom",
       userId: agentConfig.userId,
     };
     return true;
@@ -216,7 +218,7 @@ export class TableInstance {
       id: a.id,
       name: a.name,
       avatar: a.avatar,
-      type: a.agentType === "external" ? "custom" : a.agentType === "smart" ? "smart" : "builtin",
+      type: a.agentType === "external" ? "custom" : "builtin",
     }));
     this.emit({ type: "agent-roster", agents: roster });
 
@@ -302,9 +304,6 @@ export class TableInstance {
       return new PokerAgent(PERSONALITIES[0].id);
     }
 
-    if (config.mode === "smart") {
-      return new SmartAgent(config);
-    }
     return new ExternalAgent(config);
   }
 
@@ -600,5 +599,119 @@ export class TableInstance {
 
   getHandNumber(): number {
     return this.handNumber;
+  }
+
+  getReplayData(): ReplayData {
+    const players = new Map<string, { id: string; name: string; avatar: string; type: string }>();
+    const hands: ReplayHand[] = [];
+    const rankings: { playerId: string; position: number }[] = [];
+
+    let currentHand: ReplayHand | null = null;
+    let currentPhase: string = "preflop";
+    let holeCards: Record<string, Card[]> = {};
+    let activeSmallBlind = this.config.smallBlind;
+    let activeBigBlind = this.config.bigBlind;
+
+    for (const event of this.eventHistory) {
+      switch (event.type) {
+        case "agent-roster": {
+          for (const agent of event.agents) {
+            players.set(agent.id, {
+              id: agent.id,
+              name: agent.name,
+              avatar: agent.avatar,
+              type: agent.type,
+            });
+          }
+          break;
+        }
+
+        case "blind-level-up": {
+          activeSmallBlind = event.smallBlind;
+          activeBigBlind = event.bigBlind;
+          break;
+        }
+
+        case "hand-start": {
+          currentHand = {
+            handNumber: event.handNumber,
+            smallBlind: activeSmallBlind,
+            bigBlind: activeBigBlind,
+            holeCards: {},
+            communityCards: [],
+            actions: [],
+            winners: [],
+          };
+          holeCards = {};
+          currentPhase = "preflop";
+          break;
+        }
+
+        case "cards-dealt": {
+          holeCards = event.hands;
+          if (currentHand) {
+            currentHand.holeCards = event.hands;
+          }
+          break;
+        }
+
+        case "phase-change": {
+          currentPhase = event.phase;
+          if (currentHand) {
+            const prevCount = currentHand.communityCards.reduce((s, arr) => s + arr.length, 0);
+            const newCards = event.communityCards.slice(prevCount);
+            currentHand.communityCards.push(newCards);
+          }
+          break;
+        }
+
+        case "action-taken": {
+          if (currentHand) {
+            const action: ReplayHandAction = {
+              playerId: event.playerId,
+              phase: currentPhase as ReplayHandAction["phase"],
+              action: event.action.type,
+              amount: event.action.amount,
+              thought: event.thought?.message,
+            };
+            currentHand.actions.push(action);
+          }
+          break;
+        }
+
+        case "showdown": {
+          if (currentHand) {
+            currentHand.showdown = event.results;
+          }
+          break;
+        }
+
+        case "hand-complete": {
+          if (currentHand) {
+            currentHand.winners = event.winners;
+            hands.push(currentHand);
+            currentHand = null;
+          }
+          break;
+        }
+
+        case "tournament-complete": {
+          for (const r of event.rankings) {
+            rankings.push({ playerId: r.playerId, position: r.position });
+          }
+          break;
+        }
+      }
+    }
+
+    return {
+      tableId: this.id,
+      tableName: this.config.name,
+      config: this.config,
+      players: [...players.values()],
+      hands,
+      rankings,
+      totalHands: this.handNumber,
+    };
   }
 }
