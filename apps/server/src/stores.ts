@@ -1,10 +1,11 @@
-import type { UserIdentity, AgentConfig } from "@cybercasino/shared";
+import type { UserIdentity, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const DATA_DIR = join(import.meta.dirname, "..", "data");
 const USERS_FILE = join(DATA_DIR, "users.json");
 const AGENTS_FILE = join(DATA_DIR, "agents.json");
+const AGENTS_V2_FILE = join(DATA_DIR, "agents_v2.json");
 
 function ensureDataDir() {
   if (!existsSync(DATA_DIR)) {
@@ -49,8 +50,31 @@ function saveAgents(agents: Map<string, AgentConfig>) {
   writeFileSync(AGENTS_FILE, JSON.stringify(arr, null, 2));
 }
 
+function loadAgentsV2(): Map<string, AgentConfigV2> {
+  ensureDataDir();
+  try {
+    const raw = readFileSync(AGENTS_V2_FILE, "utf-8");
+    const arr: AgentConfigV2[] = JSON.parse(raw);
+    return new Map(arr.map((a) => [a.userId, a]));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveAgentsV2(agents: Map<string, AgentConfigV2>) {
+  ensureDataDir();
+  const arr = Array.from(agents.values());
+  writeFileSync(AGENTS_V2_FILE, JSON.stringify(arr, null, 2));
+}
+
 const initialAgents = loadAgents();
 let agentCounter = Array.from(initialAgents.values()).reduce((max, a) => {
+  const n = parseInt(a.id.replace("agent-", ""), 10);
+  return isNaN(n) ? max : Math.max(max, n);
+}, 0);
+
+const initialAgentsV2 = loadAgentsV2();
+let agentV2Counter = Array.from(initialAgentsV2.values()).reduce((max, a) => {
   const n = parseInt(a.id.replace("agent-", ""), 10);
   return isNaN(n) ? max : Math.max(max, n);
 }, 0);
@@ -75,6 +99,7 @@ export class UserStore {
 
 export class AgentStore {
   private agents = new Map(initialAgents);
+  private agentsV2 = new Map(initialAgentsV2);
 
   save(userId: string, partial: Omit<AgentConfig, "id" | "userId" | "webhookVerified">): AgentConfig {
     const existing = this.getByUserId(userId);
@@ -99,5 +124,21 @@ export class AgentStore {
       config.webhookVerified = true;
       saveAgents(this.agents);
     }
+  }
+
+  saveV2(agent: AgentConfigV2): void {
+    // 清除该用户旧的 v1 agent
+    this.agents.delete(agent.userId);
+    // 保存到 v2 map
+    this.agentsV2.set(agent.userId, agent);
+    saveAgentsV2(this.agentsV2);
+  }
+
+  getV2ByUserId(userId: string): AgentConfigV2 | undefined {
+    return this.agentsV2.get(userId);
+  }
+
+  nextV2Id(): string {
+    return `agent-${++agentV2Counter}`;
   }
 }

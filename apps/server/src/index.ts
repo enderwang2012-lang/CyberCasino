@@ -1,18 +1,22 @@
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
+import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
+import type { CreateAgentRequest } from "./api/agent-create";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
 
 const httpServer = createServer((req, res) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (req.method === "OPTIONS") {
@@ -24,6 +28,68 @@ const httpServer = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  // AI Agent Creation prompt
+  if (req.url?.startsWith("/api/agents/creation-prompt") && req.method === "GET") {
+    try {
+      const promptPath = join(import.meta.dirname, "../src/prompts/agent-creation-prompt.md");
+      const template = readFileSync(promptPath, "utf-8");
+      const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+      const url = new URL(req.url, `http://localhost:${PORT}`);
+      const token = url.searchParams.get("token") || "{API_TOKEN}";
+      const prompt = template
+        .replace("{API_BASE_URL}", baseUrl)
+        .replace("{API_TOKEN}", token);
+      res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
+      res.end(prompt);
+    } catch (err) {
+      console.error("[api] creation-prompt error:", err);
+      res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Failed to load prompt" }));
+    }
+    return;
+  }
+
+  // AI Agent Creation endpoint
+  if (req.url === "/api/agents/create-by-ai" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const parsed = JSON.parse(body);
+        const { config, preview } = parsed as CreateAgentRequest;
+
+        const configResult = validateStrategyConfig(config);
+        if (!configResult.valid) {
+          res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Invalid strategy config", details: configResult.errors }));
+          return;
+        }
+
+        const previewResult = validatePreview(preview);
+        if (!previewResult.valid) {
+          res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Invalid preview", details: previewResult.errors }));
+          return;
+        }
+
+        const agent = createAgentFromAI(parsed.userId ?? "anonymous", { config, preview }, () => agentStore.nextV2Id());
+        agentStore.saveV2(agent);
+
+        res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({
+          agentId: agent.id,
+          status: "active",
+          previewUrl: `/agents/${agent.id}`,
+        }));
+      } catch (err) {
+        console.error("[api] create-by-ai error:", err);
+        res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    });
     return;
   }
 
