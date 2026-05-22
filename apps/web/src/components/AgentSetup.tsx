@@ -69,16 +69,25 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       return;
     }
     setGenerating(true);
+    setError(null);
     try {
       const res = await fetch(`${getServerUrl()}/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, name: name.trim(), avatar }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("[AgentSetup] soul generate failed:", res.status, text);
+        setError(`${isZh ? "服务器错误" : "Server error"} (${res.status})`);
+        setGenerating(false);
+        return;
+      }
       const data = await res.json();
       setSoulUrl(data.soulUrl);
       setSoulKey(data.key);
-    } catch {
+    } catch (err) {
+      console.error("[AgentSetup] soul generate network error:", err);
       setError(isZh ? "网络连接失败，请检查网络后重试" : "Network error, please check connection and retry");
     }
     setGenerating(false);
