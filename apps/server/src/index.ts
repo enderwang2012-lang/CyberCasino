@@ -88,12 +88,12 @@ const httpServer = createServer((req, res) => {
       let template = readFileSync(promptPath, "utf-8");
       const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
       template = template
-        .replace("{API_BASE_URL}", baseUrl)
-        .replace("{API_TOKEN}", key);
+        .replace(/\{API_BASE_URL\}/g, baseUrl)
+        .replace("{API_TOKEN}", key)
+        .replace(/\{NAME\}/g, soul.name)
+        .replace(/\{AVATAR\}/g, soul.avatar);
 
-      // Prepend name/avatar context for AI
-      const header = `> 用户已为这个牌手取名「${soul.name}」${soul.avatar}，请尊重这个名字和头像。\n> 在生成的 preview 中使用 name: "${soul.name}", avatar: "${soul.avatar}"。\n\n`;
-      const prompt = header + template;
+      const prompt = template;
 
       res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
       res.end(prompt);
