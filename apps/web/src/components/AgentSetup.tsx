@@ -5,7 +5,10 @@ import type { AgentConfigV2 } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 function getServerUrl() {
-  if (process.env.NEXT_PUBLIC_SERVER_URL) return process.env.NEXT_PUBLIC_SERVER_URL;
+  if (process.env.NEXT_PUBLIC_SERVER_URL) {
+    const url = process.env.NEXT_PUBLIC_SERVER_URL;
+    return url.startsWith("http") ? url : `https://${url}`;
+  }
   if (typeof window !== "undefined") return window.location.origin;
   return "http://localhost:3001";
 }
