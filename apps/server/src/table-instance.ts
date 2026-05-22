@@ -9,6 +9,7 @@ import type {
   TableSeat,
   SeatAgent,
   AgentConfig,
+  AgentConfigV2,
   ActionRecord,
   ShowdownResult,
   ReplayData,
@@ -20,6 +21,8 @@ import type { GamePlayer } from "@cybercasino/engine";
 import type { IPokerAgent } from "./agents/agent-interface";
 import { PokerAgent } from "./agents/agent";
 import { ExternalAgent } from "./agents/external-agent";
+import { StrategyAgent } from "./agents/strategy-agent";
+import { loadBuiltinStrategies } from "./agents/strategy-loader";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
 import { generateCommentary } from "./highlight-commentary";
@@ -37,6 +40,8 @@ const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
     { small: 1000, big: 2000 },
   ],
 };
+
+const builtinStrategies = loadBuiltinStrategies();
 
 export class TableInstance {
   readonly id: string;
@@ -194,7 +199,11 @@ export class TableInstance {
 
   // --- Game control ---
 
-  async start(agentConfigs?: Map<string, AgentConfig>, language: "zh" | "en" = "zh"): Promise<void> {
+  async start(
+    agentConfigs?: Map<string, AgentConfig>,
+    language: "zh" | "en" = "zh",
+    v2Configs?: Map<string, AgentConfigV2>,
+  ): Promise<void> {
     if (this.running) return;
     this.running = true;
     this.language = language;
@@ -212,7 +221,7 @@ export class TableInstance {
 
     this.agents = this.seats
       .filter((s) => s.status === "occupied" && s.agent)
-      .map((s) => this.createAgent(s.agent!, agentConfigs));
+      .map((s) => this.createAgent(s.agent!, agentConfigs, v2Configs));
 
     const roster: SeatAgent[] = this.agents.map((a) => ({
       id: a.id,
@@ -294,11 +303,35 @@ export class TableInstance {
     this.running = false;
   }
 
-  private createAgent(seat: SeatAgent, agentConfigs?: Map<string, AgentConfig>): IPokerAgent {
+  private createAgent(
+    seat: SeatAgent,
+    agentConfigs?: Map<string, AgentConfig>,
+    v2Configs?: Map<string, AgentConfigV2>,
+  ): IPokerAgent {
+    // V2 config takes priority (custom AI-created agents)
+    if (seat.userId && v2Configs?.has(seat.userId)) {
+      return new StrategyAgent(v2Configs.get(seat.userId)!);
+    }
+
+    // Builtin agents: use strategy JSON if available
     if (seat.type === "builtin") {
+      const strategy = builtinStrategies.get(seat.id);
+      if (strategy) {
+        const personality = PERSONALITIES.find((p) => p.id === seat.id);
+        return new StrategyAgent({
+          id: seat.id,
+          name: personality?.name ?? seat.name,
+          avatar: personality?.avatar ?? seat.avatar,
+          userId: "",
+          strategy,
+          createdAt: 0,
+          updatedAt: 0,
+        });
+      }
       return new PokerAgent(seat.id);
     }
 
+    // V1 custom agent (webhook mode)
     const config = seat.userId && agentConfigs?.get(seat.userId);
     if (!config) {
       return new PokerAgent(PERSONALITIES[0].id);
@@ -455,6 +488,32 @@ export class TableInstance {
           this.playerStates.set(player.id, { chips: player.chips });
         }
         for (const agent of this.agents) {
+          // Update psychological state for StrategyAgent instances
+          if (agent instanceof StrategyAgent) {
+            const startChips = playerChipsAtStart.get(agent.id) ?? 0;
+            const endChips = this.playerStates.get(agent.id)?.chips ?? 0;
+            const chipDiff = endChips - startChips;
+            const won = winnerIds.includes(agent.id);
+
+            // Detect bad beat: had strong hand but lost
+            const showdownResult = capturedShowdownResults?.find((r) => r.playerId === agent.id);
+            const STRONG_HANDS = new Set(["two-pair", "three-of-a-kind", "straight", "flush", "full-house", "four-of-a-kind", "straight-flush", "royal-flush"]);
+            const hadStrongHand = showdownResult && STRONG_HANDS.has(showdownResult.handRank);
+            const wasBadBeat = !!hadStrongHand && !won;
+
+            // Detect bluff caught: bet aggressively but lost at showdown
+            const agentActions = actionHistory.filter((a) => a.playerId === agent.id);
+            const raisedOrBet = agentActions.some((a) => a.action.type === "raise");
+            const wasBluffCaught = !won && raisedOrBet && !!showdownResult;
+
+            agent.updatePsychState({
+              wasBadBeat,
+              wasBluffCaught,
+              bigLoss: chipDiff < -(this.config.startingChips * 0.3),
+              bigWin: chipDiff > this.config.startingChips * 0.5,
+              handsSinceAction: 0,
+            });
+          }
           agent.clearHistory();
         }
       }

@@ -2,6 +2,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import crypto from "node:crypto";
 import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore } from "./stores";
@@ -31,7 +32,80 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // AI Agent Creation prompt
+  // Generate soul URL
+  if (req.url === "/api/agents/soul" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { userId, name, avatar } = JSON.parse(body);
+        const key = crypto.randomBytes(16).toString("hex");
+        soulStore.set(key, { userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now() });
+        const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+        res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ soulUrl: `${baseUrl}/api/agents/soul/${key}`, key }));
+      } catch (err) {
+        console.error("[api] soul generate error:", err);
+        res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: "Failed to generate soul" }));
+      }
+    });
+    return;
+  }
+
+  // Poll soul status (frontend checks if AI has published)
+  const soulStatusMatch = req.url?.match(/^\/api\/agents\/soul\/([a-f0-9]+)\/status$/);
+  if (soulStatusMatch && req.method === "GET") {
+    const key = soulStatusMatch[1];
+    const soul = soulStore.get(key);
+    if (!soul) {
+      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ status: "expired" }));
+      return;
+    }
+    if (soul.agent) {
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ status: "ready", agent: soul.agent }));
+    } else {
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ status: "pending" }));
+    }
+    return;
+  }
+
+  // Serve soul prompt to AI
+  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/([a-f0-9]+)$/);
+  if (soulMatch && req.method === "GET") {
+    const key = soulMatch[1];
+    const soul = soulStore.get(key);
+    if (!soul) {
+      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Soul not found or expired" }));
+      return;
+    }
+    try {
+      const promptPath = join(import.meta.dirname, "../src/prompts/agent-creation-prompt.md");
+      let template = readFileSync(promptPath, "utf-8");
+      const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+      template = template
+        .replace("{API_BASE_URL}", baseUrl)
+        .replace("{API_TOKEN}", key);
+
+      // Prepend name/avatar context for AI
+      const header = `> 用户已为这个牌手取名「${soul.name}」${soul.avatar}，请尊重这个名字和头像。\n> 在生成的 preview 中使用 name: "${soul.name}", avatar: "${soul.avatar}"。\n\n`;
+      const prompt = header + template;
+
+      res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
+      res.end(prompt);
+    } catch (err) {
+      console.error("[api] soul serve error:", err);
+      res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Failed to serve soul prompt" }));
+    }
+    return;
+  }
+
+  // Legacy: AI Agent Creation prompt (kept for backwards compat)
   if (req.url?.startsWith("/api/agents/creation-prompt") && req.method === "GET") {
     try {
       const promptPath = join(import.meta.dirname, "../src/prompts/agent-creation-prompt.md");
@@ -59,7 +133,7 @@ const httpServer = createServer((req, res) => {
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        const { config, preview } = parsed as CreateAgentRequest;
+        const { config, preview, soulKey } = parsed as CreateAgentRequest & { soulKey?: string };
 
         const configResult = validateStrategyConfig(config);
         if (!configResult.valid) {
@@ -75,8 +149,27 @@ const httpServer = createServer((req, res) => {
           return;
         }
 
-        const agent = createAgentFromAI(parsed.userId ?? "anonymous", { config, preview }, () => agentStore.nextV2Id());
+        // Resolve userId from soul or request body
+        let userId = parsed.userId ?? "anonymous";
+        let finalPreview = preview;
+        if (soulKey) {
+          const soul = soulStore.get(soulKey);
+          if (soul) {
+            userId = soul.userId;
+            finalPreview = { ...preview, name: soul.name, avatar: soul.avatar };
+          }
+        }
+
+        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id());
         agentStore.saveV2(agent);
+
+        // Link agent back to soul for frontend polling
+        if (soulKey) {
+          const soul = soulStore.get(soulKey);
+          if (soul) {
+            soul.agent = agent;
+          }
+        }
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({
@@ -118,6 +211,9 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
+
+// Soul store: key → { userId, name, avatar, createdAt, agent?: AgentConfigV2 }
+const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number; agent?: import("@cybercasino/shared").AgentConfigV2 }>();
 
 const socketUserMap = new Map<string, string>();
 const userSocketMap = new Map<string, string>();
@@ -248,8 +344,10 @@ io.on("connection", (socket) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
 
-    const agentConfig = agentStore.getByUserId(userId);
-    if (!agentConfig) { socket.emit("table:error", "No agent configured"); return; }
+    // Check v2 (AI-created StrategyAgent) first, then v1 (webhook mode)
+    const v2Config = agentStore.getV2ByUserId(userId);
+    const v1Config = agentStore.getByUserId(userId);
+    if (!v2Config && !v1Config) { socket.emit("table:error", "No agent configured"); return; }
 
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
@@ -269,12 +367,22 @@ io.on("connection", (socket) => {
       }
     }
 
-    if (!table.sit(agentConfig)) {
+    // Build a seat-compatible config (identity fields only)
+    const seatConfig = v2Config
+      ? { id: v2Config.id, name: v2Config.name, avatar: v2Config.avatar, userId, stylePrompt: "", webhookVerified: true }
+      : v1Config!;
+
+    if (!table.sit(seatConfig)) {
       socket.emit("table:error", "Cannot sit (table full or already seated)");
       return;
     }
 
-    tableManager.setAgentConfig(tableId, userId, agentConfig);
+    if (v2Config) {
+      tableManager.setAgentV2Config(tableId, userId, v2Config);
+    }
+    if (v1Config) {
+      tableManager.setAgentConfig(tableId, userId, v1Config);
+    }
     socket.join(`table:${tableId}`);
     broadcastSeats(tableId);
   });
@@ -333,7 +441,8 @@ io.on("connection", (socket) => {
     broadcastLobby();
 
     const agentConfigs = tableManager.getAgentConfigs(tableId);
-    table.start(agentConfigs, language ?? "zh").catch((err) => {
+    const v2Configs = tableManager.getAgentV2Configs(tableId);
+    table.start(agentConfigs, language ?? "zh", v2Configs).catch((err) => {
       console.error(`[table:${tableId}] error:`, err);
     });
   });

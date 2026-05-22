@@ -1,4 +1,4 @@
-import type { TableConfig, TableInfo, AgentConfig } from "@cybercasino/shared";
+import type { TableConfig, TableInfo, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
 import { TableInstance } from "./table-instance";
 
 const CASINO_NAMES = [
@@ -26,6 +26,7 @@ let nextId = 1;
 export class TableManager {
   private tables = new Map<string, TableInstance>();
   private agentConfigsForTable = new Map<string, Map<string, AgentConfig>>();
+  private agentV2ConfigsForTable = new Map<string, Map<string, AgentConfigV2>>();
   private finishedTables: TableInfo[] = [];
   private presetTableId: string | null = null;
 
@@ -110,12 +111,26 @@ export class TableManager {
     return this.agentConfigsForTable.get(tableId);
   }
 
+  setAgentV2Config(tableId: string, userId: string, config: AgentConfigV2): void {
+    let configs = this.agentV2ConfigsForTable.get(tableId);
+    if (!configs) {
+      configs = new Map();
+      this.agentV2ConfigsForTable.set(tableId, configs);
+    }
+    configs.set(userId, config);
+  }
+
+  getAgentV2Configs(tableId: string): Map<string, AgentConfigV2> | undefined {
+    return this.agentV2ConfigsForTable.get(tableId);
+  }
+
   removeTable(id: string): void {
     const table = this.tables.get(id);
     if (table) {
       table.stop();
       this.tables.delete(id);
       this.agentConfigsForTable.delete(id);
+      this.agentV2ConfigsForTable.delete(id);
     }
   }
 }
