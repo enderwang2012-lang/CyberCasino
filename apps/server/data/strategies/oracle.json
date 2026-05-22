@@ -1,0 +1,51 @@
+{
+  "preflop": {
+    "ranges": {
+      "UTG": { "raise": ["AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs"], "call": ["TT", "99", "AQo"] },
+      "MP":  { "raise": ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo", "AJs"], "call": ["99", "88", "ATs", "KQs"] },
+      "CO":  { "raise": ["77+", "ATs+", "KJs+", "QJs", "AJo+", "KQo"], "call": ["66", "A9s", "KTs", "QTs", "JTs"] },
+      "BTN": { "raise": ["55+", "A2s+", "K9s+", "QTs+", "J9s+", "T9s", "AJo+", "KQo"], "call": ["44", "K8s", "Q9s", "J8s", "T8s"] },
+      "SB":  { "raise": ["88+", "ATs+", "KQs", "AQo+"], "call": ["66", "77", "A9s", "A8s", "KJs", "QJs"] },
+      "BB":  { "raise": ["QQ+", "AKs"], "call": ["JJ", "TT", "99", "AQs", "AQo", "AKo", "88"] }
+    },
+    "sizing": { "openRaise": "2.5bb", "threeBet": "3x", "fourBet": "2.5x" }
+  },
+  "postflop": [
+    { "when": "top-pair-top-kicker", "action": "value-bet-medium", "streets": ["flop", "turn"], "priority": 5 },
+    { "when": "top-pair-top-kicker", "action": "value-bet-small", "streets": ["river"], "priority": 5 },
+    { "when": "top-pair-good-kicker", "action": "value-bet-small", "priority": 4 },
+    { "when": "top-pair-weak-kicker", "action": "check-call", "streets": ["flop"], "priority": 3 },
+    { "when": "top-pair-weak-kicker", "action": "check-fold", "streets": ["turn", "river"], "priority": 3 },
+    { "when": "overpair", "action": "value-bet-large", "priority": 6 },
+    { "when": "second-pair", "action": "check-call", "streets": ["flop"], "priority": 2 },
+    { "when": "second-pair", "action": "check-fold", "streets": ["turn", "river"], "priority": 2 },
+    { "when": "flush-draw", "action": "semi-bluff-medium", "frequency": 0.65, "priority": 4 },
+    { "when": "straight-draw", "action": "semi-bluff-small", "frequency": 0.55, "priority": 4 },
+    { "when": "gutshot", "action": "semi-bluff-small", "frequency": 0.3, "priority": 3 },
+    { "when": "nothing", "action": "check-fold", "frequency": 0.85, "priority": 0 },
+    { "when": "overcards", "action": "semi-bluff-small", "frequency": 0.35, "streets": ["flop"], "priority": 2 },
+    { "when": "overcards", "action": "check-fold", "streets": ["turn", "river"], "priority": 2 },
+    { "when": "three-of-a-kind", "action": "value-bet-medium", "priority": 7 },
+    { "when": "straight", "action": "value-bet-large", "priority": 8 },
+    { "when": "flush", "action": "value-bet-large", "priority": 8 },
+    { "when": "monster", "action": "value-bet-pot", "priority": 9 }
+  ],
+  "expression": {
+    "thoughtLanguage": "en",
+    "tone": { "warmth": 0.2, "sass": 0.1, "intensity": 0.3, "humor": 0.1 },
+    "catchphrases": ["EV+", "GTO approved", "The math doesn't lie"],
+    "verbalTics": ["...", "therefore", "logically"],
+    "thoughtTemplates": {
+      "confident": "{handDesc}. Positive EV. {actionDesc}.",
+      "worried": "Insufficient data. Proceeding cautiously.",
+      "bluffing": "Range balance dictates a bluff here. {actionDesc}.",
+      "frustrated": "Variance is part of the game. Recalibrating."
+    }
+  },
+  "imperfection": {
+    "baseMistakeRate": 0.02,
+    "tendencies": { "scaredFold": 0.05, "stickyCall": 0.08, "slowplayBias": 0.05, "tiltAggression": 0.05 },
+    "tilt": { "triggerThreshold": 0.7, "decayRate": 0.15, "maxLevel": 0.3 },
+    "confidenceNoise": 0.05
+  }
+}

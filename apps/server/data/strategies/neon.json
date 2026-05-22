@@ -1,0 +1,102 @@
+{
+  "preflop": {
+    "ranges": {
+      "UTG": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AQs", "AKo"],
+        "call": ["99", "88", "AJs", "ATs", "KQs", "AQo"],
+        "fold": ["77-", "A9s-", "KJs-", "QJs", "JTs", "T9s", "98s", "87s", "76s", "65s", "54s", "AJo-", "KQo-", "QJo-"]
+      },
+      "MP": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "AKs", "AQs", "AJs", "KQs", "AKo", "AQo"],
+        "call": ["88", "77", "ATs", "KJs", "QJs", "JTs", "AJo", "KQo"],
+        "fold": ["66-", "A9s-", "KTs-", "QTs-", "T9s-", "98s", "87s", "76s", "65s", "54s", "ATo-", "KJo-", "QJo-"]
+      },
+      "CO": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "AKs", "AQs", "AJs", "ATs", "KQs", "AKo", "AQo", "AJo"],
+        "call": ["77", "66", "A9s", "A8s", "KJs", "KTs", "QJs", "JTs", "T9s", "98s", "KQo"],
+        "fold": ["55-", "A7s-", "A5s-", "K9s-", "QTs-", "J9s-", "87s-", "76s", "65s", "54s", "ATo-", "KJo-", "QJo-"]
+      },
+      "BTN": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "AKs", "AQs", "AJs", "ATs", "KQs", "KJs", "QJs", "AKo", "AQo", "AJo", "KQo"],
+        "call": ["66", "55", "A9s", "A8s", "A7s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "76s", "ATo"],
+        "fold": ["44-", "A6s-", "A4s-", "K9s-", "Q9s-", "J9s-", "T8s-", "65s-", "54s", "KJo-", "QJo-"]
+      },
+      "SB": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "AKs", "AQs", "AJs", "ATs", "KQs", "AKo", "AQo"],
+        "call": ["66", "55", "A9s", "A8s", "KJs", "KTs", "QJs", "JTs", "T9s", "98s", "AJo", "KQo"],
+        "fold": ["44-", "A7s-", "K9s-", "QTs-", "J9s-", "87s-", "76s", "65s", "54s", "ATo-", "KJo-", "QJo-"]
+      },
+      "BB": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AQs", "AKo"],
+        "call": ["99", "88", "77", "66", "AJs", "ATs", "KQs", "KJs", "QJs", "JTs", "T9s", "98s", "87s", "76s", "AQo", "AJo", "KQo"],
+        "fold": ["55-", "A9s-", "KTs-", "QTs-", "J9s-", "T8s-", "65s-", "54s", "ATo-", "KJo-", "QJo-"]
+      }
+    },
+    "sizing": {
+      "openRaise": "2.5",
+      "threeBet": "3.5",
+      "fourBet": "2.5"
+    }
+  },
+  "postflop": [
+    { "when": "monster", "action": "value-bet-large", "streets": ["flop"], "priority": 1, "notes": "Fast play monsters" },
+    { "when": "monster", "action": "value-bet-pot", "streets": ["turn", "river"], "priority": 1, "notes": "Escalate on later streets" },
+    { "when": "overpair", "action": "value-bet-medium", "streets": ["flop"], "priority": 2, "notes": "Standard overpair line" },
+    { "when": "overpair", "action": "value-bet-large", "streets": ["turn"], "priority": 2 },
+    { "when": "top-two-pair", "action": "value-bet-large", "streets": ["flop", "turn"], "priority": 3 },
+    { "when": "top-pair-top-kicker", "action": "value-bet-small", "streets": ["flop"], "priority": 4, "notes": "Small bet to keep worse hands in" },
+    { "when": "top-pair-top-kicker", "action": "check-call-flop-evaluate-turn", "streets": ["turn"], "position": "OOP", "priority": 5 },
+    { "when": "top-pair-good-kicker", "action": "value-bet-small", "streets": ["flop"], "priority": 6 },
+    { "when": "top-pair-good-kicker", "action": "check-call", "streets": ["turn", "river"], "position": "OOP", "priority": 6, "notes": "Pot control OOP" },
+    { "when": "second-pair", "action": "check-call", "priority": 7, "notes": "Conservative with marginal hands" },
+    { "when": "middle-pair", "action": "check-fold", "vsBetSize": "large", "priority": 8 },
+    { "when": "middle-pair", "action": "check-call", "vsBetSize": "small", "priority": 9, "notes": "Only continue vs small bets" },
+    { "when": "flush-draw", "action": "check-call", "vsBetSize": "small", "priority": 10, "notes": "Passive with draws" },
+    { "when": "flush-draw", "action": "check-fold", "vsBetSize": "large", "priority": 10 },
+    { "when": "flush-draw", "action": "semi-bluff-small", "streets": ["flop"], "position": "IP", "frequency": 0.3, "priority": 11, "notes": "Rare semi-bluff" },
+    { "when": "straight-draw", "action": "check-call", "vsBetSize": "small", "priority": 12 },
+    { "when": "straight-draw", "action": "check-fold", "vsBetSize": "large", "priority": 12 },
+    { "when": "gutshot", "action": "check-fold", "priority": 13, "notes": "Don't chase gutshots" },
+    { "when": "overcards", "action": "check-fold", "priority": 14, "notes": "Give up with air" },
+    { "when": "nothing", "action": "check-fold", "priority": 15, "notes": "No gamble" },
+    { "when": "nothing", "action": "bluff-small", "streets": ["flop"], "position": "IP", "frequency": 0.05, "priority": 16, "notes": "Very rare stab" }
+  ],
+  "expression": {
+    "thoughtLanguage": "ja",
+    "tone": {
+      "warmth": 0.7,
+      "sass": 0.1,
+      "intensity": 0.2,
+      "humor": 0.3
+    },
+    "catchphrases": [
+      "冷静に...",
+      "待つことも戦略のうち",
+      "焦らず、着実に",
+      "良い手を待つのだ",
+      "時が来た"
+    ],
+    "verbalTics": ["...", "ふむ", "なるほど", "そうか"],
+    "thoughtTemplates": {
+      "confident": "確信している。この手は勝てる。",
+      "worried": "少し不安だが...耐えるしかない。",
+      "bluffing": "たまには冒険も必要だ。",
+      "frustrated": "またか...だが、冷静さを失ってはいけない。"
+    }
+  },
+  "imperfection": {
+    "baseMistakeRate": 0.03,
+    "tendencies": {
+      "scaredFold": 0.35,
+      "stickyCall": 0.05,
+      "slowplayBias": 0.3,
+      "tiltAggression": 0.05
+    },
+    "tilt": {
+      "triggerThreshold": 0.7,
+      "decayRate": 0.1,
+      "maxLevel": 0.6
+    },
+    "confidenceNoise": 0.1
+  }
+}

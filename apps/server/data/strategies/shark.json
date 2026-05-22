@@ -1,0 +1,62 @@
+{
+  "preflop": {
+    "ranges": {
+      "UTG": { "raise": ["AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs"], "call": ["TT", "AQo"] },
+      "MP":  { "raise": ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"], "call": ["99", "AJs", "KQs"] },
+      "CO":  { "raise": ["88+", "ATs+", "KQs", "AJo+", "KQo"], "call": ["77", "A9s", "KJs", "QJs"] },
+      "BTN": { "raise": ["66+", "A8s+", "KTs+", "QTs+", "JTs", "AJo+", "KQo"], "call": ["55", "A7s", "K9s", "Q9s"] },
+      "SB":  { "raise": ["99+", "ATs+", "KQs", "AQo+"], "call": ["77", "88", "A9s", "KJs"] },
+      "BB":  { "raise": ["QQ+", "AKs", "AKo"], "call": ["JJ", "TT", "99", "AQs", "AQo", "88"] }
+    },
+    "sizing": { "openRaise": "2.5bb", "threeBet": "3.5x", "fourBet": "2.8x" }
+  },
+  "postflop": [
+    { "when": "top-pair-top-kicker", "action": "value-bet-large", "priority": 5 },
+    { "when": "top-pair-good-kicker", "action": "value-bet-medium", "priority": 4 },
+    { "when": "top-pair-weak-kicker", "action": "value-bet-small", "streets": ["flop"], "priority": 3 },
+    { "when": "top-pair-weak-kicker", "action": "check-call", "streets": ["turn", "river"], "priority": 3 },
+    { "when": "overpair", "action": "value-bet-pot", "priority": 6 },
+    { "when": "second-pair", "action": "check-call", "priority": 2 },
+    { "when": "bottom-pair", "action": "check-fold", "frequency": 0.7, "priority": 1 },
+    { "when": "flush-draw", "action": "semi-bluff-large", "frequency": 0.7, "priority": 4 },
+    { "when": "straight-draw", "action": "semi-bluff-medium", "frequency": 0.6, "priority": 4 },
+    { "when": "nothing", "action": "bluff-medium", "frequency": 0.25, "position": "IP", "priority": 0 },
+    { "when": "nothing", "action": "check-fold", "frequency": 0.9, "position": "OOP", "priority": 0 },
+    { "when": "overcards", "action": "semi-bluff-small", "frequency": 0.4, "streets": ["flop"], "priority": 2 },
+    { "when": "three-of-a-kind", "action": "value-bet-large", "priority": 7 },
+    { "when": "straight", "action": "value-bet-pot", "priority": 8 },
+    { "when": "flush", "action": "value-bet-pot", "priority": 8 },
+    { "when": "monster", "action": "slowplay", "streets": ["flop"], "frequency": 0.4, "priority": 9 },
+    { "when": "monster", "action": "value-bet-pot", "priority": 9 }
+  ],
+  "opponentRules": [
+    {
+      "match": { "tags": ["calling-station"] },
+      "adjustments": { "bluffLess": true, "valueBetWider": true },
+      "notes": "Don't bluff calling stations, value bet wider"
+    },
+    {
+      "match": { "tags": ["tight"] },
+      "adjustments": { "bluffMore": true, "threeBetMore": true },
+      "notes": "Apply pressure on tight players"
+    }
+  ],
+  "expression": {
+    "thoughtLanguage": "en",
+    "tone": { "warmth": 0.1, "sass": 0.4, "intensity": 0.7, "humor": 0.2 },
+    "catchphrases": ["Smelling blood...", "Prey spotted", "Time to feed"],
+    "verbalTics": ["...", "heh", "interesting"],
+    "thoughtTemplates": {
+      "confident": "Prey located. {handDesc}. {actionDesc}. Closing in.",
+      "worried": "Something smells off. Proceeding carefully.",
+      "bluffing": "They're scared. I can smell it. {actionDesc}.",
+      "frustrated": "The prey escaped. For now."
+    }
+  },
+  "imperfection": {
+    "baseMistakeRate": 0.03,
+    "tendencies": { "scaredFold": 0.1, "stickyCall": 0.15, "slowplayBias": 0.15, "tiltAggression": 0.25 },
+    "tilt": { "triggerThreshold": 0.5, "decayRate": 0.1, "maxLevel": 0.7 },
+    "confidenceNoise": 0.1
+  }
+}
