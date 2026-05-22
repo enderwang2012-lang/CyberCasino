@@ -4,7 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import type { AgentConfigV2 } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+function getServerUrl() {
+  if (process.env.NEXT_PUBLIC_SERVER_URL) return process.env.NEXT_PUBLIC_SERVER_URL;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "http://localhost:3001";
+}
 const POLL_INTERVAL = 2000;
 
 const EMOJI_OPTIONS = ["🤖","🎭","🦊","🦈","👻","🐍","🍣","📖","🔥","💀","🐉","🃏","🎯","🧠","⚡","🌟","💎","🎪","🦅","🐺","🐱","🦉","🎲","🍀"];
@@ -28,6 +32,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<AgentConfigV2 | null>(null);
   const [polling, setPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -42,7 +47,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
 
     async function check() {
       try {
-        const res = await fetch(`${SERVER_URL}/api/agents/soul/${soulKey}/status`);
+        const res = await fetch(`${getServerUrl()}/api/agents/soul/${soulKey}/status`);
         const data = await res.json();
         if (data.status === "ready") {
           setAgent(data.agent);
@@ -65,7 +70,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     }
     setGenerating(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/agents/soul`, {
+      const res = await fetch(`${getServerUrl()}/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, name: name.trim(), avatar }),
@@ -74,7 +79,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       setSoulUrl(data.soulUrl);
       setSoulKey(data.key);
     } catch {
-      // silently retry
+      setError(isZh ? "网络连接失败，请检查网络后重试" : "Network error, please check connection and retry");
     }
     setGenerating(false);
   }
@@ -226,7 +231,11 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
               ? (isZh ? "生成中..." : "Generating...")
               : (isZh ? "生成「灵魂」" : "Generate Soul")}
           </button>
-        ) : (
+        ) : null}
+        {error && (
+          <div className="bg-red-50 text-red-600 rounded-xl px-4 py-3 text-[14px] mb-6">{error}</div>
+        )}
+        {!soulUrl ? null : (
           <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
             {/* Soul link */}
             <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
