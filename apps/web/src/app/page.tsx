@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/hooks/useSocket";
 import { Lobby } from "@/components/Lobby";
@@ -10,8 +10,18 @@ import { TableWaitingRoom } from "@/components/TableWaitingRoom";
 import { HistoryPage } from "@/components/HistoryPage";
 import { LandingPage } from "@/components/LandingPage";
 import { useLanguage } from "@/contexts/LanguageContext";
+import type { AgentConfigV2 } from "@cybercasino/shared";
 
 type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
+
+function getServerUrl() {
+  if (process.env.NEXT_PUBLIC_SERVER_URL) {
+    const url = process.env.NEXT_PUBLIC_SERVER_URL;
+    return url.startsWith("http") ? url : `https://${url}`;
+  }
+  if (typeof window !== "undefined") return window.location.origin;
+  return "http://localhost:3001";
+}
 
 function AuthenticatedApp({ user }: { user: { userId: string; name: string; avatar: string; provider: string } }) {
   const {
@@ -22,6 +32,18 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
     startGame, getHistory, refreshLobby, clearTableError,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
+
+  const [agentV2, setAgentV2] = useState<AgentConfigV2 | null>(null);
+
+  const fetchAgentV2 = useCallback(async () => {
+    try {
+      const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(user.userId)}`);
+      const data = await res.json();
+      setAgentV2(data.agent ?? null);
+    } catch { /* ignore */ }
+  }, [user.userId]);
+
+  useEffect(() => { fetchAgentV2(); }, [fetchAgentV2]);
 
   const { language } = useLanguage();
   const [view, setView] = useState<ViewState>("lobby");
@@ -92,6 +114,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       <AgentSetup
         userId={user.userId}
         onCreated={() => {
+          fetchAgentV2();
           setView(returnTo);
         }}
         onBack={handleAgentSetupBack}
@@ -152,6 +175,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       onClearSeats={clearSeats}
       connected={connected}
       agentConfig={agentConfig}
+      agentV2={agentV2}
     />
   );
 }

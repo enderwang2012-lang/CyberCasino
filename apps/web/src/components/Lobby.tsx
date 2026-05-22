@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback } from "react";
-import type { TableInfo, AgentConfig } from "@cybercasino/shared";
+import type { TableInfo, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LobbyProps {
@@ -12,11 +12,18 @@ interface LobbyProps {
   onClearSeats: (tableId: string) => void;
   connected: boolean;
   agentConfig: AgentConfig | null;
+  agentV2?: AgentConfigV2 | null;
 }
 
-export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig }: LobbyProps) {
+export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig, agentV2 }: LobbyProps) {
   const { t } = useLanguage();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const displayAgent = agentV2
+    ? { name: agentV2.name, avatar: agentV2.avatar }
+    : agentConfig
+      ? { name: agentConfig.name, avatar: agentConfig.avatar }
+      : null;
 
   const presetTable = tables.find((t) => t.status === "waiting" || t.status === "playing");
   const finishedTable = tables.find((t) => t.status === "finished");
@@ -57,11 +64,11 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
           onClick={onAgentSetup}
           className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
         >
-          {agentConfig ? (
+          {displayAgent ? (
             <div className="flex items-center gap-4">
-              <span className="text-[28px]">{agentConfig.avatar}</span>
+              <span className="text-[28px]">{displayAgent.avatar}</span>
               <div className="flex-1">
-                <span className="text-text-primary text-[15px] font-medium">{agentConfig.name}</span>
+                <span className="text-text-primary text-[15px] font-medium">{displayAgent.name}</span>
                 <span className="ml-2 text-[13px] text-[#BF5AF2]">
                   {t("lobby.customAgent")}
                 </span>
