@@ -90,13 +90,10 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   if (view === "agent-setup") {
     return (
       <AgentSetup
-        agentConfig={agentConfig}
-        webhookPingResult={webhookPingResult}
-        onSave={(config) => {
-          saveAgent(config);
+        userId={user.userId}
+        onCreated={() => {
           setView(returnTo);
         }}
-        onTestWebhook={testWebhook}
         onBack={handleAgentSetupBack}
       />
     );
