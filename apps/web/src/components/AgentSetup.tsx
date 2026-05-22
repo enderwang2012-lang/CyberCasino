@@ -73,10 +73,8 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     }
     setGenerating(true);
     setError(null);
-    const baseUrl = getServerUrl();
-    console.log("[AgentSetup] requesting:", `${baseUrl}/api/agents/soul`);
     try {
-      const res = await fetch(`${baseUrl}/api/agents/soul`, {
+      const res = await fetch(`${getServerUrl()}/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, name: name.trim(), avatar }),
