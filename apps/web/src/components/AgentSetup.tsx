@@ -13,6 +13,40 @@ function getServerUrl() {
   return "http://localhost:3001";
 }
 const POLL_INTERVAL = 2000;
+const SOUL_CACHE_KEY = "agent_soul_state";
+const SOUL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+interface SoulCache {
+  soulKey: string;
+  soulUrl: string;
+  name: string;
+  avatar: string;
+  editing: boolean;
+  createdAt: number;
+}
+
+function loadSoulCache(): SoulCache | null {
+  try {
+    const raw = localStorage.getItem(SOUL_CACHE_KEY);
+    if (!raw) return null;
+    const cache: SoulCache = JSON.parse(raw);
+    if (Date.now() - cache.createdAt > SOUL_CACHE_TTL) {
+      localStorage.removeItem(SOUL_CACHE_KEY);
+      return null;
+    }
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function saveSoulCache(data: Omit<SoulCache, "createdAt">) {
+  localStorage.setItem(SOUL_CACHE_KEY, JSON.stringify({ ...data, createdAt: Date.now() }));
+}
+
+function clearSoulCache() {
+  localStorage.removeItem(SOUL_CACHE_KEY);
+}
 
 const EMOJI_OPTIONS = ["🤖","🎭","🦊","🦈","👻","🐍","🍣","📖","🔥","💀","🐉","🃏","🎯","🧠","⚡","🌟","💎","🎪","🦅","🐺","🐱","🦉","🎲","🍀"];
 
@@ -26,12 +60,13 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   const { language } = useLanguage();
   const isZh = language === "zh";
 
-  const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("🤖");
+  const cached = loadSoulCache();
+  const [name, setName] = useState(cached?.name ?? "");
+  const [avatar, setAvatar] = useState(cached?.avatar ?? "🤖");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  const [soulUrl, setSoulUrl] = useState<string | null>(null);
-  const [soulKey, setSoulKey] = useState<string | null>(null);
+  const [soulUrl, setSoulUrl] = useState(cached?.soulUrl ?? null);
+  const [soulKey, setSoulKey] = useState(cached?.soulKey ?? null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -42,10 +77,15 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
 
   const [existingAgent, setExistingAgent] = useState<AgentConfigV2 | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(cached?.editing ?? false);
 
   const soulLocked = !!soulUrl;
   const isReady = !!agent;
+
+  function handleBackToLobby() {
+    clearSoulCache();
+    onCreated();
+  }
 
   // ── Fetch existing agent on mount ──
   useEffect(() => {
@@ -85,6 +125,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
         if (data.status === "ready") {
           setAgent(data.agent);
           setPolling(false);
+          clearSoulCache();
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         }
       } catch { /* retry next poll */ }
@@ -119,6 +160,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       const data = await res.json();
       setSoulUrl(data.soulUrl);
       setSoulKey(data.key);
+      saveSoulCache({ soulKey: data.key, soulUrl: data.soulUrl, name: name.trim(), avatar, editing });
     } catch (err) {
       console.error("[AgentSetup] soul generate network error:", err);
       setError(isZh ? "网络连接失败，请检查网络后重试" : "Network error, please check connection and retry");
@@ -183,7 +225,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
         )}
 
         <button
-          onClick={onCreated}
+          onClick={handleBackToLobby}
           className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"
         >
           {isZh ? "回到大厅" : "Back to Lobby"}
@@ -273,7 +315,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
               {isZh ? "编辑牌手" : "Edit Player"}
             </button>
             <button
-              onClick={onCreated}
+              onClick={handleBackToLobby}
               className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
             >
               {isZh ? "回到大厅" : "Back to Lobby"}
