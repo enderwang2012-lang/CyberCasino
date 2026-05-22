@@ -1,51 +1,101 @@
 {
   "preflop": {
     "ranges": {
-      "UTG": { "raise": ["AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs"], "call": ["TT", "99", "AQo"] },
-      "MP":  { "raise": ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo", "AJs"], "call": ["99", "88", "ATs", "KQs"] },
-      "CO":  { "raise": ["77+", "ATs+", "KJs+", "QJs", "AJo+", "KQo"], "call": ["66", "A9s", "KTs", "QTs", "JTs"] },
-      "BTN": { "raise": ["55+", "A2s+", "K9s+", "QTs+", "J9s+", "T9s", "AJo+", "KQo"], "call": ["44", "K8s", "Q9s", "J8s", "T8s"] },
-      "SB":  { "raise": ["88+", "ATs+", "KQs", "AQo+"], "call": ["66", "77", "A9s", "A8s", "KJs", "QJs"] },
-      "BB":  { "raise": ["QQ+", "AKs"], "call": ["JJ", "TT", "99", "AQs", "AQo", "AKo", "88"] }
+      "UTG": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "AKs", "AQs", "AJs", "KQs", "AKo", "AQo"],
+        "call": ["88", "77", "ATs", "KJs", "QJs", "JTs", "T9s", "98s"],
+        "fold": ["66-", "A9s-", "KTs-", "QTs-", "J9s-", "87s-", "76s", "65s", "54s", "AJo-", "KQo-"]
+      },
+      "MP": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "AKs", "AQs", "AJs", "ATs", "KQs", "KJs", "QJs", "JTs", "T9s", "AKo", "AQo", "AJo"],
+        "call": ["77", "66", "A9s", "A8s", "KTs", "QTs", "98s", "87s", "KQo"],
+        "fold": ["55-", "A7s-", "K9s-", "Q9s-", "J9s-", "T8s-", "76s-", "65s", "54s", "ATo-", "KJo-", "QJo-"]
+      },
+      "CO": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "AKs", "AQs", "AJs", "ATs", "A9s", "KQs", "KJs", "KTs", "QJs", "JTs", "T9s", "98s", "AKo", "AQo", "AJo", "ATo", "KQo"],
+        "call": ["55", "44", "A8s", "A5s", "QTs", "J9s", "87s", "76s", "KJo"],
+        "fold": ["33-", "A7s-", "A4s-", "A2s", "K9s-", "Q9s-", "J8s-", "T8s-", "65s-", "54s", "QJo-"]
+      },
+      "BTN": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55", "44", "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A5s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs", "J9s", "T9s", "98s", "87s", "AKo", "AQo", "AJo", "ATo", "KQo", "KJo"],
+        "call": ["33", "22", "A7s", "A4s", "A3s", "A2s", "K9s", "Q9s", "T8s", "76s", "65s", "54s", "QJo"],
+        "fold": ["A6s", "K8s-", "Q8s-", "J8s-", "T7s-", "97s-", "86s-", "KTo-", "QTo-", "JTo-", "J9o-"]
+      },
+      "SB": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "AKs", "AQs", "AJs", "ATs", "KQs", "KJs", "QJs", "JTs", "AKo", "AQo", "AJo"],
+        "call": ["66", "55", "A9s", "A8s", "A5s", "KTs", "QTs", "J9s", "T9s", "98s", "87s", "ATo", "KQo"],
+        "fold": ["44-", "A7s-", "A4s-", "K9s-", "Q9s-", "J8s-", "T8s-", "76s-", "65s", "54s", "A9o-", "KJo-", "QJo-"]
+      },
+      "BB": {
+        "raise": ["AA", "KK", "QQ", "JJ", "TT", "99", "AKs", "AQs", "AKo"],
+        "call": ["88", "77", "66", "55", "44", "AJs", "ATs", "A9s", "A8s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs", "J9s", "T9s", "98s", "87s", "AQo", "AJo", "KQo"],
+        "fold": ["33-", "A7s-", "K9s-", "Q9s-", "J8s-", "T8s-", "76s-", "65s", "54s", "ATo-", "KJo-", "QJo-"]
+      }
     },
-    "sizing": { "openRaise": "2.5bb", "threeBet": "3x", "fourBet": "2.5x" }
+    "sizing": {
+      "openRaise": "2.5",
+      "threeBet": "3.5",
+      "fourBet": "2.3"
+    }
   },
   "postflop": [
-    { "when": "top-pair-top-kicker", "action": "value-bet-medium", "streets": ["flop", "turn"], "priority": 5 },
-    { "when": "top-pair-top-kicker", "action": "value-bet-small", "streets": ["river"], "priority": 5 },
-    { "when": "top-pair-good-kicker", "action": "value-bet-small", "priority": 4 },
-    { "when": "top-pair-weak-kicker", "action": "check-call", "streets": ["flop"], "priority": 3 },
-    { "when": "top-pair-weak-kicker", "action": "check-fold", "streets": ["turn", "river"], "priority": 3 },
-    { "when": "overpair", "action": "value-bet-large", "priority": 6 },
-    { "when": "second-pair", "action": "check-call", "streets": ["flop"], "priority": 2 },
-    { "when": "second-pair", "action": "check-fold", "streets": ["turn", "river"], "priority": 2 },
-    { "when": "flush-draw", "action": "semi-bluff-medium", "frequency": 0.65, "priority": 4 },
-    { "when": "straight-draw", "action": "semi-bluff-small", "frequency": 0.55, "priority": 4 },
-    { "when": "gutshot", "action": "semi-bluff-small", "frequency": 0.3, "priority": 3 },
-    { "when": "nothing", "action": "check-fold", "frequency": 0.85, "priority": 0 },
-    { "when": "overcards", "action": "semi-bluff-small", "frequency": 0.35, "streets": ["flop"], "priority": 2 },
-    { "when": "overcards", "action": "check-fold", "streets": ["turn", "river"], "priority": 2 },
-    { "when": "three-of-a-kind", "action": "value-bet-medium", "priority": 7 },
-    { "when": "straight", "action": "value-bet-large", "priority": 8 },
-    { "when": "flush", "action": "value-bet-large", "priority": 8 },
-    { "when": "monster", "action": "value-bet-pot", "priority": 9 }
+    { "when": "monster", "action": "value-bet-large", "streets": ["flop"], "priority": 1 },
+    { "when": "monster", "action": "value-bet-pot", "streets": ["turn", "river"], "priority": 2 },
+    { "when": "overpair", "action": "value-bet-medium", "streets": ["flop"], "priority": 3 },
+    { "when": "overpair", "action": "value-bet-large", "streets": ["turn"], "priority": 4 },
+    { "when": "top-two-pair", "action": "value-bet-large", "streets": ["flop", "turn"], "priority": 5 },
+    { "when": "top-pair-top-kicker", "action": "value-bet-small", "streets": ["flop"], "priority": 6 },
+    { "when": "top-pair-top-kicker", "action": "value-bet-medium", "streets": ["turn"], "priority": 7 },
+    { "when": "top-pair-good-kicker", "action": "value-bet-small", "priority": 8 },
+    { "when": "flush-draw", "action": "semi-bluff-medium", "streets": ["flop"], "priority": 9 },
+    { "when": "straight-draw", "action": "semi-bluff-medium", "position": "IP", "priority": 10 },
+    { "when": "second-pair", "action": "check-call", "priority": 11 },
+    { "when": "middle-pair", "action": "check-call", "vsBetSize": "small", "priority": 12 },
+    { "when": "middle-pair", "action": "check-fold", "vsBetSize": "large", "priority": 13 },
+    { "when": "flush-draw", "action": "check-call", "vsBetSize": "small", "streets": ["turn"], "priority": 14 },
+    { "when": "gutshot", "action": "check-call", "vsBetSize": "small", "priority": 15 },
+    { "when": "gutshot", "action": "check-fold", "vsBetSize": "large", "priority": 16 },
+    { "when": "overcards", "action": "check-call", "streets": ["flop"], "vsBetSize": "small", "priority": 17 },
+    { "when": "overcards", "action": "check-fold", "streets": ["turn", "river"], "vsBetSize": "large", "priority": 18 },
+    { "when": "nothing", "action": "bluff-small", "streets": ["flop"], "position": "IP", "frequency": 0.3, "priority": 19 },
+    { "when": "nothing", "action": "check-fold", "priority": 20 }
   ],
   "expression": {
     "thoughtLanguage": "en",
-    "tone": { "warmth": 0.2, "sass": 0.1, "intensity": 0.3, "humor": 0.1 },
-    "catchphrases": ["EV+", "GTO approved", "The math doesn't lie"],
-    "verbalTics": ["...", "therefore", "logically"],
+    "tone": {
+      "warmth": 0.1,
+      "sass": 0.05,
+      "intensity": 0.2,
+      "humor": 0.05
+    },
+    "catchphrases": [
+      "EV+ play.",
+      "Calculating...",
+      "The numbers don't lie.",
+      "Statistically correct.",
+      "Probability favors this line."
+    ],
+    "verbalTics": ["...", "Let's see", "According to the math", "Expected value"],
     "thoughtTemplates": {
-      "confident": "{handDesc}. Positive EV. {actionDesc}.",
-      "worried": "Insufficient data. Proceeding cautiously.",
-      "bluffing": "Range balance dictates a bluff here. {actionDesc}.",
-      "frustrated": "Variance is part of the game. Recalibrating."
+      "confident": "The math is clear. EV+, executing standard strategy.",
+      "worried": "Edge case. Need to recalculate implied odds.",
+      "bluffing": "Range balancing requires occasional bluffs at this node.",
+      "frustrated": "Variance. The strategy remains +EV."
     }
   },
   "imperfection": {
     "baseMistakeRate": 0.02,
-    "tendencies": { "scaredFold": 0.05, "stickyCall": 0.08, "slowplayBias": 0.05, "tiltAggression": 0.05 },
-    "tilt": { "triggerThreshold": 0.7, "decayRate": 0.15, "maxLevel": 0.3 },
+    "tendencies": {
+      "scaredFold": 0.02,
+      "stickyCall": 0.02,
+      "slowplayBias": 0.02,
+      "tiltAggression": 0.02
+    },
+    "tilt": {
+      "triggerThreshold": 0.9,
+      "decayRate": 0.15,
+      "maxLevel": 0.3
+    },
     "confidenceNoise": 0.05
   }
 }
