@@ -10,6 +10,8 @@ export type GamePhase = "preflop" | "flop" | "turn" | "river" | "showdown";
 
 export type ActionType = "fold" | "check" | "call" | "raise";
 
+export type Position = "UTG" | "MP" | "CO" | "BTN" | "SB" | "BB";
+
 export interface Action {
   type: ActionType;
   amount?: number;
@@ -50,6 +52,9 @@ export interface AgentThought {
   message: string;
   confidence: number;
   isBluffing: boolean;
+  isMistake?: boolean;
+  difficulty?: number;
+  psychologicalState?: string;
 }
 
 export interface AgentDecision {
@@ -117,6 +122,256 @@ export interface Winner {
   playerId: string;
   amount: number;
   potIndex: number;
+}
+
+// --- Strategy Config types (Agent V2) ---
+
+// Preflop
+export interface PositionRange {
+  raise: string[];
+  call: string[];
+  fold: string[];
+}
+
+export interface PreflopConfig {
+  ranges: Record<Position, PositionRange>;
+  sizing: {
+    openRaise: string;
+    threeBet: string;
+    fourBet: string;
+  };
+}
+
+// Postflop
+export type PostflopCondition =
+  | "top-pair-top-kicker"
+  | "top-pair-good-kicker"
+  | "top-pair-weak-kicker"
+  | "second-pair"
+  | "middle-pair"
+  | "bottom-pair"
+  | "overpair"
+  | "top-two-pair"
+  | "two-pair"
+  | "three-of-a-kind"
+  | "straight"
+  | "flush"
+  | "full-house"
+  | "four-of-a-kind"
+  | "straight-flush"
+  | "royal-flush"
+  | "flush-draw"
+  | "straight-draw"
+  | "gutshot"
+  | "overcards"
+  | "nothing"
+  | "monster";
+
+export type PostflopAction =
+  | "value-bet-small"
+  | "value-bet-medium"
+  | "value-bet-large"
+  | "value-bet-pot"
+  | "overbet"
+  | "check-call"
+  | "check-raise"
+  | "check-fold"
+  | "check-call-flop-evaluate-turn"
+  | "semi-bluff-small"
+  | "semi-bluff-medium"
+  | "semi-bluff-large"
+  | "bluff-small"
+  | "bluff-medium"
+  | "bluff-large"
+  | "slowplay"
+  | "trap"
+  | "donk-bet";
+
+export type Street = "flop" | "turn" | "river";
+
+export interface PostflopRule {
+  when: PostflopCondition;
+  action: PostflopAction;
+  position?: "IP" | "OOP" | "any";
+  streets?: Street[];
+  frequency?: number;
+  vsBetSize?: "small" | "medium" | "large" | "any";
+  priority?: number;
+  notes?: string;
+}
+
+// Opponent rules
+export interface OpponentMatch {
+  tags?: string[];
+  vpipRange?: [number, number];
+  pfrRange?: [number, number];
+  specificPlayer?: string;
+}
+
+export interface OpponentAdjustments {
+  widenRange?: boolean;
+  tightenRange?: boolean;
+  threeBetMore?: boolean;
+  threeBetLess?: boolean;
+  bluffMore?: boolean;
+  bluffLess?: boolean;
+  valueBetThinner?: boolean;
+  valueBetWider?: boolean;
+  trapMore?: boolean;
+  foldToAggression?: boolean;
+  limpMore?: boolean;
+}
+
+export interface OpponentRule {
+  match: OpponentMatch;
+  adjustments: OpponentAdjustments;
+  sizingOverride?: {
+    raiseSizing?: "small" | "medium" | "large" | "overbet";
+    bluffSizing?: "small" | "medium" | "large";
+  };
+  notes?: string;
+}
+
+export type TargetedIntent =
+  | "intimidate"
+  | "bait"
+  | "exploit"
+  | "table-image"
+  | "revenge"
+  | "information";
+
+export interface TargetedAction {
+  target: OpponentMatch;
+  intent: TargetedIntent;
+  execution: {
+    action: ActionType;
+    sizing?: string;
+    thoughtHint?: string;
+  };
+  conditions?: {
+    minHands?: number;
+    onlyWhenInHand?: boolean;
+    maxFrequency?: number;
+  };
+}
+
+// Expression
+export type ThoughtLanguage = "zh" | "en" | "ja" | "ko" | "mixed";
+
+export interface ToneSpectrum {
+  warmth: number;
+  sass: number;
+  intensity: number;
+  humor: number;
+}
+
+export interface ThoughtTemplates {
+  confident: string;
+  worried: string;
+  bluffing: string;
+  frustrated: string;
+}
+
+export interface ExpressionConfig {
+  thoughtLanguage: ThoughtLanguage;
+  tone: ToneSpectrum;
+  catchphrases: string[];
+  verbalTics: string[];
+  thoughtTemplates: ThoughtTemplates;
+}
+
+// Imperfection & Tilt
+export interface MistakeTendencies {
+  scaredFold: number;
+  stickyCall: number;
+  slowplayBias: number;
+  tiltAggression: number;
+}
+
+export interface TiltConfig {
+  triggerThreshold: number;
+  decayRate: number;
+  maxLevel: number;
+}
+
+export interface ImperfectionConfig {
+  baseMistakeRate: number;
+  tendencies: MistakeTendencies;
+  tilt: TiltConfig;
+  confidenceNoise: number;
+}
+
+// Player profile
+export interface PlayerStats {
+  handsPlayed: number;
+  vpip: number;
+  pfr: number;
+  showdownRate: number;
+  winRate: number;
+}
+
+export interface PlayerTendencies {
+  foldToThreeBet: number;
+  foldToCBet: number;
+  riverBluffFreq: number;
+  raiseWithMonster: number;
+  positionAware: boolean;
+}
+
+export interface HandSnapshot {
+  handNumber: number;
+  holeCards: string[];
+  actions: string[];
+  result: "won" | "lost" | "folded";
+  profit: number;
+}
+
+export interface PlayerProfile {
+  playerId: string;
+  stats: PlayerStats;
+  tendencies: PlayerTendencies;
+  tags: string[];
+  narrative?: string;
+  notableHands: HandSnapshot[];
+}
+
+// Strategy config
+export interface StrategyConfig {
+  preflop: PreflopConfig;
+  postflop: PostflopRule[];
+  opponentRules?: OpponentRule[];
+  targetedActions?: TargetedAction[];
+  expression?: ExpressionConfig;
+  imperfection?: ImperfectionConfig;
+  [key: string]: unknown;
+}
+
+export interface DecisionDistribution {
+  weights: Map<ActionType, number>;
+  difficulty: number;
+  isMistake: boolean;
+}
+
+// Agent V2 config
+export interface AgentConfigV2 {
+  id: string;
+  userId: string;
+  name: string;
+  avatar: string;
+  description?: string;
+  strategy: StrategyConfig;
+  webhookUrl?: string;
+  webhookVerified?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentPreview {
+  name: string;
+  description: string;
+  avatar?: string;
+  sampleThoughts: string[];
+  playStyle: string;
 }
 
 // --- External Agent types ---
@@ -223,6 +478,8 @@ export interface ServerToClientEvents {
   "table:stopped": (tableId: string) => void;
   "table:error": (error: string) => void;
   "table:history": (tables: TableInfo[]) => void;
+  "agent:created": (data: { agentId: string; status: string; previewUrl?: string }) => void;
+  "agent:create-error": (data: { error: string; details?: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -239,6 +496,7 @@ export interface ClientToServerEvents {
   "table:clear-seats": (tableId: string) => void;
   "table:start": (tableId: string, language?: "zh" | "en") => void;
   "table:history": () => void;
+  "agent:create-by-ai": (data: { config: StrategyConfig; preview: AgentPreview }) => void;
 }
 
 export interface BlindLevel {
