@@ -431,7 +431,22 @@ export class TableInstance {
           actionHistory: actionHistory.slice(-15),
         };
 
+        // Emit thinking event before decision
+        this.emit({
+          type: "ai:thinking",
+          playerId: agent.id,
+          playerName: agent.name,
+        } as any);
+
         const decision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
+
+        // Emit thought event after decision
+        this.emit({
+          type: "ai:thought",
+          playerId: agent.id,
+          thought: decision.thought,
+          action: decision.action,
+        } as any);
 
         // Update shadow state based on the decision
         const action = decision.action;
