@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useMemo, useState } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { ThinkingBubble } from "./ThinkingBubble";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -216,12 +215,21 @@ function EventLine({ event, ctx, isAutoRun, tableId }: { event: GameEvent; ctx: 
             )}
           </div>
           {thought.message && thought.message !== "..." && (
-            <ThinkingBubble
-              message={thought.message}
-              isBluffing={thought.isBluffing}
-              thinkingSource={thought.thinkingSource}
-              confidence={thought.confidence}
-            />
+            <div className="text-[13px] text-text-secondary mt-1.5 italic">
+              &ldquo;{thought.message}&rdquo;
+              {thought.isBluffing && <span className="text-danger ml-1 not-italic">{t("chatFeed.bluff")}</span>}
+              {thought.confidence > 0 && (
+                <span className="text-text-tertiary ml-1 not-italic">
+                  {Math.round(thought.confidence * 100)}%
+                </span>
+              )}
+              {thought.thinkingSource === "llm" && (
+                <span className="text-[#BF5AF2] ml-1 not-italic text-[11px]">AI</span>
+              )}
+              {thought.thinkingSource === "strategy" && (
+                <span className="text-success ml-1 not-italic text-[11px]">策略</span>
+              )}
+            </div>
           )}
           <div className={`text-[14px] font-semibold mt-1.5 ${actionColor}`}>
             {actionLabel}
@@ -506,11 +514,8 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
         </div>
       )}
       {currentlyThinking && (
-        <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
-          <div className="text-[14px] text-text-primary mb-1">
-            <AgentTag id={currentlyThinking.playerId} lookup={lookup} />
-          </div>
-          <ThinkingBubble isLoading />
+        <div className="text-[13px] text-text-tertiary italic pl-1">
+          <AgentTag id={currentlyThinking.playerId} lookup={lookup} /> 思考中...
         </div>
       )}
       {groupedEvents.map(({ event, index, potTotal, netProfits, isAutoRun }) => (
