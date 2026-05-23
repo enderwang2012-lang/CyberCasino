@@ -4,13 +4,11 @@ import type {
   AgentDecision,
   ActionType,
   ActionRecord,
-  WebhookRequest,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { ruleDecide, ruleFallback } from "./rule-engine";
 import { parseStyleToPersonality } from "./style-parser";
-
-const WEBHOOK_TIMEOUT_MS = 15_000;
+import { callWebhook } from "./webhook-caller";
 
 export class ExternalAgent implements IPokerAgent {
   readonly id: string;
@@ -46,66 +44,31 @@ export class ExternalAgent implements IPokerAgent {
     minRaise: number,
     language: "zh" | "en" = "zh"
   ): Promise<AgentDecision> {
-    try {
-      return await this.callWebhook(view, validActions, callAmount, minRaise);
-    } catch (err) {
-      console.warn(`[ExternalAgent:${this.id}] webhook failed, falling back to rules:`, err);
-      return this.fallbackDecide(view, validActions, callAmount, minRaise, language);
-    }
-  }
+    const result = await callWebhook(
+      this.webhookUrl,
+      view, validActions, callAmount, minRaise, this.stylePrompt,
+    );
 
-  private async callWebhook(
-    view: AgentGameView,
-    validActions: ActionType[],
-    callAmount: number,
-    minRaise: number
-  ): Promise<AgentDecision> {
-    const payload: WebhookRequest = {
-      type: "decision",
-      gameView: view,
-      validActions,
-      callAmount,
-      minRaise,
-      stylePrompt: this.stylePrompt,
-    };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-
-    const res = await fetch(this.webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      throw new Error(`Webhook returned HTTP ${res.status}`);
+    if (result.success && result.response) {
+      const resp = result.response;
+      return {
+        action: {
+          type: resp.action,
+          amount: resp.action === "raise"
+            ? Math.max(resp.amount ?? (view.currentBet + minRaise), view.currentBet + minRaise)
+            : undefined,
+        },
+        thought: {
+          message: resp.thought ?? "...",
+          confidence: resp.confidence ?? 0.5,
+          isBluffing: resp.isBluffing ?? false,
+          thinkingSource: "llm",
+        },
+      };
     }
 
-    const body = await res.json();
-
-    if (!validActions.includes(body.action)) {
-      throw new Error(`Invalid action from webhook: ${body.action}`);
-    }
-
-    const action: AgentDecision["action"] = {
-      type: body.action,
-      amount: body.action === "raise"
-        ? Math.max(body.amount ?? (view.currentBet + minRaise), view.currentBet + minRaise)
-        : undefined,
-    };
-
-    return {
-      action,
-      thought: {
-        message: body.thought ?? "...",
-        confidence: 0.5,
-        isBluffing: false,
-        thinkingSource: "llm",
-      },
-    };
+    console.warn(`[ExternalAgent:${this.id}] webhook failed: ${result.error}, falling back to rules`);
+    return this.fallbackDecide(view, validActions, callAmount, minRaise, language);
   }
 
   private fallbackDecide(
