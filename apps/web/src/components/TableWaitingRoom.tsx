@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { TableSeat, AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import type { TableSeat, AgentConfig, AgentConfigV2, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { SeatSelectPopup } from "./SeatSelectPopup";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useHeader } from "@/contexts/HeaderContext";
@@ -11,6 +11,7 @@ interface TableWaitingRoomProps {
   seats: TableSeat[];
   userId: string | null;
   agentConfig: AgentConfig | null;
+  agentV2?: AgentConfigV2 | null;
   personalities: BuiltinPersonalityInfo[];
   onSitSelf: () => void;
   onSitBuiltin: (personalityId: string) => void;
@@ -26,6 +27,7 @@ export function TableWaitingRoom({
   seats,
   userId,
   agentConfig,
+  agentV2,
   personalities,
   onSitSelf,
   onSitBuiltin,
@@ -147,6 +149,7 @@ export function TableWaitingRoom({
       {showSelectPopup && (
         <SeatSelectPopup
           agentConfig={agentConfig}
+          agentV2={agentV2}
           myAgentSeated={myAgentSeated}
           personalities={personalities}
           seatedPersonalityIds={seatedPersonalityIds}

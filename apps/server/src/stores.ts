@@ -99,7 +99,16 @@ export class UserStore {
 
 export class AgentStore {
   private agents = new Map(initialAgents);
-  private agentsV2 = new Map(initialAgentsV2);
+  private agentsV2 = new Map<string, AgentConfigV2[]>();
+
+  constructor() {
+    // Group flat array by userId
+    for (const [, agent] of initialAgentsV2) {
+      const existing = this.agentsV2.get(agent.userId) ?? [];
+      existing.push(agent);
+      this.agentsV2.set(agent.userId, existing);
+    }
+  }
 
   save(userId: string, partial: Omit<AgentConfig, "id" | "userId" | "webhookVerified">): AgentConfig {
     const existing = this.getByUserId(userId);
@@ -129,13 +138,22 @@ export class AgentStore {
   saveV2(agent: AgentConfigV2): void {
     // 清除该用户旧的 v1 agent
     this.agents.delete(agent.userId);
-    // 保存到 v2 map
-    this.agentsV2.set(agent.userId, agent);
-    saveAgentsV2(this.agentsV2);
+    // Append to v2 list
+    const list = this.agentsV2.get(agent.userId) ?? [];
+    list.push(agent);
+    this.agentsV2.set(agent.userId, list);
+    // Flatten and persist
+    const all = Array.from(this.agentsV2.values()).flat();
+    saveAgentsV2(new Map(all.map((a) => [a.userId, a])));
   }
 
   getV2ByUserId(userId: string): AgentConfigV2 | undefined {
-    return this.agentsV2.get(userId);
+    const list = this.agentsV2.get(userId);
+    return list?.[list.length - 1]; // most recent
+  }
+
+  getAllV2ByUserId(userId: string): AgentConfigV2[] {
+    return this.agentsV2.get(userId) ?? [];
   }
 
   nextV2Id(): string {

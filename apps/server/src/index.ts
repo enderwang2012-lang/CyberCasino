@@ -42,6 +42,16 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
+  // Get all V2 agents for a user
+  const listMatch = req.url?.match(/^\/api\/agents\/list\?userId=(.+)$/);
+  if (listMatch && req.method === "GET") {
+    const userId = decodeURIComponent(listMatch[1]);
+    const agents = agentStore.getAllV2ByUserId(userId);
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({ agents }));
+    return;
+  }
+
   // Generate soul URL (permanent per user — deterministic key)
   if (req.url === "/api/agents/soul" && req.method === "POST") {
     let body = "";

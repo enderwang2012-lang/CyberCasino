@@ -8,6 +8,7 @@ interface LobbyProps {
   tables: TableInfo[];
   onJoin: (tableId: string) => void;
   onAgentSetup: () => void;
+  onAgentList: () => void;
   onHistory: () => void;
   onClearSeats: (tableId: string) => void;
   connected: boolean;
@@ -15,7 +16,7 @@ interface LobbyProps {
   agentV2?: AgentConfigV2 | null;
 }
 
-export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig, agentV2 }: LobbyProps) {
+export function Lobby({ tables, onJoin, onAgentSetup, onAgentList, onHistory, onClearSeats, connected, agentConfig, agentV2 }: LobbyProps) {
   const { t } = useLanguage();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -61,7 +62,7 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
 
       <div className="w-full max-w-lg mb-8">
         <button
-          onClick={onAgentSetup}
+          onClick={displayAgent ? onAgentList : onAgentSetup}
           className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
         >
           {displayAgent ? (

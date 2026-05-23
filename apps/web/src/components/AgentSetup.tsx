@@ -212,101 +212,125 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
         )}
 
         {/* ════════════════════════════════════════════ */}
-        {/* ── Unified Card ── */}
+        {/* ── Existing Agent Card (view mode) ── */}
         {/* ════════════════════════════════════════════ */}
-        {!loadingExisting && (
+        {!loadingExisting && existingAgent && !creatingNew && !editing && !soulUrl && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+            <div className="flex items-center gap-3">
+              <span className="text-[36px]">{existingAgent.avatar}</span>
+              <div className="flex-1">
+                <div className="text-text-primary text-[18px] font-semibold">{existingAgent.name}</div>
+                <div className="text-text-secondary text-[13px]">{existingAgent.description ?? ""}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════ */}
+        {/* ── Ready Agent Card (after creation) ── */}
+        {/* ════════════════════════════════════════════ */}
+        {!loadingExisting && isReady && !creatingNew && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 relative">
+            <div className="absolute top-4 right-4 text-[12px] font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">
+              {isZh ? "牌手已就绪" : "Ready"}
+            </div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[36px]">{agent!.avatar}</span>
+              <div>
+                <div className="text-text-primary text-[18px] font-semibold">{agent!.name}</div>
+                <div className="text-text-secondary text-[13px]">{agent!.description ?? ""}</div>
+              </div>
+            </div>
+            {soulUrl && (
+              <>
+                <div className="border-t border-surface-elevated pt-4 mt-2">
+                  <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
+                    {isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant"}
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <code className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-[12px] font-mono break-all">
+                      {soulUrl}
+                    </code>
+                    <button
+                      onClick={handleCopySoul}
+                      className="shrink-0 bg-accent hover:bg-accent-hover text-white px-4 py-3 rounded-xl text-[13px] font-medium transition-colors"
+                    >
+                      {copied ? (isZh ? "已复制" : "Copied") : (isZh ? "复制" : "Copy")}
+                    </button>
+                  </div>
+                  <p className="text-text-secondary text-[13px]">
+                    {isZh
+                      ? "把链接发给 AI 助手，让他/她协助你塑造牌手的灵魂"
+                      : "Send this link to your AI assistant to help shape your player's soul."}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════ */}
+        {/* ── Create/Edit Form Card ── */}
+        {/* ════════════════════════════════════════════ */}
+        {!loadingExisting && showForm && !isReady && (
           <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 relative">
             {/* Status badge */}
-            {(soulLocked || isReady) && (
-              <div className={`absolute top-4 right-4 text-[12px] font-medium px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                {isReady
-                  ? (isZh ? "牌手已就绪" : "Ready")
-                  : (isZh ? "牌手生成中" : "Generating")}
+            {soulLocked && (
+              <div className="absolute top-4 right-4 text-[12px] font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                {isZh ? "牌手生成中" : "Generating"}
               </div>
             )}
 
-            {/* ── Section A: Agent Info ── */}
-            {displayAgent && (!showForm || isReady) && (
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-[36px]">{displayAgent.avatar}</span>
-                <div className="flex-1">
-                  <div className="text-text-primary text-[18px] font-semibold">{displayAgent.name}</div>
-                  <div className="text-text-secondary text-[13px]">{displayAgent.description ?? ""}</div>
-                </div>
-                {!isReady && (
+            <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
+              {isZh ? "牌手名字" : "Player Name"}
+            </label>
+            <div className="flex items-center gap-3 mb-4">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={soulLocked}
+                placeholder={isZh ? "给你的牌手取个名字..." : "Name your player..."}
+                maxLength={20}
+                className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
+              {isZh ? "选择头像" : "Choose Avatar"}
+            </label>
+            <button
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="w-14 h-14 bg-surface-elevated rounded-xl flex items-center justify-center text-[28px] hover:bg-surface-hover transition-colors"
+            >
+              {avatar}
+            </button>
+
+            {showEmojiPicker && (
+              <div className="grid grid-cols-8 gap-2 mt-3 p-3 bg-surface-elevated rounded-xl">
+                {EMOJI_OPTIONS.map((emoji) => (
                   <button
-                    onClick={() => {
-                      setEditing(true);
-                      setCreatingNew(false);
-                      if (existingAgent) {
-                        setName(existingAgent.name);
-                        setAvatar(existingAgent.avatar);
-                      }
-                      setAgent(null);
-                    }}
-                    className="text-accent text-[13px] font-medium shrink-0"
+                    key={emoji}
+                    onClick={() => { setAvatar(emoji); setShowEmojiPicker(false); }}
+                    className={`w-9 h-9 flex items-center justify-center text-[20px] rounded-lg transition-colors ${avatar === emoji ? "bg-accent/20 ring-2 ring-accent" : "hover:bg-white"}`}
                   >
-                    {isZh ? "编辑" : "Edit"}
+                    {emoji}
                   </button>
-                )}
+                ))}
               </div>
             )}
 
-            {/* ── Section B: Form (create/edit mode, hidden when ready) ── */}
-            {showForm && !isReady && (
-              <>
-                <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
-                  {isZh ? "牌手名字" : "Player Name"}
-                </label>
-                <div className="flex items-center gap-3 mb-4">
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={soulLocked}
-                    placeholder={isZh ? "给你的牌手取个名字..." : "Name your player..."}
-                    maxLength={20}
-                    className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
-                  />
-                </div>
-
-                <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
-                  {isZh ? "选择头像" : "Choose Avatar"}
-                </label>
-                <button
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="w-14 h-14 bg-surface-elevated rounded-xl flex items-center justify-center text-[28px] hover:bg-surface-hover transition-colors"
-                >
-                  {avatar}
-                </button>
-
-                {showEmojiPicker && (
-                  <div className="grid grid-cols-8 gap-2 mt-3 p-3 bg-surface-elevated rounded-xl">
-                    {EMOJI_OPTIONS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => { setAvatar(emoji); setShowEmojiPicker(false); }}
-                        className={`w-9 h-9 flex items-center justify-center text-[20px] rounded-lg transition-colors ${avatar === emoji ? "bg-accent/20 ring-2 ring-accent" : "hover:bg-white"}`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Generate button (inline in card) */}
-                {!soulUrl && (
-                  <button
-                    onClick={handleGenerateSoul}
-                    disabled={generating || !name.trim()}
-                    className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors disabled:opacity-50 mt-5"
-                  >
-                    {generating
-                      ? (isZh ? "生成中..." : "Generating...")
-                      : (isZh ? "生成「灵魂」链接" : "Generate Soul Link")}
-                  </button>
-                )}
-              </>
+            {/* Generate button */}
+            {!soulUrl && (
+              <button
+                onClick={handleGenerateSoul}
+                disabled={generating || !name.trim()}
+                className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors disabled:opacity-50 mt-5"
+              >
+                {generating
+                  ? (isZh ? "生成中..." : "Generating...")
+                  : (isZh ? "生成「灵魂」链接" : "Generate Soul Link")}
+              </button>
             )}
 
             {/* Error */}
@@ -314,13 +338,12 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
               <div className="bg-red-50 text-red-600 rounded-xl px-4 py-3 text-[14px] mt-4">{error}</div>
             )}
 
-            {/* ── Section C: Soul Link (when soulUrl exists) ── */}
+            {/* Soul Link (after generation) */}
             {soulUrl && (
-              <div className={showForm && !isReady ? "mt-5 pt-5 border-t border-surface-elevated" : "mt-4"}>
+              <div className="mt-5 pt-5 border-t border-surface-elevated">
                 <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
                   {isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant"}
                 </div>
-
                 <div className="flex items-center gap-2 mb-3">
                   <code className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-[12px] font-mono break-all">
                     {soulUrl}
@@ -332,40 +355,37 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
                     {copied ? (isZh ? "已复制" : "Copied") : (isZh ? "复制" : "Copy")}
                   </button>
                 </div>
-
                 <p className="text-text-secondary text-[13px]">
                   {isZh
                     ? "把链接发给 AI 助手，让他/她协助你塑造牌手的灵魂"
                     : "Send this link to your AI assistant to help shape your player's soul."}
                 </p>
 
-                {/* ── Section D: Loading indicator ── */}
-                {!isReady && (
-                  <div className="flex flex-col items-center justify-center py-6 mt-4">
-                    <div className="text-[40px] mb-2 animate-pulse">👻</div>
-                    <p className="text-text-tertiary text-[14px]">
-                      {isZh ? "灵魂生成中..." : "Soul is being shaped..."}
-                    </p>
-                    <p className="text-text-tertiary text-[12px] mt-1">
-                      {editing
-                        ? (isZh ? "AI 正在根据你的需求调整牌手配置" : "AI is adjusting the player config based on your feedback")
-                        : (isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul")}
-                    </p>
-                    {polling && (
-                      <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mt-3" />
-                    )}
-                  </div>
-                )}
+                {/* Loading indicator */}
+                <div className="flex flex-col items-center justify-center py-6 mt-4">
+                  <div className="text-[40px] mb-2 animate-pulse">👻</div>
+                  <p className="text-text-tertiary text-[14px]">
+                    {isZh ? "灵魂生成中..." : "Soul is being shaped..."}
+                  </p>
+                  <p className="text-text-tertiary text-[12px] mt-1">
+                    {editing
+                      ? (isZh ? "AI 正在根据你的需求调整牌手配置" : "AI is adjusting the player config based on your feedback")
+                      : (isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul")}
+                  </p>
+                  {polling && (
+                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mt-3" />
+                  )}
+                </div>
               </div>
             )}
           </div>
         )}
 
         {/* ── Create New Button (outside card) ── */}
-        {!loadingExisting && (isReady || !showForm) && (
+        {!loadingExisting && (isReady || !showForm) && !creatingNew && (
           <button
             onClick={handleCreateNew}
-            className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
+            className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"
           >
             {isZh ? "新建牌手" : "Create New Player"}
           </button>

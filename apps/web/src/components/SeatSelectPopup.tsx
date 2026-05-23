@@ -1,10 +1,11 @@
 "use client";
 
-import type { AgentConfig, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import type { AgentConfig, AgentConfigV2, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface SeatSelectPopupProps {
   agentConfig: AgentConfig | null;
+  agentV2?: AgentConfigV2 | null;
   myAgentSeated: boolean;
   personalities: BuiltinPersonalityInfo[];
   seatedPersonalityIds: string[];
@@ -16,6 +17,7 @@ interface SeatSelectPopupProps {
 
 export function SeatSelectPopup({
   agentConfig,
+  agentV2,
   myAgentSeated,
   personalities,
   seatedPersonalityIds,
@@ -25,7 +27,12 @@ export function SeatSelectPopup({
   onClose,
 }: SeatSelectPopupProps) {
   const { t } = useLanguage();
-  const selfDisabled = myAgentSeated || !agentConfig;
+  const displayAgent = agentV2
+    ? { name: agentV2.name, avatar: agentV2.avatar }
+    : agentConfig
+      ? { name: agentConfig.name, avatar: agentConfig.avatar }
+      : null;
+  const selfDisabled = myAgentSeated || !displayAgent;
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end justify-center z-50" onClick={onClose}>
@@ -43,7 +50,7 @@ export function SeatSelectPopup({
         </div>
 
         <div className="px-5 py-4">
-          {agentConfig ? (
+          {displayAgent ? (
             <button
               onClick={onSelectSelf}
               disabled={myAgentSeated}
@@ -51,9 +58,9 @@ export function SeatSelectPopup({
                 myAgentSeated ? "opacity-40 cursor-not-allowed" : "active:bg-surface-elevated"
               }`}
             >
-              <span className="text-[32px]">{agentConfig.avatar}</span>
+              <span className="text-[32px]">{displayAgent.avatar}</span>
               <div className="flex-1">
-                <div className="text-text-primary text-[15px] font-medium">{agentConfig.name}</div>
+                <div className="text-text-primary text-[15px] font-medium">{displayAgent.name}</div>
                 <div className="text-[13px] text-[#BF5AF2]">
                   {t("seatSelect.customAgent")}
                 </div>
