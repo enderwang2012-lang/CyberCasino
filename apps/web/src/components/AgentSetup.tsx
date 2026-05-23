@@ -78,9 +78,16 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   const [existingAgent, setExistingAgent] = useState<AgentConfigV2 | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [editing, setEditing] = useState(cached?.editing ?? false);
+  const [creatingNew, setCreatingNew] = useState(false);
 
   const soulLocked = !!soulUrl;
   const isReady = !!agent;
+
+  // Display agent: prefer newly created (agent), fallback to existing
+  const displayAgent = agent ?? existingAgent;
+
+  // Is the user in form mode (creating or editing)?
+  const showForm = creatingNew || editing || soulUrl || !existingAgent;
 
   function handleBackToLobby() {
     clearSoulCache();
@@ -102,17 +109,6 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     fetchExisting();
   }, [userId]);
 
-  // ── Start editing existing agent ──
-  function handleStartEdit() {
-    if (!existingAgent) return;
-    setName(existingAgent.name);
-    setAvatar(existingAgent.avatar);
-    setEditing(true);
-    setAgent(null);
-    setSoulUrl(null);
-    setSoulKey(null);
-  }
-
   // ── Poll soul status until agent is ready ──
   useEffect(() => {
     if (!soulKey || isReady) return;
@@ -131,7 +127,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       } catch { /* retry next poll */ }
     }
 
-    check(); // immediate first check
+    check();
     pollRef.current = setInterval(check, POLL_INTERVAL);
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -139,9 +135,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   }, [soulKey, isReady]);
 
   async function handleGenerateSoul() {
-    if (!name.trim()) {
-      return;
-    }
+    if (!name.trim()) return;
     setGenerating(true);
     setError(null);
     try {
@@ -175,63 +169,15 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // ── Preview of the created agent (inline, no nested card) ──
-  function AgentPreviewCard() {
-    if (!agent) return null;
-    const strategy = agent.strategy;
-    const preflopPositions = strategy.preflop?.ranges
-      ? Object.entries(strategy.preflop.ranges).map(([pos, range]) => ({
-          pos,
-          raise: range.raise?.length ?? 0,
-          call: range.call?.length ?? 0,
-        }))
-      : [];
-
-    return (
-      <div>
-        {/* Identity */}
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-[36px]">{agent.avatar}</span>
-          <div>
-            <div className="text-text-primary text-[18px] font-semibold">{agent.name}</div>
-            <div className="text-text-secondary text-[13px]">{agent.description ?? ""}</div>
-          </div>
-        </div>
-
-        {/* Strategy overview */}
-        {preflopPositions.length > 0 && (
-          <>
-            <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
-              {isZh ? "策略概览" : "Strategy Overview"}
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center mb-3">
-              {preflopPositions.slice(0, 6).map(({ pos, raise, call }) => (
-                <div key={pos} className="bg-surface-elevated rounded-lg px-2 py-2">
-                  <div className="text-text-tertiary text-[11px]">{pos}</div>
-                  <div className="text-text-primary text-[13px] font-medium">{raise}R / {call}C</div>
-                </div>
-              ))}
-            </div>
-            <div className="text-text-tertiary text-[12px]">
-              {isZh
-                ? `${strategy.postflop?.length ?? 0} 条翻牌后规则`
-                : `${strategy.postflop?.length ?? 0} postflop rules`}
-              {strategy.expression?.thoughtLanguage && ` · ${strategy.expression.thoughtLanguage.toUpperCase()}`}
-              {strategy.imperfection && ` · ${(strategy.imperfection.baseMistakeRate * 100).toFixed(0)}% mistake rate`}
-            </div>
-
-            <div className="border-t border-surface-elevated my-4" />
-          </>
-        )}
-
-        <button
-          onClick={handleBackToLobby}
-          className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"
-        >
-          {isZh ? "回到大厅" : "Back to Lobby"}
-        </button>
-      </div>
-    );
+  function handleCreateNew() {
+    setCreatingNew(true);
+    setEditing(false);
+    setAgent(null);
+    setSoulUrl(null);
+    setSoulKey(null);
+    setName("");
+    setAvatar("🤖");
+    setError(null);
   }
 
   return (
@@ -244,210 +190,195 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       </button>
 
       <div className="w-full max-w-md">
+        {/* ── Title ── */}
         <h2 className="text-[24px] font-semibold text-text-primary mb-1 tracking-tight">
-          {editing
-            ? (isZh ? "编辑 AI 牌手" : "Edit AI Player")
-            : (isZh ? "创建 AI 牌手" : "Create AI Player")}
+          {showForm
+            ? (editing ? (isZh ? "编辑 AI 牌手" : "Edit AI Player") : (isZh ? "创建 AI 牌手" : "Create AI Player"))
+            : (isZh ? "我的 AI 牌手" : "My AI Player")}
         </h2>
         <p className="text-text-secondary text-[15px] mb-6">
-          {editing
-            ? (isZh ? "将修改后的「灵魂」发给 AI 助手，Ta 会在现有配置基础上调整" : "Send the updated soul to AI. They will adjust based on the current config.")
-            : (isZh
-              ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造"
-              : "Name your player, then hand the soul to AI for shaping")}
+          {showForm
+            ? (editing
+              ? (isZh ? "修改后将「灵魂」发给 AI 助手，Ta 会在现有配置基础上调整" : "Send the updated soul to AI. They will adjust based on the current config.")
+              : (isZh ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造" : "Name your player, then hand the soul to AI for shaping"))
+            : (isZh ? "你的牌手已就绪，可以加入牌局" : "Your player is ready to join a table")}
         </p>
 
-        {/* Loading */}
+        {/* ── Loading ── */}
         {loadingExisting && (
           <div className="flex justify-center py-12">
             <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
-        {/* Existing agent view (before editing) */}
-        {!loadingExisting && existingAgent && !editing && !soulUrl && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-[36px]">{existingAgent.avatar}</span>
-              <div>
-                <div className="text-text-primary text-[18px] font-semibold">{existingAgent.name}</div>
-                <div className="text-text-secondary text-[13px]">{existingAgent.description ?? ""}</div>
+        {/* ════════════════════════════════════════════ */}
+        {/* ── Unified Card ── */}
+        {/* ════════════════════════════════════════════ */}
+        {!loadingExisting && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 relative">
+            {/* Status badge */}
+            {(soulLocked || isReady) && (
+              <div className={`absolute top-4 right-4 text-[12px] font-medium px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                {isReady
+                  ? (isZh ? "牌手已就绪" : "Ready")
+                  : (isZh ? "牌手生成中" : "Generating")}
               </div>
-              <div className="ml-auto">
-                <div className="bg-green-100 text-green-700 text-[12px] font-medium px-2.5 py-1 rounded-full">
-                  {isZh ? "已就绪" : "Ready"}
-                </div>
-              </div>
-            </div>
+            )}
 
-            {/* Strategy summary */}
-            {existingAgent.strategy.preflop?.ranges && (
+            {/* ── Section A: Agent Info (view mode) ── */}
+            {!showForm && displayAgent && (
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-[36px]">{displayAgent.avatar}</span>
+                <div className="flex-1">
+                  <div className="text-text-primary text-[18px] font-semibold">{displayAgent.name}</div>
+                  <div className="text-text-secondary text-[13px]">{displayAgent.description ?? ""}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditing(true);
+                    setCreatingNew(false);
+                    if (existingAgent) {
+                      setName(existingAgent.name);
+                      setAvatar(existingAgent.avatar);
+                    }
+                    setAgent(null);
+                    setSoulUrl(null);
+                    setSoulKey(null);
+                  }}
+                  className="text-accent text-[13px] font-medium shrink-0"
+                >
+                  {isZh ? "编辑" : "Edit"}
+                </button>
+              </div>
+            )}
+
+            {/* ── Section B: Form (create/edit mode) ── */}
+            {showForm && (
               <>
-                <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
-                  {isZh ? "策略概览" : "Strategy Overview"}
+                <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
+                  {isZh ? "牌手名字" : "Player Name"}
+                </label>
+                <div className="flex items-center gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={soulLocked}
+                    placeholder={isZh ? "给你的牌手取个名字..." : "Name your player..."}
+                    maxLength={20}
+                    className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                  {Object.entries(existingAgent.strategy.preflop.ranges).slice(0, 6).map(([pos, range]) => (
-                    <div key={pos} className="bg-surface-elevated rounded-lg px-2 py-2">
-                      <div className="text-text-tertiary text-[11px]">{pos}</div>
-                      <div className="text-text-primary text-[13px] font-medium">
-                        {range.raise?.length ?? 0}R / {range.call?.length ?? 0}C
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="text-text-tertiary text-[12px]">
-                  {isZh
-                    ? `${existingAgent.strategy.postflop?.length ?? 0} 条翻牌后规则`
-                    : `${existingAgent.strategy.postflop?.length ?? 0} postflop rules`}
-                  {existingAgent.strategy.expression?.thoughtLanguage && ` · ${existingAgent.strategy.expression.thoughtLanguage.toUpperCase()}`}
-                  {existingAgent.strategy.imperfection && ` · ${(existingAgent.strategy.imperfection.baseMistakeRate * 100).toFixed(0)}% mistake rate`}
-                </div>
+
+                <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
+                  {isZh ? "选择头像" : "Choose Avatar"}
+                </label>
+                <button
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="w-14 h-14 bg-surface-elevated rounded-xl flex items-center justify-center text-[28px] hover:bg-surface-hover transition-colors"
+                >
+                  {avatar}
+                </button>
+
+                {showEmojiPicker && (
+                  <div className="grid grid-cols-8 gap-2 mt-3 p-3 bg-surface-elevated rounded-xl">
+                    {EMOJI_OPTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => { setAvatar(emoji); setShowEmojiPicker(false); }}
+                        className={`w-9 h-9 flex items-center justify-center text-[20px] rounded-lg transition-colors ${avatar === emoji ? "bg-accent/20 ring-2 ring-accent" : "hover:bg-white"}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Generate button (inline in card) */}
+                {!soulUrl && (
+                  <button
+                    onClick={handleGenerateSoul}
+                    disabled={generating || !name.trim()}
+                    className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors disabled:opacity-50 mt-5"
+                  >
+                    {generating
+                      ? (isZh ? "生成中..." : "Generating...")
+                      : (isZh ? "生成「灵魂」链接" : "Generate Soul Link")}
+                  </button>
+                )}
               </>
             )}
 
-            <div className="border-t border-surface-elevated my-4" />
+            {/* Error */}
+            {error && (
+              <div className="bg-red-50 text-red-600 rounded-xl px-4 py-3 text-[14px] mt-4">{error}</div>
+            )}
 
-            <button
-              onClick={handleStartEdit}
-              className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors mb-3"
-            >
-              {isZh ? "编辑牌手" : "Edit Player"}
-            </button>
-            <button
-              onClick={handleBackToLobby}
-              className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
-            >
-              {isZh ? "回到大厅" : "Back to Lobby"}
-            </button>
-          </div>
-        )}
+            {/* ── Section C: Soul Link (when soulUrl exists) ── */}
+            {soulUrl && (
+              <div className={showForm ? "mt-5 pt-5 border-t border-surface-elevated" : ""}>
+                <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
+                  {isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant"}
+                </div>
 
-        {/* Create / Edit form */}
-        {!loadingExisting && (!existingAgent || editing || soulUrl) && (
-          <>
-        {/* Name & Avatar card — with status badge */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 relative">
-          {/* Status badge */}
-          {soulLocked && (
-            <div className={`absolute top-4 right-4 text-[12px] font-medium px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-              {isReady
-                ? (isZh ? "牌手已就绪" : "Ready")
-                : (isZh ? "牌手生成中" : "Generating")}
-            </div>
-          )}
+                <div className="flex items-center gap-2 mb-3">
+                  <code className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-[12px] font-mono break-all">
+                    {soulUrl}
+                  </code>
+                  <button
+                    onClick={handleCopySoul}
+                    className="shrink-0 bg-accent hover:bg-accent-hover text-white px-4 py-3 rounded-xl text-[13px] font-medium transition-colors"
+                  >
+                    {copied ? (isZh ? "已复制" : "Copied") : (isZh ? "复制" : "Copy")}
+                  </button>
+                </div>
 
-          <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
-            {isZh ? "牌手名字" : "Player Name"}
-          </label>
-          <div className="flex items-center gap-3 mb-4">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={soulLocked}
-              placeholder={isZh ? "给你的牌手取个名字..." : "Name your player..."}
-              maxLength={20}
-              className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-text-primary text-[15px] focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-text-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
-            />
-          </div>
-
-          <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
-            {isZh ? "选择头像" : "Choose Avatar"}
-          </label>
-          <button
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="w-14 h-14 bg-surface-elevated rounded-xl flex items-center justify-center text-[28px] hover:bg-surface-hover transition-colors"
-          >
-            {avatar}
-          </button>
-
-          {showEmojiPicker && (
-            <div className="grid grid-cols-8 gap-2 mt-3 p-3 bg-surface-elevated rounded-xl">
-              {EMOJI_OPTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => { setAvatar(emoji); setShowEmojiPicker(false); }}
-                  className={`w-9 h-9 flex items-center justify-center text-[20px] rounded-lg transition-colors ${avatar === emoji ? "bg-accent/20 ring-2 ring-accent" : "hover:bg-white"}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Generate Soul or Soul + Preview merged card */}
-        {!soulUrl ? (
-          <button
-            onClick={handleGenerateSoul}
-            disabled={generating || !name.trim()}
-            className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors disabled:opacity-50 mb-6"
-          >
-            {generating
-              ? (isZh ? "生成中..." : "Generating...")
-              : (isZh ? "生成「灵魂」" : "Generate Soul")}
-          </button>
-        ) : null}
-        {error && (
-          <div className="bg-red-50 text-red-600 rounded-xl px-4 py-3 text-[14px] mb-6">{error}</div>
-        )}
-        {!soulUrl ? null : (
-          <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
-            {/* Soul link */}
-            <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
-              {editing
-              ? (isZh ? "复制「灵魂」给 AI 助手（修改模式）" : "Copy Soul to AI Assistant (Edit Mode)")
-              : (isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant")}
-            </div>
-
-            <div className="flex items-center gap-2 mb-3">
-              <code className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-[12px] font-mono break-all">
-                {soulUrl}
-              </code>
-              <button
-                onClick={handleCopySoul}
-                className="shrink-0 bg-accent hover:bg-accent-hover text-white px-4 py-3 rounded-xl text-[13px] font-medium transition-colors"
-              >
-                {copied ? (isZh ? "已复制" : "Copied") : (isZh ? "复制" : "Copy")}
-              </button>
-            </div>
-
-            <p className="text-text-secondary text-[13px] mb-4">
-              {editing
-                ? (isZh
-                  ? "把链接发给 AI 助手，Ta 会分析当前配置并针对性地调整"
-                  : "Send this link to your AI. They will analyze the current config and make targeted adjustments.")
-                : (isZh
-                  ? "把链接发给 AI 助手，Ta 会读懂牌手的灵魂并自动生成完整配置"
-                  : "Send this link to your AI. They will understand the soul and auto-generate the config.")}
-            </p>
-
-            {/* Divider */}
-            <div className="border-t border-surface-elevated mb-4" />
-
-            {/* Preview or placeholder — inside the same card */}
-            {isReady ? (
-              <AgentPreviewCard />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-6">
-                <div className="text-[40px] mb-2 animate-pulse">👻</div>
-                <p className="text-text-tertiary text-[14px]">
-                  {isZh ? "灵魂生成中..." : "Soul is being shaped..."}
+                <p className="text-text-secondary text-[13px]">
+                  {isZh
+                    ? "把链接发给 AI 助手，让他/她协助你塑造牌手的灵魂"
+                    : "Send this link to your AI assistant to help shape your player's soul."}
                 </p>
-                <p className="text-text-tertiary text-[12px] mt-1">
-                  {editing
-                    ? (isZh ? "AI 正在根据你的需求调整牌手配置" : "AI is adjusting the player config based on your feedback")
-                    : (isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul")}
-                </p>
-                {polling && (
-                  <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mt-3" />
+
+                {/* ── Section D: Loading / Ready ── */}
+                {isReady ? (
+                  <div className="mt-5 pt-5 border-t border-surface-elevated">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[36px]">{agent!.avatar}</span>
+                      <div>
+                        <div className="text-text-primary text-[18px] font-semibold">{agent!.name}</div>
+                        <div className="text-text-secondary text-[13px]">{agent!.description ?? ""}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-6 mt-4">
+                    <div className="text-[40px] mb-2 animate-pulse">👻</div>
+                    <p className="text-text-tertiary text-[14px]">
+                      {isZh ? "灵魂生成中..." : "Soul is being shaped..."}
+                    </p>
+                    <p className="text-text-tertiary text-[12px] mt-1">
+                      {editing
+                        ? (isZh ? "AI 正在根据你的需求调整牌手配置" : "AI is adjusting the player config based on your feedback")
+                        : (isZh ? "AI 助手正在为你的牌手注入灵魂" : "AI is crafting your player's soul")}
+                    </p>
+                    {polling && (
+                      <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mt-3" />
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
         )}
-          </>
+
+        {/* ── Create New Button (outside card, view mode only) ── */}
+        {!loadingExisting && !showForm && (
+          <button
+            onClick={handleCreateNew}
+            className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
+          >
+            {isZh ? "创建新牌手" : "Create New Player"}
+          </button>
         )}
       </div>
     </div>
