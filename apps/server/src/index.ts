@@ -42,25 +42,17 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // Generate soul URL
+  // Generate soul URL (permanent per user — deterministic key)
   if (req.url === "/api/agents/soul" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
       try {
-        const { userId, name, avatar, agentId } = JSON.parse(body);
-        const key = crypto.randomBytes(16).toString("hex");
-        const soulEntry: { userId: string; name: string; avatar: string; createdAt: number; agent?: AgentConfigV2; existingConfig?: import("@cybercasino/shared").StrategyConfig } = {
+        const { userId, name, avatar } = JSON.parse(body);
+        const key = `user-${userId ?? "anonymous"}`;
+        soulStore.set(key, {
           userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now(),
-        };
-        // Edit mode: attach existing config so AI knows what to modify
-        if (agentId) {
-          const existing = agentStore.getV2ByUserId(userId);
-          if (existing && existing.id === agentId) {
-            soulEntry.existingConfig = existing.strategy;
-          }
-        }
-        soulStore.set(key, soulEntry);
+        });
         const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({ soulUrl: `${baseUrl}/api/agents/soul/${key}`, key }));
@@ -73,34 +65,14 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // Poll soul status (frontend checks if AI has published)
-  const soulStatusMatch = req.url?.match(/^\/api\/agents\/soul\/([a-f0-9]+)\/status$/);
-  if (soulStatusMatch && req.method === "GET") {
-    const key = soulStatusMatch[1];
-    const soul = soulStore.get(key);
-    if (!soul) {
-      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ status: "expired" }));
-      return;
-    }
-    if (soul.agent) {
-      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ status: "ready", agent: soul.agent }));
-    } else {
-      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ status: "pending" }));
-    }
-    return;
-  }
-
-  // Serve soul prompt to AI
-  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/([a-f0-9]+)$/);
+  // Serve soul prompt to AI (permanent URL — always valid)
+  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/(user-[a-zA-Z0-9:]+)$/);
   if (soulMatch && req.method === "GET") {
     const key = soulMatch[1];
     const soul = soulStore.get(key);
     if (!soul) {
       res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ error: "Soul not found or expired" }));
+      res.end(JSON.stringify({ error: "Soul not found" }));
       return;
     }
     try {
@@ -113,12 +85,13 @@ const httpServer = createServer((req, res) => {
         .replace(/\{NAME\}/g, soul.name)
         .replace(/\{AVATAR\}/g, soul.avatar);
 
-      // Edit mode: inject existing config context
-      if (soul.existingConfig) {
-        const configJson = JSON.stringify(soul.existingConfig, null, 2);
+      // Check if agent already exists → edit mode
+      const existingAgent = agentStore.getV2ByUserId(soul.userId);
+      if (existingAgent) {
+        const configJson = JSON.stringify(existingAgent.strategy, null, 2);
         const editSection = `## 编辑模式
 
-这是一个**修改任务**。牌手「${soul.name}」已有完整策略配置，你不需要从零创建。
+牌手「${soul.name}」已有完整策略配置，你不需要从零创建。
 
 以下是当前配置：
 
@@ -136,10 +109,8 @@ ${configJson}
         template = template.replace("{CONFIG_CONTEXT}", "");
       }
 
-      const prompt = template;
-
       res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
-      res.end(prompt);
+      res.end(template);
     } catch (err) {
       console.error("[api] soul serve error:", err);
       res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
@@ -196,10 +167,14 @@ ${configJson}
           return;
         }
 
-        // Resolve userId from soul or request body
+        // Resolve userId from soul key or request body
         let userId = parsed.userId ?? "anonymous";
         let finalPreview = preview;
         if (soulKey) {
+          // soulKey is now "user-{userId}" — extract userId directly
+          if (soulKey.startsWith("user-")) {
+            userId = soulKey.slice(5);
+          }
           const soul = soulStore.get(soulKey);
           if (soul) {
             userId = soul.userId;
@@ -209,14 +184,6 @@ ${configJson}
 
         const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id());
         agentStore.saveV2(agent);
-
-        // Link agent back to soul for frontend polling
-        if (soulKey) {
-          const soul = soulStore.get(soulKey);
-          if (soul) {
-            soul.agent = agent;
-          }
-        }
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({
@@ -260,7 +227,7 @@ const userStore = new UserStore();
 const agentStore = new AgentStore();
 
 // Soul store: key → { userId, name, avatar, createdAt, agent?, existingConfig? }
-const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number; agent?: import("@cybercasino/shared").AgentConfigV2; existingConfig?: import("@cybercasino/shared").StrategyConfig }>();
+const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number }>();
 
 const socketUserMap = new Map<string, string>();
 const userSocketMap = new Map<string, string>();

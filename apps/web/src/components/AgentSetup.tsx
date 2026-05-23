@@ -17,7 +17,6 @@ const SOUL_CACHE_KEY = "agent_soul_state";
 const SOUL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 interface SoulCache {
-  soulKey: string;
   soulUrl: string;
   name: string;
   avatar: string;
@@ -66,7 +65,6 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const [soulUrl, setSoulUrl] = useState(cached?.soulUrl ?? null);
-  const [soulKey, setSoulKey] = useState(cached?.soulKey ?? null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -109,16 +107,16 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     fetchExisting();
   }, [userId]);
 
-  // ── Poll soul status until agent is ready ──
+  // ── Poll for agent creation (once soulUrl is set, poll until agent exists) ──
   useEffect(() => {
-    if (!soulKey || isReady) return;
+    if (!soulUrl || isReady) return;
     setPolling(true);
 
     async function check() {
       try {
-        const res = await fetch(`${getServerUrl()}/api/agents/soul/${soulKey}/status`);
+        const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(userId)}`);
         const data = await res.json();
-        if (data.status === "ready") {
+        if (data.agent) {
           setAgent(data.agent);
           setPolling(false);
           clearSoulCache();
@@ -132,7 +130,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
-  }, [soulKey, isReady]);
+  }, [soulUrl, isReady, userId]);
 
   async function handleGenerateSoul() {
     if (!name.trim()) return;
@@ -153,8 +151,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       }
       const data = await res.json();
       setSoulUrl(data.soulUrl);
-      setSoulKey(data.key);
-      saveSoulCache({ soulKey: data.key, soulUrl: data.soulUrl, name: name.trim(), avatar, editing });
+      saveSoulCache({ soulUrl: data.soulUrl, name: name.trim(), avatar, editing });
     } catch (err) {
       console.error("[AgentSetup] soul generate network error:", err);
       setError(isZh ? "网络连接失败，请检查网络后重试" : "Network error, please check connection and retry");
@@ -174,7 +171,6 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     setEditing(false);
     setAgent(null);
     setSoulUrl(null);
-    setSoulKey(null);
     setName("");
     setAvatar("🤖");
     setError(null);
@@ -242,8 +238,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
                       setAvatar(existingAgent.avatar);
                     }
                     setAgent(null);
-                    setSoulUrl(null);
-                    setSoulKey(null);
+                    // Keep soulUrl — same URL works for edits
                   }}
                   className="text-accent text-[13px] font-medium shrink-0"
                 >
