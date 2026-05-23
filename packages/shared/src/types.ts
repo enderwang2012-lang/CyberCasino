@@ -360,6 +360,7 @@ export interface AgentConfigV2 {
   avatar: string;
   description?: string;
   strategy: StrategyConfig;
+  soulKey?: string;
   webhookUrl?: string;
   webhookVerified?: boolean;
   createdAt: number;

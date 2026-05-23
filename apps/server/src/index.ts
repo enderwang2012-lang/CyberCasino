@@ -52,14 +52,14 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // Generate soul URL (permanent per user — deterministic key)
+  // Generate soul URL (unique per agent creation)
   if (req.url === "/api/agents/soul" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
       try {
-        const { userId, name, avatar } = JSON.parse(body);
-        const key = `user-${userId ?? "anonymous"}`;
+        const { userId, name, avatar, soulKey: existingSoulKey } = JSON.parse(body);
+        const key = existingSoulKey || `user-${userId ?? "anonymous"}-${crypto.randomBytes(4).toString("hex")}`;
         soulStore.set(key, {
           userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now(),
         });
@@ -76,7 +76,7 @@ const httpServer = createServer((req, res) => {
   }
 
   // Serve soul prompt to AI (permanent URL — always valid)
-  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/(user-[a-zA-Z0-9:]+)$/);
+  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/(user-[a-zA-Z0-9:-]+)$/);
   if (soulMatch && req.method === "GET") {
     const key = soulMatch[1];
     const soul = soulStore.get(key);
@@ -192,7 +192,7 @@ ${configJson}
           }
         }
 
-        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id());
+        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey);
         agentStore.saveV2(agent);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });

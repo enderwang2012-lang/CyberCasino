@@ -23,15 +23,17 @@ export function AgentListPage({ agents, onBack, onCreateNew }: AgentListPageProp
   const isZh = language === "zh";
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  function getSoulUrl(agentId: string, userId: string) {
-    const baseUrl = getServerUrl();
-    return `${baseUrl}/api/agents/soul/user-${userId}`;
+  function getSoulUrl(agent: AgentConfigV2) {
+    if (agent.soulKey) {
+      return `${getServerUrl()}/api/agents/soul/${agent.soulKey}`;
+    }
+    return `${getServerUrl()}/api/agents/soul/user-${agent.userId}`;
   }
 
-  function handleCopy(agentId: string, userId: string) {
-    const url = getSoulUrl(agentId, userId);
+  function handleCopy(agent: AgentConfigV2) {
+    const url = getSoulUrl(agent);
     navigator.clipboard.writeText(url);
-    setCopiedId(agentId);
+    setCopiedId(agent.id);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
@@ -82,10 +84,10 @@ export function AgentListPage({ agents, onBack, onCreateNew }: AgentListPageProp
                   </div>
                   <div className="flex items-center gap-2 mb-2">
                     <code className="flex-1 bg-surface-elevated rounded-xl px-4 py-3 text-[12px] font-mono break-all">
-                      {getSoulUrl(agent.id, agent.userId)}
+                      {getSoulUrl(agent)}
                     </code>
                     <button
-                      onClick={() => handleCopy(agent.id, agent.userId)}
+                      onClick={() => handleCopy(agent)}
                       className="shrink-0 bg-accent hover:bg-accent-hover text-white px-4 py-3 rounded-xl text-[13px] font-medium transition-colors"
                     >
                       {copiedId === agent.id

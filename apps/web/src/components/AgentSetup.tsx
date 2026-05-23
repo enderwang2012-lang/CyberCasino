@@ -132,7 +132,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       const res = await fetch(`/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, name: name.trim(), avatar, agentId: editing && existingAgent ? existingAgent.id : undefined }),
+        body: JSON.stringify({ userId, name: name.trim(), avatar, soulKey: editing && existingAgent?.soulKey ? existingAgent.soulKey : undefined }),
       });
       if (!res.ok) {
         const text = await res.text();

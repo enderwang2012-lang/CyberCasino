@@ -79,6 +79,7 @@ export function createAgentFromAI(
   userId: string,
   request: CreateAgentRequest,
   nextId: () => string,
+  soulKey?: string,
 ): AgentConfigV2 {
   const now = Date.now();
   return {
@@ -88,6 +89,7 @@ export function createAgentFromAI(
     avatar: request.preview.avatar ?? "🤖",
     description: request.preview.description,
     strategy: request.config,
+    soulKey,
     createdAt: now,
     updatedAt: now,
   };
