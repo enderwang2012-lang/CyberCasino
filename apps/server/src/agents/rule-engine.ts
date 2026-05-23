@@ -227,7 +227,7 @@ function makeThought(
   confidence: number,
   isBluffing: boolean
 ): AgentThought {
-  return { message, confidence, isBluffing };
+  return { message, confidence, isBluffing, thinkingSource: "rule" };
 }
 
 function getLines(language: "zh" | "en") {
@@ -243,7 +243,7 @@ function personalizedThought(
 ): AgentThought {
   const lines = getLines(language)[personalityId];
   const message = lines ? pick(lines[category]) : "...";
-  return { message, confidence, isBluffing };
+  return { message, confidence, isBluffing, thinkingSource: "rule" };
 }
 
 export function ruleDecide(

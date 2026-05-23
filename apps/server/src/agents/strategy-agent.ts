@@ -342,6 +342,7 @@ export class StrategyAgent implements IPokerAgent {
         message: message.trim(),
         confidence: Math.round(confidence * 100) / 100,
         isBluffing: isBluff,
+        thinkingSource: "strategy",
       };
     }
 

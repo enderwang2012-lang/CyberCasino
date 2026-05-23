@@ -55,6 +55,7 @@ export interface AgentThought {
   isMistake?: boolean;
   difficulty?: number;
   psychologicalState?: string;
+  thinkingSource: "llm" | "strategy" | "rule";
 }
 
 export interface AgentDecision {
@@ -361,6 +362,26 @@ export interface StrategyConfig {
   [key: string]: unknown;
 }
 
+// Skill System
+export interface SkillConfig {
+  id: string;
+  name: string;
+  nameEn: string;
+  description: string;
+  descriptionEn: string;
+  systemPrompt: string;
+  strategyParams: {
+    preflopAggression: number;
+    postflopAggression: number;
+    bluffFrequency: number;
+    callingThreshold: number;
+  };
+  psychologicalParams: {
+    tiltResistance: number;
+    confidenceBase: number;
+  };
+}
+
 export interface DecisionDistribution {
   weights: Map<ActionType, number>;
   difficulty: number;
@@ -419,6 +440,12 @@ export interface WebhookRequest {
   callAmount: number;
   minRaise: number;
   stylePrompt: string;
+  skill?: SkillConfig;
+  strategyHint?: {
+    suggestedAction: ActionType;
+    confidence: number;
+    handStrength: number;
+  };
 }
 
 export interface WebhookPingRequest {
@@ -430,6 +457,8 @@ export interface WebhookResponse {
   action: ActionType;
   amount?: number;
   thought: string;
+  isBluffing?: boolean;
+  confidence?: number;
 }
 
 export interface TableSeat {

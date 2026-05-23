@@ -124,6 +124,7 @@ export async function claudeDecide(
         message: parsed.thought ?? "...",
         confidence: Math.max(0, Math.min(1, parsed.confidence ?? 0.5)),
         isBluffing: parsed.isBluffing ?? false,
+        thinkingSource: "llm",
       },
     };
   } catch (error) {

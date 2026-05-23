@@ -103,6 +103,7 @@ export class ExternalAgent implements IPokerAgent {
         message: body.thought ?? "...",
         confidence: 0.5,
         isBluffing: false,
+        thinkingSource: "llm",
       },
     };
   }
@@ -130,6 +131,7 @@ export class ExternalAgent implements IPokerAgent {
         message: `[Auto-pilot] ${decision.thought.message}`,
         confidence: decision.thought.confidence,
         isBluffing: decision.thought.isBluffing,
+        thinkingSource: decision.thought.thinkingSource,
       },
     };
   }

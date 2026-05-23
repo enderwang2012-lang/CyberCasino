@@ -231,5 +231,6 @@ export function generateThought(
     isBluffing,
     difficulty,
     psychologicalState,
+    thinkingSource: "strategy",
   };
 }
