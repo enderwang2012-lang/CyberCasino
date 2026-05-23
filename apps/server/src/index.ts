@@ -5,7 +5,7 @@ import { join } from "node:path";
 import crypto from "node:crypto";
 import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
-import { UserStore, AgentStore } from "./stores";
+import { UserStore, AgentStore, initStores } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
@@ -485,6 +485,11 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`CyberCasino server running on port ${PORT}`);
+initStores().then(() => {
+  httpServer.listen(PORT, () => {
+    console.log(`CyberCasino server running on port ${PORT}`);
+  });
+}).catch((err) => {
+  console.error("[startup] Failed to initialize stores:", err);
+  process.exit(1);
 });

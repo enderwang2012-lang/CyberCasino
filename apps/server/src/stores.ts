@@ -1,6 +1,11 @@
 import type { UserIdentity, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { sql, ensureSchema } from "./db";
+
+// ---------------------------------------------------------------------------
+// File-based helpers
+// ---------------------------------------------------------------------------
 
 const DATA_DIR = join(import.meta.dirname, "..", "data");
 const USERS_FILE = join(DATA_DIR, "users.json");
@@ -8,149 +13,165 @@ const AGENTS_FILE = join(DATA_DIR, "agents.json");
 const AGENTS_V2_FILE = join(DATA_DIR, "agents_v2.json");
 
 function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function loadUsers(): Map<string, UserIdentity> {
+function loadJson<T>(file: string, fallback: T): T {
   ensureDataDir();
-  try {
-    const raw = readFileSync(USERS_FILE, "utf-8");
-    const arr: UserIdentity[] = JSON.parse(raw);
-    return new Map(arr.map((u) => [u.userId, u]));
-  } catch {
-    return new Map();
-  }
+  try { return JSON.parse(readFileSync(file, "utf-8")); } catch { return fallback; }
 }
 
-function saveUsers(users: Map<string, UserIdentity>) {
+function saveJson(file: string, data: unknown) {
   ensureDataDir();
-  const arr = Array.from(users.values());
-  writeFileSync(USERS_FILE, JSON.stringify(arr, null, 2));
+  writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-function loadAgents(): Map<string, AgentConfig> {
-  ensureDataDir();
-  try {
-    const raw = readFileSync(AGENTS_FILE, "utf-8");
-    const arr: AgentConfig[] = JSON.parse(raw);
-    for (const a of arr) {
-      delete (a as any).mode;
+function rowToAgentV2(r: any): AgentConfigV2 {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    avatar: r.avatar,
+    description: r.description ?? undefined,
+    strategy: typeof r.strategy === "string" ? JSON.parse(r.strategy) : r.strategy,
+    soulKey: r.soul_key ?? undefined,
+    webhookUrl: r.webhook_url ?? undefined,
+    webhookVerified: r.webhook_verified ?? false,
+    createdAt: Number(r.created_at),
+    updatedAt: Number(r.updated_at),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Init: load from DB or file into memory
+// ---------------------------------------------------------------------------
+
+let userMap = new Map<string, UserIdentity>();
+let agentMap = new Map<string, AgentConfig>();
+let agentsV2Map = new Map<string, AgentConfigV2[]>();
+let agentV2Counter = 0;
+
+export async function initStores() {
+  if (sql) {
+    await ensureSchema();
+    const rows = await sql`SELECT * FROM users`;
+    for (const r of rows) {
+      userMap.set(r.user_id, {
+        userId: r.user_id, name: r.name, avatar: r.avatar,
+        provider: r.provider, createdAt: Number(r.created_at),
+      });
     }
-    return new Map(arr.map((a) => [a.userId, a]));
-  } catch {
-    return new Map();
+    const agentRows = await sql`SELECT * FROM agents_v2`;
+    for (const r of agentRows) {
+      const agent = rowToAgentV2(r);
+      const list = agentsV2Map.get(agent.userId) ?? [];
+      list.push(agent);
+      agentsV2Map.set(agent.userId, list);
+      const n = parseInt(agent.id.replace("agent-", ""), 10);
+      if (!isNaN(n)) agentV2Counter = Math.max(agentV2Counter, n);
+    }
+    console.log(`[stores] loaded ${userMap.size} users, ${agentRows.length} agents from PostgreSQL`);
+  } else {
+    userMap = new Map(Object.entries(loadJson<Record<string, UserIdentity>>(USERS_FILE, {})));
+    const agents = loadJson<AgentConfig[]>(AGENTS_FILE, []);
+    for (const a of agents) { delete (a as any).mode; agentMap.set(a.userId, a); }
+    const agentsV2 = loadJson<AgentConfigV2[]>(AGENTS_V2_FILE, []);
+    for (const agent of agentsV2) {
+      const list = agentsV2Map.get(agent.userId) ?? [];
+      list.push(agent);
+      agentsV2Map.set(agent.userId, list);
+      const n = parseInt(agent.id.replace("agent-", ""), 10);
+      if (!isNaN(n)) agentV2Counter = Math.max(agentV2Counter, n);
+    }
+    console.log(`[stores] loaded ${userMap.size} users, ${agentsV2.length} agents from file`);
   }
 }
 
-function saveAgents(agents: Map<string, AgentConfig>) {
-  ensureDataDir();
-  const arr = Array.from(agents.values());
-  writeFileSync(AGENTS_FILE, JSON.stringify(arr, null, 2));
-}
-
-function loadAgentsV2(): AgentConfigV2[] {
-  ensureDataDir();
-  try {
-    const raw = readFileSync(AGENTS_V2_FILE, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function saveAgentsV2(agents: AgentConfigV2[]) {
-  ensureDataDir();
-  writeFileSync(AGENTS_V2_FILE, JSON.stringify(agents, null, 2));
-}
-
-const initialAgents = loadAgents();
-let agentCounter = Array.from(initialAgents.values()).reduce((max, a) => {
-  const n = parseInt(a.id.replace("agent-", ""), 10);
-  return isNaN(n) ? max : Math.max(max, n);
-}, 0);
-
-const initialAgentsV2 = loadAgentsV2();
-let agentV2Counter = initialAgentsV2.reduce((max, a) => {
-  const n = parseInt(a.id.replace("agent-", ""), 10);
-  return isNaN(n) ? max : Math.max(max, n);
-}, 0);
+// ---------------------------------------------------------------------------
+// UserStore — synchronous reads, async writes
+// ---------------------------------------------------------------------------
 
 export class UserStore {
-  private users = loadUsers();
-
   upsert(identity: UserIdentity): UserIdentity {
-    const existing = this.users.get(identity.userId);
+    const existing = userMap.get(identity.userId);
     if (existing) return existing;
-
-    this.users.set(identity.userId, identity);
-    saveUsers(this.users);
+    userMap.set(identity.userId, identity);
+    this.persist(identity);
     return identity;
   }
 
   get(userId: string): UserIdentity | undefined {
-    return this.users.get(userId);
+    return userMap.get(userId);
   }
 
-}
-
-export class AgentStore {
-  private agents = new Map(initialAgents);
-  private agentsV2 = new Map<string, AgentConfigV2[]>();
-
-  constructor() {
-    for (const agent of initialAgentsV2) {
-      const existing = this.agentsV2.get(agent.userId) ?? [];
-      existing.push(agent);
-      this.agentsV2.set(agent.userId, existing);
+  private persist(u: UserIdentity) {
+    if (sql) {
+      sql`INSERT INTO users (user_id, name, avatar, provider, created_at)
+          VALUES (${u.userId}, ${u.name}, ${u.avatar}, ${u.provider}, ${u.createdAt})
+          ON CONFLICT (user_id) DO NOTHING`.catch(console.error);
+    } else {
+      saveJson(USERS_FILE, Array.from(userMap.values()));
     }
   }
+}
 
+// ---------------------------------------------------------------------------
+// AgentStore — synchronous reads, async writes
+// ---------------------------------------------------------------------------
+
+export class AgentStore {
   save(userId: string, partial: Omit<AgentConfig, "id" | "userId" | "webhookVerified">): AgentConfig {
-    const existing = this.getByUserId(userId);
+    const existing = agentMap.get(userId);
     const config: AgentConfig = {
       ...partial,
-      id: existing?.id ?? `agent-${++agentCounter}`,
+      id: existing?.id ?? `agent-${agentMap.size + 1}`,
       userId,
       webhookVerified: existing?.webhookVerified ?? false,
     };
-    this.agents.set(userId, config);
-    saveAgents(this.agents);
+    agentMap.set(userId, config);
     return config;
   }
 
   getByUserId(userId: string): AgentConfig | undefined {
-    return this.agents.get(userId);
+    return agentMap.get(userId);
   }
 
   markWebhookVerified(userId: string): void {
-    const config = this.agents.get(userId);
-    if (config) {
-      config.webhookVerified = true;
-      saveAgents(this.agents);
-    }
+    const config = agentMap.get(userId);
+    if (config) config.webhookVerified = true;
   }
 
   saveV2(agent: AgentConfigV2): void {
-    this.agents.delete(agent.userId);
-    const list = this.agentsV2.get(agent.userId) ?? [];
+    const list = agentsV2Map.get(agent.userId) ?? [];
     list.push(agent);
-    this.agentsV2.set(agent.userId, list);
-    const all = Array.from(this.agentsV2.values()).flat();
-    saveAgentsV2(all);
+    agentsV2Map.set(agent.userId, list);
+    this.persistV2(agent);
   }
 
   getV2ByUserId(userId: string): AgentConfigV2 | undefined {
-    const list = this.agentsV2.get(userId);
-    return list?.[list.length - 1]; // most recent
+    const list = agentsV2Map.get(userId);
+    return list?.[list.length - 1];
   }
 
   getAllV2ByUserId(userId: string): AgentConfigV2[] {
-    return this.agentsV2.get(userId) ?? [];
+    return agentsV2Map.get(userId) ?? [];
   }
 
   nextV2Id(): string {
     return `agent-${++agentV2Counter}`;
+  }
+
+  private persistV2(a: AgentConfigV2) {
+    if (sql) {
+      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, soul_key, webhook_url, webhook_verified, created_at, updated_at)
+          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.soulKey ?? null}, ${a.webhookUrl ?? null}, ${a.webhookVerified ?? false}, ${a.createdAt}, ${a.updatedAt})
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name, avatar = EXCLUDED.avatar, description = EXCLUDED.description,
+            strategy = EXCLUDED.strategy, soul_key = EXCLUDED.soul_key, webhook_url = EXCLUDED.webhook_url,
+            webhook_verified = EXCLUDED.webhook_verified, updated_at = EXCLUDED.updated_at`.catch(console.error);
+    } else {
+      const all = Array.from(agentsV2Map.values()).flat();
+      saveJson(AGENTS_V2_FILE, all);
+    }
   }
 }

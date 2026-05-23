@@ -13,6 +13,7 @@
     "@cybercasino/engine": "workspace:*",
     "@cybercasino/shared": "workspace:*",
     "openai": "^6.35.0",
+    "postgres": "^3.4.0",
     "socket.io": "^4.8"
   },
   "devDependencies": {
