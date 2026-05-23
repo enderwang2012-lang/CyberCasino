@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useMemo, useState } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { ThinkingBubble } from "./ThinkingBubble";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -215,15 +216,12 @@ function EventLine({ event, ctx, isAutoRun, tableId }: { event: GameEvent; ctx: 
             )}
           </div>
           {thought.message && thought.message !== "..." && (
-            <div className="text-[13px] text-text-secondary mt-1.5 italic">
-              "{thought.message}"
-              {thought.isBluffing && <span className="text-danger ml-1 not-italic">{t("chatFeed.bluff")}</span>}
-              {thought.confidence > 0 && (
-                <span className="text-text-tertiary ml-1 not-italic">
-                  {Math.round(thought.confidence * 100)}%
-                </span>
-              )}
-            </div>
+            <ThinkingBubble
+              message={thought.message}
+              isBluffing={thought.isBluffing}
+              thinkingSource={thought.thinkingSource}
+              confidence={thought.confidence}
+            />
           )}
           <div className={`text-[14px] font-semibold mt-1.5 ${actionColor}`}>
             {actionLabel}
@@ -359,9 +357,24 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
 
   const lookup = useMemo(() => buildLookup(roster), [roster]);
 
+  const currentlyThinking = useMemo(() => {
+    const thinkingEvents = events.filter((e): e is Extract<GameEvent, { type: "ai:thinking" }> => e.type === "ai:thinking");
+    const thoughtEvents = events.filter((e): e is Extract<GameEvent, { type: "ai:thought" }> => e.type === "ai:thought");
+    if (thinkingEvents.length === 0) return null;
+    const lastThinking = thinkingEvents[thinkingEvents.length - 1];
+    const lastThought = thoughtEvents[thoughtEvents.length - 1];
+    if (lastThought) {
+      const thinkIdx = events.indexOf(lastThinking);
+      const thoughtIdx = events.indexOf(lastThought);
+      if (thoughtIdx > thinkIdx) return null;
+    }
+    return { playerId: lastThinking.playerId, playerName: lastThinking.playerName };
+  }, [events]);
+
   const visibleEvents = useMemo(() => {
     const filtered = events.filter(
       (e) => e.type !== "action-required" && e.type !== "agent-roster"
+        && e.type !== "ai:thinking" && e.type !== "ai:thought"
     );
     const highlights = filtered.filter((e) => e.type === "hand-highlight");
     if (highlights.length === 0) return filtered;
@@ -490,6 +503,14 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
       {visibleEvents.length === 0 && (
         <div className="text-text-tertiary text-center mt-20 text-[15px]">
           {t("chatFeed.waitingForGame")}
+        </div>
+      )}
+      {currentlyThinking && (
+        <div className="bg-white rounded-2xl p-4 my-2 shadow-sm">
+          <div className="text-[14px] text-text-primary mb-1">
+            <AgentTag id={currentlyThinking.playerId} lookup={lookup} />
+          </div>
+          <ThinkingBubble isLoading />
         </div>
       )}
       {groupedEvents.map(({ event, index, potTotal, netProfits, isAutoRun }) => (

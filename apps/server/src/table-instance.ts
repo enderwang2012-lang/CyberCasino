@@ -450,7 +450,7 @@ export class TableInstance {
           type: "ai:thinking",
           playerId: agent.id,
           playerName: agent.name,
-        } as any);
+        });
 
         const decision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
 
@@ -460,7 +460,7 @@ export class TableInstance {
           playerId: agent.id,
           thought: decision.thought,
           action: decision.action,
-        } as any);
+        });
 
         // Update shadow state based on the decision
         const action = decision.action;

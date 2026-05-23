@@ -9,6 +9,7 @@ interface ThinkingBubbleProps {
   thinkingSource?: "llm" | "strategy" | "rule";
   isLoading?: boolean;
   confidence?: number;
+  inline?: boolean;
 }
 
 export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
@@ -17,10 +18,11 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   thinkingSource = "llm",
   isLoading = false,
   confidence,
+  inline = false,
 }) => {
   if (isLoading && !message) {
     return (
-      <div className="thinking-bubble">
+      <div className={`thinking-bubble ${inline ? "thinking-bubble--inline" : ""}`}>
         <div className="thinking-bubble__loading">
           <span>AI 思考中</span>
           <span className="thinking-bubble__dots">
@@ -37,7 +39,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   const bluffClass = isBluffing ? "thinking-bubble--bluff" : "";
 
   return (
-    <div className={`thinking-bubble ${sourceClass} ${bluffClass}`}>
+    <div className={`thinking-bubble ${inline ? "thinking-bubble--inline" : ""} ${sourceClass} ${bluffClass}`}>
       <div>&ldquo;{message}&rdquo;</div>
       {isBluffing && <div className="thinking-bubble__bluff-tag">BLUFF</div>}
       {thinkingSource === "strategy" && (

@@ -501,7 +501,9 @@ export type GameEvent =
   | { type: "blind-level-up"; level: number; smallBlind: number; bigBlind: number; handNumber: number }
   | { type: "tournament-complete"; rankings: { playerId: string; position: number; handsPlayed: number }[] }
   | { type: "agent-roster"; agents: SeatAgent[] }
-  | { type: "hand-highlight"; handNumber: number; reasons: HighlightReason[]; commentary: string; potTotal: number; involvedPlayerIds: string[] };
+  | { type: "hand-highlight"; handNumber: number; reasons: HighlightReason[]; commentary: string; potTotal: number; involvedPlayerIds: string[] }
+  | { type: "ai:thinking"; playerId: string; playerName: string }
+  | { type: "ai:thought"; playerId: string; thought: AgentThought; action: Action };
 
 // Socket.IO event types for client-server communication
 export interface WebhookPingResult {
