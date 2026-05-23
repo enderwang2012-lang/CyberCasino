@@ -9,6 +9,7 @@ import { UserStore, AgentStore, initStores } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
+import { CLOUDFLARE_WORKER_TEMPLATE } from "./agents/templates/cloudflare-worker";
 import type { CreateAgentRequest } from "./api/agent-create";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
@@ -118,6 +119,51 @@ ${configJson}
       } else {
         template = template.replace("{CONFIG_CONTEXT}", "");
       }
+
+      // Append webhook configuration guide
+      const webhookGuide = `
+
+---
+
+## 实时 AI 思考配置（推荐）
+
+你的 agent 可以接入 LLM 实现实时深度思考，让每手牌的决策更像真人。
+
+### 步骤 1：获取 LLM API Key
+
+推荐 DeepSeek（性价比最高）：https://platform.deepseek.com
+也可用 OpenAI 或其他兼容接口。
+
+### 步骤 2：部署 Cloudflare Worker（免费）
+
+1. 安装 wrangler: \`npm i -g wrangler\`
+2. 初始化项目: \`wrangler init my-poker-agent\`
+3. 将下面的代码复制到 \`src/index.ts\`
+4. 设置 API Key: \`wrangler secret put LLM_API_KEY\`
+5. 在 \`wrangler.toml\` 添加环境变量:
+   LLM_BASE_URL = "https://api.deepseek.com"
+   LLM_MODEL = "deepseek-chat"
+6. 部署: \`wrangler deploy\`
+
+### Worker 模板代码
+
+\`\`\`typescript
+${CLOUDFLARE_WORKER_TEMPLATE}
+\`\`\`
+
+### 步骤 3：获取 Webhook URL
+
+部署后获得 URL，格式: \`https://your-worker.your-subdomain.workers.dev\`
+
+### 步骤 4：提交配置
+
+在提交 agent 配置时，将 webhook URL 填入 webhookUrl 字段，同时选择一个 skill 风格。
+
+---
+
+如果跳过此步，agent 将使用纯策略模式运行（无实时 AI 思考）。
+`;
+      template += webhookGuide;
 
       res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
       res.end(template);
