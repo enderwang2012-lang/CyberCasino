@@ -19,7 +19,6 @@ function getServerUrl() {
     const url = process.env.NEXT_PUBLIC_SERVER_URL;
     return url.startsWith("http") ? url : `https://${url}`;
   }
-  if (typeof window !== "undefined") return window.location.origin;
   return "http://localhost:3001";
 }
 

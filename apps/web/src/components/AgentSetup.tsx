@@ -4,14 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import type { AgentConfigV2 } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-function getServerUrl() {
-  if (process.env.NEXT_PUBLIC_SERVER_URL) {
-    const url = process.env.NEXT_PUBLIC_SERVER_URL;
-    return url.startsWith("http") ? url : `https://${url}`;
-  }
-  if (typeof window !== "undefined") return window.location.origin;
-  return "http://localhost:3001";
-}
 const POLL_INTERVAL = 2000;
 const SOUL_CACHE_KEY = "agent_soul_state";
 const SOUL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -96,7 +88,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
   useEffect(() => {
     async function fetchExisting() {
       try {
-        const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(`/api/agents/mine?userId=${encodeURIComponent(userId)}`);
         const data = await res.json();
         if (data.agent) {
           setExistingAgent(data.agent);
@@ -114,7 +106,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
 
     async function check() {
       try {
-        const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(`/api/agents/mine?userId=${encodeURIComponent(userId)}`);
         const data = await res.json();
         if (data.agent) {
           setAgent(data.agent);
@@ -137,7 +129,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`${getServerUrl()}/api/agents/soul`, {
+      const res = await fetch(`/api/agents/soul`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, name: name.trim(), avatar, agentId: editing && existingAgent ? existingAgent.id : undefined }),

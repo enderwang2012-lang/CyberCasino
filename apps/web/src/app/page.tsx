@@ -15,15 +15,6 @@ import type { AgentConfigV2 } from "@cybercasino/shared";
 
 type ViewState = "lobby" | "agent-setup" | "agent-list" | "table-waiting" | "table-live" | "history";
 
-function getServerUrl() {
-  if (process.env.NEXT_PUBLIC_SERVER_URL) {
-    const url = process.env.NEXT_PUBLIC_SERVER_URL;
-    return url.startsWith("http") ? url : `https://${url}`;
-  }
-  if (typeof window !== "undefined") return window.location.origin;
-  return "http://localhost:3001";
-}
-
 function AuthenticatedApp({ user }: { user: { userId: string; name: string; avatar: string; provider: string } }) {
   const {
     connected, tables, events, agentConfig,
@@ -39,7 +30,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
 
   const fetchAgentV2 = useCallback(async () => {
     try {
-      const res = await fetch(`${getServerUrl()}/api/agents/mine?userId=${encodeURIComponent(user.userId)}`);
+      const res = await fetch(`/api/agents/mine?userId=${encodeURIComponent(user.userId)}`);
       const data = await res.json();
       setAgentV2(data.agent ?? null);
     } catch { /* ignore */ }
@@ -47,7 +38,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
 
   const fetchAgentsList = useCallback(async () => {
     try {
-      const res = await fetch(`${getServerUrl()}/api/agents/list?userId=${encodeURIComponent(user.userId)}`);
+      const res = await fetch(`/api/agents/list?userId=${encodeURIComponent(user.userId)}`);
       const data = await res.json();
       setAgentsList(data.agents ?? []);
     } catch { /* ignore */ }
