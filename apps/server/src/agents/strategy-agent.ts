@@ -106,6 +106,7 @@ export class StrategyAgent implements IPokerAgent {
     // ---------- Strategic decision ----------
     let strategicAction: ActionType;
     let strategicAmount: number | undefined;
+    let preflopAdjustments: string[] | undefined;
 
     if (view.phase === "preflop") {
       const result = decidePreflop(
@@ -116,13 +117,14 @@ export class StrategyAgent implements IPokerAgent {
         minRaise,
         view.bigBlind,
         view.currentBet,
+        view,
       );
 
       if (result) {
         strategicAction = result.action;
         strategicAmount = result.amount;
+        preflopAdjustments = result.adjustments;
       } else {
-        // No range matched — tight fold
         strategicAction = "fold";
       }
     } else {
@@ -202,6 +204,7 @@ export class StrategyAgent implements IPokerAgent {
       isIP,
       potSize,
       callAmount,
+      preflopAdjustments,
     );
 
     // If it was a mistake, annotate the thought
@@ -305,6 +308,7 @@ export class StrategyAgent implements IPokerAgent {
     isIP: boolean,
     potSize: number,
     callAmount: number,
+    preflopAdjustments?: string[],
   ): AgentThought {
     const baseConfidence = 0.5 + this.psychState.confidence * 0.3 - this.psychState.fear * 0.2 - this.psychState.tilt * 0.1;
     const confidence = Math.max(0.1, Math.min(0.95, baseConfidence));
@@ -320,7 +324,7 @@ export class StrategyAgent implements IPokerAgent {
       const posName = this.detectPosition(view);
 
       // Pick a thought from the agent's expression templates
-      let message = this.pickPreflopThought(category, action, posName, expression, lang);
+      let message = this.pickPreflopThought(category, action, posName, expression, lang, preflopAdjustments);
 
       // Optionally append catchphrase (30% chance)
       if (expression.catchphrases.length > 0 && Math.random() < 0.3) {
@@ -372,6 +376,7 @@ export class StrategyAgent implements IPokerAgent {
     position: string,
     expression: ExpressionConfig,
     lang: "zh" | "en",
+    preflopAdjustments?: string[],
   ): string {
     const { tone } = expression;
 
@@ -433,7 +438,16 @@ export class StrategyAgent implements IPokerAgent {
     const thoughts = (lang === "en" ? enThoughts : zhThoughts)[category]?.[action]
       ?? (lang === "en" ? ["Thinking..."] : ["想想..."]);
 
-    const idx = Math.floor(Math.random() * thoughts.length);
-    return thoughts[idx];
+    let message = thoughts[Math.floor(Math.random() * thoughts.length)];
+
+    // Append context reasoning when dynamic adjustments were applied
+    if (preflopAdjustments && preflopAdjustments.length > 0) {
+      const reasoning = preflopAdjustments[0]; // primary adjustment
+      message += lang === "en"
+        ? ` — ${reasoning}`
+        : `，${reasoning}`;
+    }
+
+    return message;
   }
 }

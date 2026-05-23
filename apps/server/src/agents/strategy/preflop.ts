@@ -1,4 +1,11 @@
-import type { Card, Position, PreflopConfig } from "@cybercasino/shared";
+import type {
+  Card,
+  Position,
+  PreflopConfig,
+  AgentGameView,
+  StackDepthAdjustment,
+  PreflopContextRule,
+} from "@cybercasino/shared";
 
 /** Convert rank number to display character */
 function rankToChar(rank: number): string {
@@ -113,15 +120,172 @@ export interface PreflopDecision {
   action: "raise" | "call" | "fold";
   amount?: number;
   confidence: number;
+  adjustments?: string[];  // 动态调整原因列表，供 AI 思考表达使用
+}
+
+// ---------------------------------------------------------------------------
+// Preflop context analysis
+// ---------------------------------------------------------------------------
+
+export interface PreflopContextInfo {
+  effectiveStackBB: number;   // 有效筹码（大盲数）
+  playerCount: number;        // 入池人数（未弃牌）
+  potOdds: number;            // 底池赔率（跟注额 / (底池+跟注额)）
+  isLastToAct: boolean;       // 是否最后行动
+  SPR: number;                // 筹码底池比（翻后才准，翻前用不到）
+}
+
+/**
+ * Analyze the current preflop context from the game view.
+ */
+export function analyzePreflopContext(view: AgentGameView): PreflopContextInfo {
+  const activePlayers = view.players.filter((p) => !p.folded);
+  const playerCount = activePlayers.length;
+  const effectiveStackBB = Math.min(
+    ...activePlayers.map((p) => p.chips),
+  ) / view.bigBlind;
+
+  const totalPot = view.pots.reduce((s, p) => s + p.amount, 0) + view.myBet;
+  const potOdds = view.currentBet > 0
+    ? view.currentBet / (totalPot + view.currentBet)
+    : 0;
+
+  // Last to act: no players after me who haven't folded
+  const mySeat = view.players.find((p) => p.id === view.myId)?.seatIndex ?? 0;
+  const dealerSeat = view.dealerSeatIndex;
+  const playerTotal = view.players.length;
+  const myOffset = (mySeat - dealerSeat + playerTotal) % playerTotal;
+  const playersAfterMe = activePlayers.filter((p) => {
+    if (p.id === view.myId) return false;
+    const offset = (p.seatIndex - dealerSeat + playerTotal) % playerTotal;
+    return offset > myOffset;
+  }).length;
+  const isLastToAct = playersAfterMe === 0;
+
+  const spr = totalPot > 0 ? view.myChips / totalPot : 999;
+
+  return { effectiveStackBB, playerCount, potOdds, isLastToAct, SPR: spr };
+}
+
+/**
+ * Apply stack-depth adjustments: widen/tighten ranges based on effective stack.
+ */
+function applyStackAdjustments(
+  raiseSet: Set<string>,
+  callSet: Set<string>,
+  adjustments: StackDepthAdjustment[],
+  effectiveStackBB: number,
+): { raiseSet: Set<string>; callSet: Set<string>; reasons: string[] } {
+  const reasons: string[] = [];
+  let raisers = new Set(raiseSet);
+  let callers = new Set(callSet);
+
+  for (const adj of adjustments) {
+    if (effectiveStackBB > adj.minBB) continue;
+
+    if (adj.pushFold && effectiveStackBB <= 10) {
+      // Push/fold mode: all call hands become raise, no calling
+      for (const hand of callers) raisers.add(hand);
+      callers = new Set<string>();
+      reasons.push(`短筹码 push/fold 模式（${effectiveStackBB.toFixed(1)}bb）`);
+      break; // push/fold overrides everything else
+    }
+
+    if (adj.widenRange) {
+      for (const hand of adj.widenRange) {
+        for (const expanded of expandRangeEntry(hand)) {
+          if (!raisers.has(expanded) && !callers.has(expanded)) {
+            raisers.add(expanded);
+            reasons.push(`筹码不深（${effectiveStackBB.toFixed(1)}bb），放宽 ${expanded}`);
+          }
+        }
+      }
+    }
+
+    if (adj.tightenRange) {
+      for (const hand of adj.tightenRange) {
+        for (const expanded of expandRangeEntry(hand)) {
+          if (raisers.has(expanded)) {
+            raisers.delete(expanded);
+            callers.add(expanded);
+            reasons.push(`筹码不深（${effectiveStackBB.toFixed(1)}bb），${expanded} 从加注降为跟注`);
+          }
+        }
+      }
+    }
+  }
+
+  return { raiseSet: raisers, callSet: callers, reasons };
+}
+
+/**
+ * Apply context rules: tighten/widen based on game situation.
+ */
+function applyContextRules(
+  raiseSet: Set<string>,
+  callSet: Set<string>,
+  rules: PreflopContextRule[],
+  ctx: PreflopContextInfo,
+): { raiseSet: Set<string>; callSet: Set<string>; reasons: string[] } {
+  const reasons: string[] = [];
+  let raisers = new Set(raiseSet);
+  let callers = new Set(callSet);
+
+  for (const rule of rules) {
+    let matches = false;
+    switch (rule.condition) {
+      case "multiway":
+        matches = ctx.playerCount >= 4;
+        if (matches) reasons.push(`${ctx.playerCount}人入池，多人底池收紧`);
+        break;
+      case "shortStack":
+        matches = ctx.effectiveStackBB <= 15;
+        if (matches) reasons.push(`短筹码（${ctx.effectiveStackBB.toFixed(1)}bb），收紧范围`);
+        break;
+      case "deepStack":
+        matches = ctx.effectiveStackBB >= 100;
+        if (matches) reasons.push(`深筹码（${ctx.effectiveStackBB.toFixed(1)}bb），放宽投机牌`);
+        break;
+      case "highPotOdds":
+        matches = ctx.potOdds >= 0.3;
+        if (matches) reasons.push(`底池赔率好（${(ctx.potOdds * 100).toFixed(0)}%），放宽跟注范围`);
+        break;
+      case "lastToAct":
+        matches = ctx.isLastToAct;
+        if (matches) reasons.push(`最后行动，位置优势，放宽范围`);
+        break;
+    }
+
+    if (!matches) continue;
+
+    if (rule.adjust === "tighten") {
+      // Move some raise hands to call
+      const toMove = [...raisers].slice(-Math.ceil(raisers.size * 0.2));
+      for (const h of toMove) { raisers.delete(h); callers.add(h); }
+    } else if (rule.adjust === "widen") {
+      // Move some call hands to raise
+      const toMove = [...callers].slice(0, Math.ceil(callers.size * 0.3));
+      for (const h of toMove) { callers.delete(h); raisers.add(h); }
+    } else if (rule.adjust === "aggressive") {
+      // All call hands become raise
+      for (const h of callers) raisers.add(h);
+      callers = new Set<string>();
+      reasons.push("激进模式：所有跟注牌升级为加注");
+    }
+  }
+
+  return { raiseSet: raisers, callSet: callers, reasons };
 }
 
 /**
  * Make a preflop decision based on the strategy config.
  *
  * Logic:
- *   1. Hand in raise range → raise (confidence 0.9)
- *   2. Hand in call range AND callAmount <= 3bb → call (confidence 0.7)
- *   3. Otherwise → fold (confidence 0.8)
+ *   1. Compute context (stack depth, player count, pot odds, position)
+ *   2. Apply stack-adjustments & context-rules to ranges
+ *   3. Hand in raise range → raise
+ *   4. Hand in call range → call
+ *   5. Otherwise → fold
  */
 export function decidePreflop(
   hand: Card[],
@@ -131,12 +295,37 @@ export function decidePreflop(
   minRaise: number,
   bigBlind: number,
   currentBet: number,
+  view?: AgentGameView,
 ): PreflopDecision | null {
   const posRange = config.ranges[position];
   if (!posRange) return null;
 
-  if (matchesRange(hand, posRange.raise)) {
-    // Determine raise sizing from config
+  let raiseSet = buildRangeSet(posRange.raise);
+  let callSet = buildRangeSet(posRange.call);
+  const adjustments: string[] = [];
+
+  // Dynamic adjustments (only when view is provided)
+  if (view) {
+    const ctx = analyzePreflopContext(view);
+
+    if (config.stackAdjustments?.length) {
+      const result = applyStackAdjustments(raiseSet, callSet, config.stackAdjustments, ctx.effectiveStackBB);
+      raiseSet = result.raiseSet;
+      callSet = result.callSet;
+      adjustments.push(...result.reasons);
+    }
+
+    if (config.contextRules?.length) {
+      const result = applyContextRules(raiseSet, callSet, config.contextRules, ctx);
+      raiseSet = result.raiseSet;
+      callSet = result.callSet;
+      adjustments.push(...result.reasons);
+    }
+  }
+
+  const handKey = handToKey(hand);
+
+  if (raiseSet.has(handKey)) {
     const sizingStr = currentBet <= bigBlind ? config.sizing.openRaise : config.sizing.threeBet;
     const sizingMultiplier = parseFloat(sizingStr) || 2.5;
     const raiseAmount = Math.max(minRaise, Math.round(bigBlind * sizingMultiplier));
@@ -144,18 +333,21 @@ export function decidePreflop(
       action: "raise",
       amount: raiseAmount,
       confidence: 0.9,
+      adjustments: adjustments.length > 0 ? adjustments : undefined,
     };
   }
 
-  if (matchesRange(hand, posRange.call) && callAmount <= bigBlind * 3) {
+  if (callSet.has(handKey) && callAmount <= bigBlind * 3) {
     return {
       action: "call",
       confidence: 0.7,
+      adjustments: adjustments.length > 0 ? adjustments : undefined,
     };
   }
 
   return {
     action: "fold",
     confidence: 0.8,
+    adjustments: adjustments.length > 0 ? adjustments : undefined,
   };
 }

@@ -133,6 +133,19 @@ export interface PositionRange {
   fold: string[];
 }
 
+export interface StackDepthAdjustment {
+  minBB: number;           // 筹码量阈值（大盲数）
+  widenRange?: string[];   // 放宽的手牌（加入 raise/call）
+  tightenRange?: string[]; // 收紧的手牌（移出 raise → call/fold）
+  pushFold?: boolean;      // <= 10bb 时用 push/fold 范围
+}
+
+export interface PreflopContextRule {
+  condition: "multiway" | "shortStack" | "deepStack" | "highPotOdds" | "lastToAct";
+  adjust: "widen" | "tighten" | "aggressive";
+  notes?: string;
+}
+
 export interface PreflopConfig {
   ranges: Record<Position, PositionRange>;
   sizing: {
@@ -140,6 +153,8 @@ export interface PreflopConfig {
     threeBet: string;
     fourBet: string;
   };
+  stackAdjustments?: StackDepthAdjustment[];
+  contextRules?: PreflopContextRule[];
 }
 
 // Postflop

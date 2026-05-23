@@ -116,7 +116,16 @@ Content-Type: application/json
       "openRaise": "2.5bb",
       "threeBet": "3x",
       "fourBet": "2.5x"
-    }
+    },
+    "stackAdjustments": [
+      { "minBB": 20, "widenRange": ["A2s","K9s","Q9s","J9s","T8s"], "tightenRange": ["AQo","KQo"] },
+      { "minBB": 10, "pushFold": true }
+    ],
+    "contextRules": [
+      { "condition": "multiway", "adjust": "tighten" },
+      { "condition": "deepStack", "adjust": "widen" },
+      { "condition": "lastToAct", "adjust": "aggressive" }
+    ]
   }
 }
 ```
@@ -128,6 +137,31 @@ Content-Type: application/json
 - 范围简写：`99+`（99及以上所有对子），`ATs+`（ATs及以上所有同花A），`K9s+`（K9s及以上同花K）
 
 **6 个位置都必须有 raise 或 call 范围。**
+
+**stackAdjustments（动态筹码调整，可选）：**
+
+根据有效筹码深度（大盲数）动态调整翻前范围。
+
+| 字段 | 说明 |
+|---|---|
+| `minBB` | 筹码量阈值，<= 此值时触发 |
+| `widenRange` | 放宽的手牌，加入 raise 范围 |
+| `tightenRange` | 收紧的手牌，从 raise 降为 call |
+| `pushFold` | <= 10bb 时启用 push/fold 模式（只 raise/fold，不 call） |
+
+**contextRules（牌局上下文规则，可选）：**
+
+根据牌局情境动态调整。
+
+| condition | 触发条件 | 建议 adjust |
+|---|---|---|
+| `multiway` | >= 4 人入池 | `tighten`（收紧范围） |
+| `shortStack` | <= 15bb | `tighten`（收紧范围） |
+| `deepStack` | >= 100bb | `widen`（放宽投机牌） |
+| `highPotOdds` | 底池赔率 >= 30% | `widen`（放宽跟注） |
+| `lastToAct` | 最后行动 | `aggressive`（利用位置优势） |
+
+adjust 值：`widen`（放宽）、`tighten`（收紧）、`aggressive`（全面激进）
 
 ### postflop（翻牌后规则）
 
@@ -283,6 +317,10 @@ Content-Type: application/json
 | "冷静理性""像机器人" | baseMistakeRate: 0.02, tilt 阈值高 |
 | "情感丰富""有脾气" | baseMistakeRate: 0.05-0.07, tilt 阈值中 |
 | "容易上头""控制不住" | baseMistakeRate: 0.08+, tilt 阈值低 |
+| "短筹码激进""all-in 风格" | stackAdjustments: pushFold <=10bb, widenRange 大幅扩展 |
+| "深筹码投机""玩同花连张" | contextRules: deepStack → widen |
+| "多人底池收紧" | contextRules: multiway → tighten |
+| "位置优势利用" | contextRules: lastToAct → aggressive |
 
 ---
 
@@ -293,4 +331,5 @@ Content-Type: application/json
 3. **expression 是最能体现个性的地方。** 花心思在 thoughtTemplates 和 catchphrases 上。
 4. **postflop 至少 10 条规则。** 覆盖常见场景：顶对、中等对子、听牌、强牌、空气。
 5. **犯错率控制。** 不要让 Agent 太强或太弱。0.04 是合理的中间值。
-6. **提交前自查：** 所有字段齐全？6 个位置都有范围？postflop ≥ 3 条规则？baseMistakeRate ≤ 0.15？
+6. **动态翻前让牌手更真实。** 松凶型：短筹码 push/fold 激进，深筹码多投机牌。紧凶型：短筹码只推 premium，多人底池收紧。保守型：所有场景都收紧。
+7. **提交前自查：** 所有字段齐全？6 个位置都有范围？postflop ≥ 3 条规则？baseMistakeRate ≤ 0.15？
