@@ -114,11 +114,6 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     setView("lobby");
   }
 
-  function handleAgentListCreateNew() {
-    setReturnTo("agent-list");
-    setView("agent-setup");
-  }
-
   function handleHistory() {
     getHistory();
     setView("history");
@@ -142,8 +137,9 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     return (
       <AgentListPage
         agents={agentsList}
+        userId={user.userId}
         onBack={handleAgentListBack}
-        onCreateNew={handleAgentListCreateNew}
+        onAgentCreated={() => { fetchAgentV2(); fetchAgentsList(); }}
       />
     );
   }
