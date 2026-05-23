@@ -5,6 +5,7 @@ import type {
   ActionType,
   ActionRecord,
   SkillConfig,
+  Card,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import type { PostflopContext } from "./strategy/postflop";
@@ -13,6 +14,7 @@ import { estimateHandStrength } from "./imperfection/decision-difficulty";
 import { generateThought, classifyPreflopHand } from "./thought/thought-generator";
 import { createInitialState } from "./imperfection/psychological-state";
 import { callWebhook } from "./webhook-caller";
+import { getClient, getModel } from "./llm-client";
 import type { PsychologicalState } from "./imperfection/psychological-state";
 
 const POSITION_ORDER_3 = ["BTN", "SB", "BB"] as const;
@@ -22,6 +24,7 @@ interface HybridAgentConfig {
   name: string;
   avatar: string;
   webhookUrl?: string;
+  usePlatformLlm?: boolean;
   skill: SkillConfig;
   preflop: any;
   postflop: any[];
@@ -62,14 +65,17 @@ export class HybridAgent implements IPokerAgent {
     // Step 1: 策略引擎快速评估
     const strategyResult = this.strategyEvaluate(view, position, isIP, validActions, callAmount, minRaise, potSize);
 
-    // Step 2: 尝试 LLM webhook
-    if (this.config.webhookUrl) {
-      const strategyHint = {
-        suggestedAction: strategyResult.action,
-        confidence: strategyResult.confidence,
-        handStrength: strategyResult.handStrength,
-      };
+    // Step 2: LLM thinking — platform LLM or webhook
+    const strategyHint = {
+      suggestedAction: strategyResult.action,
+      confidence: strategyResult.confidence,
+      handStrength: strategyResult.handStrength,
+    };
 
+    if (this.config.usePlatformLlm) {
+      const llmResult = await this.callPlatformLlm(view, validActions, callAmount, minRaise, strategyHint);
+      if (llmResult) return llmResult;
+    } else if (this.config.webhookUrl) {
       const webhookResult = await callWebhook(
         this.config.webhookUrl,
         view, validActions, callAmount, minRaise,
@@ -113,6 +119,114 @@ export class HybridAgent implements IPokerAgent {
 
   clearHistory(): void {
     this.actionHistory = [];
+  }
+
+  // -----------------------------------------------------------------------
+  // Platform LLM direct call
+  // -----------------------------------------------------------------------
+
+  private async callPlatformLlm(
+    view: AgentGameView,
+    validActions: ActionType[],
+    callAmount: number,
+    minRaise: number,
+    strategyHint: { suggestedAction: ActionType; confidence: number; handStrength: number },
+  ): Promise<AgentDecision | null> {
+    try {
+      const prompt = this.buildLlmPrompt(view, validActions, callAmount, minRaise, strategyHint);
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("LLM API timeout (30s)")), 30000)
+      );
+
+      const response = await Promise.race([
+        getClient().chat.completions.create({
+          model: getModel(),
+          max_tokens: 300,
+          temperature: 0.7,
+          messages: [
+            { role: "system", content: this.skill.systemPrompt },
+            { role: "user", content: prompt },
+          ],
+        }),
+        timeoutPromise,
+      ]);
+
+      const text = response.choices[0]?.message?.content ?? "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const action = parsed.action as string;
+      if (!validActions.includes(action as ActionType)) return null;
+
+      return {
+        action: {
+          type: action as ActionType,
+          amount: action === "raise"
+            ? Math.max(parsed.amount ?? (view.currentBet + minRaise), view.currentBet + minRaise)
+            : undefined,
+        },
+        thought: {
+          message: parsed.thought ?? "...",
+          confidence: Math.max(0, Math.min(1, parsed.confidence ?? 0.5)),
+          isBluffing: parsed.isBluffing ?? false,
+          thinkingSource: "llm",
+        },
+      };
+    } catch (error) {
+      console.warn(`[HybridAgent:${this.id}] platform LLM failed:`, (error as Error).message);
+      return null;
+    }
+  }
+
+  private buildLlmPrompt(
+    view: AgentGameView,
+    validActions: ActionType[],
+    callAmount: number,
+    minRaise: number,
+    strategyHint: { suggestedAction: ActionType; confidence: number; handStrength: number },
+  ): string {
+    const suitSymbols: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
+    const rankNames: Record<number, string> = { 2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",8:"8",9:"9",10:"10",11:"J",12:"Q",13:"K",14:"A" };
+    const cardStr = (c: Card) => `${rankNames[c.rank]}${suitSymbols[c.suit]}`;
+
+    const myCards = view.myCards.map(cardStr).join(" ");
+    const community = view.communityCards.length > 0 ? view.communityCards.map(cardStr).join(" ") : "(无)";
+    const potSize = view.pots.reduce((s, p) => s + p.amount, 0);
+
+    const opponents = view.players
+      .filter((p) => p.id !== view.myId && !p.folded)
+      .map((p) => `  ${p.name}: ${p.chips} 筹码, bet ${p.bet}${p.allIn ? " [ALL-IN]" : ""}`)
+      .join("\n");
+
+    const recentActions = view.actionHistory
+      .slice(-10)
+      .map((a) => `  ${a.playerId}: ${a.action.type}${a.action.amount ? ` ${a.action.amount}` : ""}`)
+      .join("\n");
+
+    const hint = `\n策略引擎建议: ${strategyHint.suggestedAction} (置信度 ${Math.round(strategyHint.confidence * 100)}%, 手牌强度 ${Math.round(strategyHint.handStrength * 100)}%)\n`;
+
+    return `你是德州扑克牌手，请分析当前局面并做出决策。
+
+你的手牌: ${myCards}
+公共牌: ${community}
+阶段: ${view.phase}
+你的筹码: ${view.myChips}
+当前底池: ${potSize}
+需要跟注: ${callAmount}
+最小加注到: ${view.currentBet + minRaise}
+
+对手:
+${opponents}
+
+最近行动:
+${recentActions || "  (无)"}
+
+合法动作: ${validActions.join(", ")}
+${hint}
+请返回 JSON（不要 markdown 包裹）:
+{ "action": "fold"|"check"|"call"|"raise", "amount": 数字(加注时), "thought": "你的内心独白1-2句", "isBluffing": true/false, "confidence": 0-1 }`;
   }
 
   private strategyEvaluate(

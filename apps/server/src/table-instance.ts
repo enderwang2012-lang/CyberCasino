@@ -29,6 +29,16 @@ import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
 import { generateCommentary } from "./highlight-commentary";
 
+// Built-in personality → Skill mapping
+const BUILTIN_SKILL_MAP: Record<string, string> = {
+  neon: "tight-passive",      // Sashimi 🍣 — 紧弱
+  viper: "loose-aggressive",  // 盖哥 🔴 — 松凶
+  ghost: "high-variance",     // Dwan 👻 — 诈唬/高波动
+  oracle: "gto-exploit",      // 臧书奴 📖 — 平衡/读心
+  shark: "tight-aggressive",  // 谭老板 🦈 — 紧凶
+  fox: "gto-exploit",         // Phill Ivey 🦊 — 多变
+};
+
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
   levels: [
@@ -330,19 +340,23 @@ export class TableInstance {
       return new StrategyAgent(v2Config);
     }
 
-    // Builtin agents: use strategy JSON if available
+    // Builtin agents: use HybridAgent with platform LLM + matched Skill
     if (seat.type === "builtin") {
+      const personality = PERSONALITIES.find((p) => p.id === seat.id);
       const strategy = builtinStrategies.get(seat.id);
+      const skillId = BUILTIN_SKILL_MAP[seat.id] ?? "tight-aggressive";
+      const skill = getSkillById(skillId)!;
+
       if (strategy) {
-        const personality = PERSONALITIES.find((p) => p.id === seat.id);
-        return new StrategyAgent({
+        return new HybridAgent({
           id: seat.id,
           name: personality?.name ?? seat.name,
           avatar: personality?.avatar ?? seat.avatar,
-          userId: "",
-          strategy,
-          createdAt: 0,
-          updatedAt: 0,
+          usePlatformLlm: true,
+          skill,
+          preflop: strategy.preflop,
+          postflop: strategy.postflop,
+          expression: strategy.expression,
         });
       }
       return new PokerAgent(seat.id);
