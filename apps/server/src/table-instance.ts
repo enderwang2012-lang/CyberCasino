@@ -22,6 +22,8 @@ import type { IPokerAgent } from "./agents/agent-interface";
 import { PokerAgent } from "./agents/agent";
 import { ExternalAgent } from "./agents/external-agent";
 import { StrategyAgent } from "./agents/strategy-agent";
+import { HybridAgent } from "./agents/hybrid-agent";
+import { getSkillById } from "./agents/skill-system";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
@@ -310,7 +312,22 @@ export class TableInstance {
   ): IPokerAgent {
     // V2 config takes priority (custom AI-created agents)
     if (seat.userId && v2Configs?.has(seat.userId)) {
-      return new StrategyAgent(v2Configs.get(seat.userId)!);
+      const v2Config = v2Configs.get(seat.userId)!;
+      // HybridAgent: V2 config with webhookUrl
+      if (v2Config.webhookUrl) {
+        const skill = getSkillById((v2Config.strategy as any).skillId) ?? getSkillById("tight-aggressive");
+        return new HybridAgent({
+          id: v2Config.id,
+          name: v2Config.name,
+          avatar: v2Config.avatar,
+          webhookUrl: v2Config.webhookUrl,
+          skill: skill!,
+          preflop: v2Config.strategy.preflop,
+          postflop: v2Config.strategy.postflop,
+          expression: v2Config.strategy.expression,
+        });
+      }
+      return new StrategyAgent(v2Config);
     }
 
     // Builtin agents: use strategy JSON if available
