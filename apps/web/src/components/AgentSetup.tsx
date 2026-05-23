@@ -188,16 +188,20 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
       <div className="w-full max-w-md">
         {/* ── Title ── */}
         <h2 className="text-[24px] font-semibold text-text-primary mb-1 tracking-tight">
-          {showForm
-            ? (editing ? (isZh ? "编辑 AI 牌手" : "Edit AI Player") : (isZh ? "创建 AI 牌手" : "Create AI Player"))
-            : (isZh ? "我的 AI 牌手" : "My AI Player")}
+          {isReady
+            ? (isZh ? "我的 AI 牌手" : "My AI Player")
+            : showForm
+              ? (editing ? (isZh ? "编辑 AI 牌手" : "Edit AI Player") : (isZh ? "创建 AI 牌手" : "Create AI Player"))
+              : (isZh ? "我的 AI 牌手" : "My AI Player")}
         </h2>
         <p className="text-text-secondary text-[15px] mb-6">
-          {showForm
-            ? (editing
-              ? (isZh ? "修改后将「灵魂」发给 AI 助手，Ta 会在现有配置基础上调整" : "Send the updated soul to AI. They will adjust based on the current config.")
-              : (isZh ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造" : "Name your player, then hand the soul to AI for shaping"))
-            : (isZh ? "你的牌手已就绪，可以加入牌局" : "Your player is ready to join a table")}
+          {isReady
+            ? (isZh ? "你的牌手已就绪，可以加入牌局" : "Your player is ready to join a table")
+            : showForm
+              ? (editing
+                ? (isZh ? "修改后将「灵魂」发给 AI 助手，Ta 会在现有配置基础上调整" : "Send the updated soul to AI. They will adjust based on the current config.")
+                : (isZh ? "为你的牌手取名，然后将「灵魂」交给 AI 助手来塑造" : "Name your player, then hand the soul to AI for shaping"))
+              : (isZh ? "你的牌手已就绪，可以加入牌局" : "Your player is ready to join a table")}
         </p>
 
         {/* ── Loading ── */}
@@ -221,34 +225,35 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
               </div>
             )}
 
-            {/* ── Section A: Agent Info (view mode) ── */}
-            {!showForm && displayAgent && (
+            {/* ── Section A: Agent Info ── */}
+            {displayAgent && (!showForm || isReady) && (
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-[36px]">{displayAgent.avatar}</span>
                 <div className="flex-1">
                   <div className="text-text-primary text-[18px] font-semibold">{displayAgent.name}</div>
                   <div className="text-text-secondary text-[13px]">{displayAgent.description ?? ""}</div>
                 </div>
-                <button
-                  onClick={() => {
-                    setEditing(true);
-                    setCreatingNew(false);
-                    if (existingAgent) {
-                      setName(existingAgent.name);
-                      setAvatar(existingAgent.avatar);
-                    }
-                    setAgent(null);
-                    // Keep soulUrl — same URL works for edits
-                  }}
-                  className="text-accent text-[13px] font-medium shrink-0"
-                >
-                  {isZh ? "编辑" : "Edit"}
-                </button>
+                {!isReady && (
+                  <button
+                    onClick={() => {
+                      setEditing(true);
+                      setCreatingNew(false);
+                      if (existingAgent) {
+                        setName(existingAgent.name);
+                        setAvatar(existingAgent.avatar);
+                      }
+                      setAgent(null);
+                    }}
+                    className="text-accent text-[13px] font-medium shrink-0"
+                  >
+                    {isZh ? "编辑" : "Edit"}
+                  </button>
+                )}
               </div>
             )}
 
-            {/* ── Section B: Form (create/edit mode) ── */}
-            {showForm && (
+            {/* ── Section B: Form (create/edit mode, hidden when ready) ── */}
+            {showForm && !isReady && (
               <>
                 <label className="text-text-tertiary text-[12px] font-medium mb-2 block uppercase tracking-wide">
                   {isZh ? "牌手名字" : "Player Name"}
@@ -311,7 +316,7 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
 
             {/* ── Section C: Soul Link (when soulUrl exists) ── */}
             {soulUrl && (
-              <div className={showForm ? "mt-5 pt-5 border-t border-surface-elevated" : ""}>
+              <div className={showForm && !isReady ? "mt-5 pt-5 border-t border-surface-elevated" : "mt-4"}>
                 <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
                   {isZh ? "复制「灵魂」给 AI 助手" : "Copy Soul to AI Assistant"}
                 </div>
@@ -334,18 +339,8 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
                     : "Send this link to your AI assistant to help shape your player's soul."}
                 </p>
 
-                {/* ── Section D: Loading / Ready ── */}
-                {isReady ? (
-                  <div className="mt-5 pt-5 border-t border-surface-elevated">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[36px]">{agent!.avatar}</span>
-                      <div>
-                        <div className="text-text-primary text-[18px] font-semibold">{agent!.name}</div>
-                        <div className="text-text-secondary text-[13px]">{agent!.description ?? ""}</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
+                {/* ── Section D: Loading indicator ── */}
+                {!isReady && (
                   <div className="flex flex-col items-center justify-center py-6 mt-4">
                     <div className="text-[40px] mb-2 animate-pulse">👻</div>
                     <p className="text-text-tertiary text-[14px]">
@@ -366,13 +361,13 @@ export function AgentSetup({ userId, onCreated, onBack }: AgentSetupProps) {
           </div>
         )}
 
-        {/* ── Create New Button (outside card, view mode only) ── */}
-        {!loadingExisting && !showForm && (
+        {/* ── Create New Button (outside card) ── */}
+        {!loadingExisting && (isReady || !showForm) && (
           <button
             onClick={handleCreateNew}
             className="w-full bg-surface-elevated hover:bg-surface-hover text-text-primary py-3.5 rounded-full font-medium text-[17px] transition-colors"
           >
-            {isZh ? "创建新牌手" : "Create New Player"}
+            {isZh ? "新建牌手" : "Create New Player"}
           </button>
         )}
       </div>
