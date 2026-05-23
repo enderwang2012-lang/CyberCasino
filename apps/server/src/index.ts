@@ -203,7 +203,7 @@ ${CLOUDFLARE_WORKER_TEMPLATE}
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        let { config, preview, soulKey } = parsed as CreateAgentRequest & { soulKey?: string };
+        let { config, preview, soulKey, skillId, webhookUrl } = parsed as CreateAgentRequest & { soulKey?: string; skillId?: string; webhookUrl?: string };
         // Fallback: extract soul key from Authorization header (AI sends token there)
         if (!soulKey && req.headers.authorization?.startsWith("Bearer ")) {
           soulKey = req.headers.authorization.slice(7);
@@ -238,7 +238,8 @@ ${CLOUDFLARE_WORKER_TEMPLATE}
           }
         }
 
-        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey);
+        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId);
+        if (webhookUrl) agent.webhookUrl = webhookUrl;
         agentStore.saveV2(agent);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });

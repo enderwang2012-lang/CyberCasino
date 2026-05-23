@@ -80,6 +80,7 @@ export function createAgentFromAI(
   request: CreateAgentRequest,
   nextId: () => string,
   soulKey?: string,
+  skillId?: string,
 ): AgentConfigV2 {
   const now = Date.now();
   return {
@@ -90,6 +91,7 @@ export function createAgentFromAI(
     description: request.preview.description,
     strategy: request.config,
     soulKey,
+    skillId,
     createdAt: now,
     updatedAt: now,
   };
