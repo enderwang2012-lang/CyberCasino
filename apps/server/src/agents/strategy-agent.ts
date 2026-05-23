@@ -22,7 +22,7 @@ import { decidePostflop, classifyHand } from "./strategy";
 import { calculateDifficulty, estimateHandStrength } from "./imperfection/decision-difficulty";
 import { buildDecisionDistribution, sampleFromDistribution } from "./imperfection/decision-distribution";
 import { createInitialState, updateAfterHand, describeState } from "./imperfection/psychological-state";
-import { generateThought } from "./thought/thought-generator";
+import { generateThought, classifyPreflopHand } from "./thought/thought-generator";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -309,25 +309,35 @@ export class StrategyAgent implements IPokerAgent {
     const baseConfidence = 0.5 + this.psychState.confidence * 0.3 - this.psychState.fear * 0.2 - this.psychState.tilt * 0.1;
     const confidence = Math.max(0.1, Math.min(0.95, baseConfidence));
 
-    // Preflop: simple thought
+    // Preflop: hand-strength-aware thought
     if (view.phase === "preflop") {
-      const lang = expression.thoughtLanguage;
-      const actionMap: Record<string, string> = {
-        fold: lang === "en" ? "fold" : "弃牌",
-        check: lang === "en" ? "check" : "过牌",
-        call: lang === "en" ? "call" : "跟注",
-        raise: lang === "en" ? "raise" : "加注",
-      };
-      const actionDesc = actionMap[action] ?? action;
+      const lang: "zh" | "en" = expression.thoughtLanguage === "en" ? "en" : "zh";
+      const category = action === "raise" && Math.random() < (expression.catchphrases.length > 0 ? 0.3 : 0)
+        ? "bluff"
+        : classifyPreflopHand(view.myCards);
+
+      const isBluff = category === "bluff";
       const posName = this.detectPosition(view);
-      const message = lang === "en"
-        ? `${posName}, ${actionDesc}.`
-        : `${posName}位，${actionDesc}。`;
+
+      // Pick a thought from the agent's expression templates
+      let message = this.pickPreflopThought(category, action, posName, expression, lang);
+
+      // Optionally append catchphrase (30% chance)
+      if (expression.catchphrases.length > 0 && Math.random() < 0.3) {
+        const idx = Math.floor(Math.random() * expression.catchphrases.length);
+        message += " " + expression.catchphrases[idx];
+      }
+
+      // Optionally append verbal tic (50% chance)
+      if (expression.verbalTics.length > 0 && Math.random() < 0.5) {
+        const idx = Math.floor(Math.random() * expression.verbalTics.length);
+        message += " " + expression.verbalTics[idx];
+      }
 
       return {
-        message,
+        message: message.trim(),
         confidence: Math.round(confidence * 100) / 100,
-        isBluffing: false,
+        isBluffing: isBluff,
       };
     }
 
@@ -350,5 +360,80 @@ export class StrategyAgent implements IPokerAgent {
     );
 
     return generated;
+  }
+
+  /**
+   * Pick a contextual preflop thought based on hand strength and action.
+   * Uses the agent's expression tone/style to influence the wording.
+   */
+  private pickPreflopThought(
+    category: "premium" | "good" | "trash" | "bluff",
+    action: ActionType,
+    position: string,
+    expression: ExpressionConfig,
+    lang: "zh" | "en",
+  ): string {
+    const { tone } = expression;
+
+    // Base thoughts per category × action
+    const zhThoughts: Record<string, Record<string, string[]>> = {
+      premium: {
+        raise: ["好牌在手，该加注了", "这手牌值得重注", "等到了，加注！"],
+        call: ["好牌，先看看翻牌", "稳一手，跟注看看"],
+        fold: ["这么好的牌...算了，纪律第一"],
+        check: ["好牌过牌，引诱对手"],
+      },
+      good: {
+        raise: ["还不错，试试水", "这手牌可以玩", "加注探探路"],
+        call: ["还行，跟一手看看", "不着急，慢慢来"],
+        fold: ["不太行，放弃吧"],
+        check: ["过牌看看情况"],
+      },
+      trash: {
+        raise: ["来点刺激的！", "赌一把！", "假装有牌~"],
+        call: ["便宜就看看", "反正不贵"],
+        fold: ["不是我的牌", "pass", "弃了"],
+        check: ["免费看一张"],
+      },
+      bluff: {
+        raise: ["演戏时间到", "虚虚实实~", "来骗来偷袭"],
+        call: ["先混进去再说"],
+        fold: ["这次不演了"],
+        check: ["装弱..."],
+      },
+    };
+
+    const enThoughts: Record<string, Record<string, string[]>> = {
+      premium: {
+        raise: ["Premium hand, time to raise", "This deserves a big bet", "Finally, let's go"],
+        call: ["Good hand, let's see the flop", "Patience, just call"],
+        fold: ["Even with this hand... discipline first"],
+        check: ["Slowplay, trap them"],
+      },
+      good: {
+        raise: ["Not bad, let's test the waters", "Worth a raise"],
+        call: ["Decent hand, let's see", "No rush, just call"],
+        fold: ["Not good enough, let it go"],
+        check: ["Check and observe"],
+      },
+      trash: {
+        raise: ["Time for some chaos!", "Let's gamble!", "Pretending I have it~"],
+        call: ["Cheap enough to look", "Why not"],
+        fold: ["Trash, pass", "Not my hand"],
+        check: ["Free card"],
+      },
+      bluff: {
+        raise: ["Showtime!", "Now you see it, now you don't~", "Let's put on a show"],
+        call: ["Sneak in for now"],
+        fold: ["Not this time"],
+        check: ["Playing weak..."],
+      },
+    };
+
+    const thoughts = (lang === "en" ? enThoughts : zhThoughts)[category]?.[action]
+      ?? (lang === "en" ? ["Thinking..."] : ["想想..."]);
+
+    const idx = Math.floor(Math.random() * thoughts.length);
+    return thoughts[idx];
   }
 }

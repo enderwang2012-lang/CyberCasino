@@ -105,6 +105,54 @@ export function describeAction(
 }
 
 // ---------------------------------------------------------------------------
+// Preflop hand strength → thought category
+// ---------------------------------------------------------------------------
+
+type PreflopCategory = "premium" | "good" | "trash" | "bluff";
+
+const RANK_MAP: Record<string, number> = {
+  "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8,
+  "9": 9, "T": 10, "J": 11, "Q": 12, "K": 13, "A": 14,
+};
+
+function parseCard(s: string): { rank: number; suited: boolean } {
+  const clean = s.replace(/[+o]/g, "");
+  return { rank: RANK_MAP[clean[0]] ?? 0, suited: clean[1] === "s" };
+}
+
+function cardRank(c: { rank: number }) { return c.rank; }
+
+function cardSuit(c: { suited: boolean }) { return c.suited; }
+
+/**
+ * Classify a 2-card preflop hand into a thought category.
+ */
+export function classifyPreflopHand(
+  cards: Array<{ rank: number; suit: string }>
+): PreflopCategory {
+  if (cards.length < 2) return "good";
+  const ranks = cards.map((c) => c.rank).sort((a, b) => b - a);
+  const [hi, lo] = ranks;
+  const suited = cards[0].suit === cards[1].suit;
+  const pair = hi === lo;
+
+  // Premium: AA-QQ, AKs, AKo
+  if (pair && hi >= 12) return "premium";
+  if (hi === 14 && lo >= 13) return "premium";
+
+  // Good: JJ-77, AQs+, AJs, KQs, suited connectors T9s+
+  if (pair && hi >= 7) return "good";
+  if (hi === 14 && lo >= 10) return "good";
+  if (hi === 13 && lo >= 12 && suited) return "good";
+  if (suited && hi - lo <= 1 && hi >= 10) return "good";
+
+  // Trash
+  if (hi < 10 && lo < 10 && !suited) return "trash";
+
+  return "good";
+}
+
+// ---------------------------------------------------------------------------
 // Template selection helpers
 // ---------------------------------------------------------------------------
 
