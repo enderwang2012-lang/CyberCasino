@@ -50,21 +50,19 @@ function saveAgents(agents: Map<string, AgentConfig>) {
   writeFileSync(AGENTS_FILE, JSON.stringify(arr, null, 2));
 }
 
-function loadAgentsV2(): Map<string, AgentConfigV2> {
+function loadAgentsV2(): AgentConfigV2[] {
   ensureDataDir();
   try {
     const raw = readFileSync(AGENTS_V2_FILE, "utf-8");
-    const arr: AgentConfigV2[] = JSON.parse(raw);
-    return new Map(arr.map((a) => [a.userId, a]));
+    return JSON.parse(raw);
   } catch {
-    return new Map();
+    return [];
   }
 }
 
-function saveAgentsV2(agents: Map<string, AgentConfigV2>) {
+function saveAgentsV2(agents: AgentConfigV2[]) {
   ensureDataDir();
-  const arr = Array.from(agents.values());
-  writeFileSync(AGENTS_V2_FILE, JSON.stringify(arr, null, 2));
+  writeFileSync(AGENTS_V2_FILE, JSON.stringify(agents, null, 2));
 }
 
 const initialAgents = loadAgents();
@@ -74,7 +72,7 @@ let agentCounter = Array.from(initialAgents.values()).reduce((max, a) => {
 }, 0);
 
 const initialAgentsV2 = loadAgentsV2();
-let agentV2Counter = Array.from(initialAgentsV2.values()).reduce((max, a) => {
+let agentV2Counter = initialAgentsV2.reduce((max, a) => {
   const n = parseInt(a.id.replace("agent-", ""), 10);
   return isNaN(n) ? max : Math.max(max, n);
 }, 0);
@@ -102,8 +100,7 @@ export class AgentStore {
   private agentsV2 = new Map<string, AgentConfigV2[]>();
 
   constructor() {
-    // Group flat array by userId
-    for (const [, agent] of initialAgentsV2) {
+    for (const agent of initialAgentsV2) {
       const existing = this.agentsV2.get(agent.userId) ?? [];
       existing.push(agent);
       this.agentsV2.set(agent.userId, existing);
@@ -136,15 +133,12 @@ export class AgentStore {
   }
 
   saveV2(agent: AgentConfigV2): void {
-    // 清除该用户旧的 v1 agent
     this.agents.delete(agent.userId);
-    // Append to v2 list
     const list = this.agentsV2.get(agent.userId) ?? [];
     list.push(agent);
     this.agentsV2.set(agent.userId, list);
-    // Flatten and persist
     const all = Array.from(this.agentsV2.values()).flat();
-    saveAgentsV2(new Map(all.map((a) => [a.userId, a])));
+    saveAgentsV2(all);
   }
 
   getV2ByUserId(userId: string): AgentConfigV2 | undefined {
