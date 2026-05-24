@@ -21,6 +21,7 @@ interface TableViewProps {
 export function TableView({ tableId, tableName, events, onLeave, defaultTab = "live", isFinished = false }: TableViewProps) {
   const { t } = useLanguage();
   const { setVisible } = useHeader();
+  const [replayCopied, setReplayCopied] = useState(false);
   useEffect(() => {
     setVisible(false);
     return () => setVisible(true);
@@ -57,7 +58,18 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "l
           {tableName || "CyberCasino"}
         </h2>
         {isFinished ? (
-          <div className="text-text-tertiary text-[13px] min-w-[44px] text-right font-medium">{t("common.finished")}</div>
+          <button
+            onClick={() => {
+              const url = `${process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001"}/api/replay/${tableId}`;
+              navigator.clipboard.writeText(url).then(() => {
+                setReplayCopied(true);
+                setTimeout(() => setReplayCopied(false), 2000);
+              });
+            }}
+            className="text-accent text-[13px] min-w-[44px] text-right font-medium min-h-[44px] flex items-center justify-end active:scale-95 transition-transform"
+          >
+            {replayCopied ? t("chatFeed.replayCopied") : t("chatFeed.shareReplay")}
+          </button>
         ) : (
           <div className="text-success text-[13px] min-w-[44px] text-right font-medium">{t("common.live")}</div>
         )}

@@ -82,26 +82,6 @@ function getHandName(holeCards: Card[], communityCards: Card[]): string | null {
   return result.name;
 }
 
-function ReplayButton({ tableId }: { tableId: string }) {
-  const { t } = useLanguage();
-  const [copied, setCopied] = useState(false);
-  const replayUrl = `${process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001"}/api/replay/${tableId}`;
-  return (
-    <div className="mt-4 text-center">
-      <button
-        onClick={() => {
-          navigator.clipboard.writeText(replayUrl).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
-        }}
-        className="text-[13px] text-accent bg-accent/10 px-4 py-2 rounded-full font-medium active:scale-95 transition-transform"
-      >
-        {copied ? t("chatFeed.replayCopied") : t("chatFeed.shareReplay")}
-      </button>
-    </div>
-  );
-}
 
 interface BlindInfo {
   smallBlindPlayerId: string;
@@ -295,7 +275,6 @@ function EventLine({ event, ctx, isAutoRun, tableId }: { event: GameEvent; ctx: 
           <div className="text-[13px] text-text-tertiary text-center mt-4">
             {t("chatFeed.totalHands", { count: event.rankings[0]?.handsPlayed ?? 0 })}
           </div>
-          {tableId && <ReplayButton tableId={tableId} />}
         </div>
       );
 
