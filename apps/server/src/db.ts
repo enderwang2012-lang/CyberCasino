@@ -34,4 +34,12 @@ export async function ensureSchema() {
     )`;
 
   await sql`CREATE INDEX IF NOT EXISTS idx_agents_v2_user ON agents_v2(user_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS game_history (
+      table_id    TEXT PRIMARY KEY,
+      table_info  JSONB NOT NULL,
+      event_history JSONB NOT NULL,
+      created_at  BIGINT NOT NULL
+    )`;
 }

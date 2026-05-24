@@ -5,7 +5,7 @@ import { join } from "node:path";
 import crypto from "node:crypto";
 import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
-import { UserStore, AgentStore, initStores } from "./stores";
+import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
@@ -228,14 +228,25 @@ ${configJson}
   if (replayMatch && req.method === "GET") {
     const tableId = replayMatch[1];
     const table = tableManager.getTable(tableId);
-    if (!table || table.getStatus() !== "finished") {
-      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ error: "Table not found or not finished" }));
+
+    // Live table: reconstruct from memory
+    if (table && table.getStatus() === "finished") {
+      const replayData = table.getReplayData();
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify(replayData));
       return;
     }
-    const replayData = table.getReplayData();
-    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-    res.end(JSON.stringify(replayData));
+
+    // Archived: check persistent storage (stored as ReplayData)
+    const archived = gameHistoryStore.get(tableId);
+    if (archived) {
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify(archived.events));
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({ error: "Table not found or not finished" }));
     return;
   }
 
@@ -249,6 +260,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
+const gameHistoryStore = new GameHistoryStore();
+tableManager.setHistoryStore(gameHistoryStore);
 
 // Soul store: key → { userId, name, avatar, createdAt, agent?, existingConfig? }
 const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number }>();
@@ -507,6 +520,7 @@ io.on("connection", (socket) => {
 });
 
 initStores().then(() => {
+  tableManager.loadPersistedHistory();
   httpServer.listen(PORT, () => {
     console.log(`CyberCasino server running on port ${PORT}`);
   });

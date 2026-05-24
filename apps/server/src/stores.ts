@@ -1,4 +1,4 @@
-import type { UserIdentity, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
+import type { UserIdentity, AgentConfig, AgentConfigV2, TableInfo } from "@cybercasino/shared";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sql, ensureSchema } from "./db";
@@ -11,6 +11,7 @@ const DATA_DIR = join(import.meta.dirname, "..", "data");
 const USERS_FILE = join(DATA_DIR, "users.json");
 const AGENTS_FILE = join(DATA_DIR, "agents.json");
 const AGENTS_V2_FILE = join(DATA_DIR, "agents_v2.json");
+const HISTORY_FILE = join(DATA_DIR, "game_history.json");
 
 function ensureDataDir() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -50,6 +51,7 @@ let userMap = new Map<string, UserIdentity>();
 let agentMap = new Map<string, AgentConfig>();
 let agentsV2Map = new Map<string, AgentConfigV2[]>();
 let agentV2Counter = 0;
+let historyMap = new Map<string, { info: TableInfo; events: unknown[] }>();
 
 export async function initStores() {
   if (sql) {
@@ -70,7 +72,14 @@ export async function initStores() {
       const n = parseInt(agent.id.replace("agent-", ""), 10);
       if (!isNaN(n)) agentV2Counter = Math.max(agentV2Counter, n);
     }
-    console.log(`[stores] loaded ${userMap.size} users, ${agentRows.length} agents from PostgreSQL`);
+    const historyRows = await sql`SELECT * FROM game_history ORDER BY created_at DESC`;
+    for (const r of historyRows) {
+      historyMap.set(r.table_id, {
+        info: typeof r.table_info === "string" ? JSON.parse(r.table_info) : r.table_info,
+        events: typeof r.event_history === "string" ? JSON.parse(r.event_history) : r.event_history,
+      });
+    }
+    console.log(`[stores] loaded ${userMap.size} users, ${agentRows.length} agents, ${historyRows.length} game histories from PostgreSQL`);
   } else {
     userMap = new Map(Object.entries(loadJson<Record<string, UserIdentity>>(USERS_FILE, {})));
     const agents = loadJson<AgentConfig[]>(AGENTS_FILE, []);
@@ -83,7 +92,11 @@ export async function initStores() {
       const n = parseInt(agent.id.replace("agent-", ""), 10);
       if (!isNaN(n)) agentV2Counter = Math.max(agentV2Counter, n);
     }
-    console.log(`[stores] loaded ${userMap.size} users, ${agentsV2.length} agents from file`);
+    const histories = loadJson<{ info: TableInfo; events: unknown[] }[]>(HISTORY_FILE, []);
+    for (const h of histories) {
+      historyMap.set(h.info.id, h);
+    }
+    console.log(`[stores] loaded ${userMap.size} users, ${agentsV2.length} agents, ${histories.length} game histories from file`);
   }
 }
 
@@ -196,6 +209,39 @@ export class AgentStore {
     } else {
       const all = Array.from(agentsV2Map.values()).flat();
       saveJson(AGENTS_V2_FILE, all);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GameHistoryStore — persistent game history
+// ---------------------------------------------------------------------------
+
+export class GameHistoryStore {
+  getAll(): { info: TableInfo; events: unknown[] }[] {
+    return Array.from(historyMap.values());
+  }
+
+  get(tableId: string): { info: TableInfo; events: unknown[] } | undefined {
+    return historyMap.get(tableId);
+  }
+
+  save(info: TableInfo, events: unknown[]): void {
+    historyMap.set(info.id, { info, events });
+    this.persist();
+  }
+
+  private persist() {
+    const all = Array.from(historyMap.values());
+    if (sql) {
+      sql`DELETE FROM game_history`.then(() => {
+        for (const h of all) {
+          sql`INSERT INTO game_history (table_id, table_info, event_history, created_at)
+              VALUES (${h.info.id}, ${JSON.stringify(h.info)}::jsonb, ${JSON.stringify(h.events)}::jsonb, ${h.info.finishedAt ?? Date.now()})`.catch(console.error);
+        }
+      });
+    } else {
+      saveJson(HISTORY_FILE, all);
     }
   }
 }

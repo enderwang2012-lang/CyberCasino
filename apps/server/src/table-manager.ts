@@ -1,5 +1,6 @@
 import type { TableConfig, TableInfo, AgentConfig, AgentConfigV2 } from "@cybercasino/shared";
 import { TableInstance } from "./table-instance";
+import type { GameHistoryStore } from "./stores";
 
 const CASINO_NAMES = [
   "Bellagio", "Marina Bay Sands", "The Venetian", "Wynn Palace",
@@ -29,6 +30,17 @@ export class TableManager {
   private agentV2ConfigsForTable = new Map<string, Map<string, AgentConfigV2>>();
   private finishedTables: TableInfo[] = [];
   private presetTableId: string | null = null;
+  private historyStore: GameHistoryStore | null = null;
+
+  setHistoryStore(store: GameHistoryStore): void {
+    this.historyStore = store;
+  }
+
+  loadPersistedHistory(): void {
+    if (!this.historyStore) return;
+    const entries = this.historyStore.getAll();
+    this.finishedTables = entries.map((e) => e.info);
+  }
 
   ensurePresetTable(): TableInstance {
     if (this.presetTableId) {
@@ -81,8 +93,14 @@ export class TableManager {
     const info = this.toTableInfo(table);
     info.finishedAt = Date.now();
     this.finishedTables.unshift(info);
-    if (this.finishedTables.length > 10) {
+    if (this.finishedTables.length > 50) {
       this.finishedTables.pop();
+    }
+
+    // Persist to database/file — store reconstructed ReplayData
+    if (this.historyStore) {
+      const replayData = table.getReplayData();
+      this.historyStore.save(info, replayData);
     }
   }
 
