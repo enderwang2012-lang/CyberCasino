@@ -337,7 +337,18 @@ export class TableInstance {
           expression: v2Config.strategy.expression,
         });
       }
-      return new StrategyAgent(v2Config);
+      // No webhook — use platform LLM (DeepSeek) with strategy config
+      const skill = getSkillById((v2Config.strategy as any).skillId) ?? getSkillById("tight-aggressive");
+      return new HybridAgent({
+        id: v2Config.id,
+        name: v2Config.name,
+        avatar: v2Config.avatar,
+        usePlatformLlm: true,
+        skill: skill!,
+        preflop: v2Config.strategy.preflop,
+        postflop: v2Config.strategy.postflop,
+        expression: v2Config.strategy.expression,
+      });
     }
 
     // Builtin agents: use HybridAgent with platform LLM + matched Skill
