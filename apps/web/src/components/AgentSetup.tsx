@@ -125,41 +125,6 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
     setError(null);
   }
 
-  // ── Strategy overview for preview card ──
-  function StrategyOverview({ agent }: { agent: AgentConfigV2 }) {
-    const strategy = agent.strategy;
-    const preflopPositions = strategy.preflop?.ranges
-      ? Object.entries(strategy.preflop.ranges).map(([pos, range]) => ({
-          pos,
-          raise: range.raise?.length ?? 0,
-          call: range.call?.length ?? 0,
-        }))
-      : [];
-
-    if (preflopPositions.length === 0) return null;
-
-    return (
-      <>
-        <div className="text-text-tertiary text-[12px] font-medium mb-2 uppercase tracking-wide">
-          {isZh ? "策略概览" : "Strategy Overview"}
-        </div>
-        <div className="grid grid-cols-3 gap-2 text-center mb-3">
-          {preflopPositions.slice(0, 6).map(({ pos, raise, call }) => (
-            <div key={pos} className="bg-surface-elevated rounded-lg px-2 py-2">
-              <div className="text-text-tertiary text-[11px]">{pos}</div>
-              <div className="text-text-primary text-[13px] font-medium">{raise}R / {call}C</div>
-            </div>
-          ))}
-        </div>
-        <div className="text-text-tertiary text-[12px]">
-          {strategy.postflop?.length ?? 0} {isZh ? "条翻牌后规则" : "postflop rules"}
-          {strategy.expression?.thoughtLanguage && ` · ${strategy.expression.thoughtLanguage.toUpperCase()}`}
-          {strategy.imperfection && ` · ${(strategy.imperfection.baseMistakeRate * 100).toFixed(0)}% ${isZh ? "失误率" : "mistake rate"}`}
-        </div>
-      </>
-    );
-  }
-
   return (
     <div className="min-h-[100dvh] flex flex-col items-center p-6 pt-[max(3rem,env(safe-area-inset-top))] bg-surface-elevated">
       <button
@@ -198,8 +163,6 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
                 <div className="text-text-secondary text-[13px]">{existingAgent.description ?? ""}</div>
               </div>
             </div>
-
-            <StrategyOverview agent={existingAgent} />
 
             {existingAgent.soulKey && (
               <div className="border-t border-surface-elevated pt-4 mt-4">
@@ -262,8 +225,6 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
                 <div className="text-text-secondary text-[13px]">{newAgent.description ?? ""}</div>
               </div>
             </div>
-
-            <StrategyOverview agent={newAgent} />
 
             <div className="border-t border-surface-elevated my-4" />
 
