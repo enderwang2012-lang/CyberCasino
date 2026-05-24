@@ -22,7 +22,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     personalities, historyTables,
     joinTable, leaveTable, saveAgent, testWebhook,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
-    startGame, getHistory, refreshLobby, clearTableError,
+    startGame, getHistory, refreshLobby, clearTableError, deleteAgent,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
   const [agentV2, setAgentV2] = useState<AgentConfigV2 | null>(null);
@@ -140,6 +140,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         userId={user.userId}
         onBack={handleAgentListBack}
         onAgentCreated={() => { fetchAgentV2(); fetchAgentsList(); }}
+        onDeleteAgent={(id) => { deleteAgent(id); fetchAgentsList(); }}
       />
     );
   }

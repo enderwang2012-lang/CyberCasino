@@ -66,6 +66,9 @@ export function useSocket(
     socket.on("agent:saved", (config) => setAgentConfig(config));
     socket.on("agent:config", (config) => setAgentConfig(config));
     socket.on("agent:webhookPing", (result) => setWebhookPingResult(result));
+    socket.on("agent:deleted", () => {
+      setAgentConfig(null);
+    });
     socket.on("table:error", (error) => setTableError(error));
     socket.on("table:started", (tableId) => setTableStarted(tableId));
     socket.on("table:stopped", () => setTableStarted(null));
@@ -129,6 +132,10 @@ export function useSocket(
 
   const clearTableError = useCallback(() => setTableError(null), []);
 
+  const deleteAgent = useCallback((agentId: string) => {
+    socketRef.current?.emit("agent:delete", agentId);
+  }, []);
+
   return {
     connected,
     tables,
@@ -153,5 +160,6 @@ export function useSocket(
     getHistory,
     refreshLobby,
     clearTableError,
+    deleteAgent,
   };
 }

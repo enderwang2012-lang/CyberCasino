@@ -196,7 +196,11 @@ export function generateThought(
 
   // 1. Select the best matching thought template
   const templateKey = selectTemplate(state, action);
-  let message = expression.thoughtTemplates[templateKey]
+  const rawTemplate = expression.thoughtTemplates[templateKey];
+  const template = Array.isArray(rawTemplate)
+    ? rawTemplate[Math.floor(Math.random() * rawTemplate.length)]
+    : rawTemplate;
+  let message = template
     .replace("{handDesc}", handDesc)
     .replace("{actionDesc}", actionDesc)
     .replace("{concern}", context?.concern ?? "")

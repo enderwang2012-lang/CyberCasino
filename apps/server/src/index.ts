@@ -379,6 +379,13 @@ io.on("connection", (socket) => {
     socket.emit("agent:config", agentStore.getByUserId(userId) ?? null);
   });
 
+  socket.on("agent:delete", (agentId) => {
+    const userId = socketUserMap.get(socket.id);
+    if (!userId) { socket.emit("table:error", "Not registered"); return; }
+    agentStore.deleteV2(userId, agentId);
+    socket.emit("agent:deleted", agentId);
+  });
+
   socket.on("agent:testWebhook", async (url) => {
     const userId = socketUserMap.get(socket.id);
     const result = await pingWebhook(url);

@@ -289,12 +289,21 @@ ${hint}
       const category = classifyPreflopHand(view.myCards);
       const isZh = language === "zh";
       const thoughts: Record<string, string[]> = {
-        premium: isZh ? ["好牌在手，该出手了", "这手牌值得玩"] : ["Premium hand, let's go"],
-        good: isZh ? ["还不错，看看翻牌"] : ["Decent, let's see"],
-        trash: isZh ? ["算了，这牌不行"] : ["Not worth it"],
-        bluff: isZh ? ["来点刺激的！"] : ["Time for some action!"],
+        premium: isZh
+          ? ["好牌在手，该出手了", "这手牌值得玩", "AA到手，不加注说不过去", "起手就是大对子，冲", "这牌不打对不起自己"]
+          : ["Premium hand, let's go", "Can't fold this", "Time to build the pot"],
+        good: isZh
+          ? ["还不错，看看翻牌", "这牌有搞头", "能玩，先入池看看", "位置不错，这手牌值得一看", "有潜力，跟一手试试", "中等偏上，入池观察"]
+          : ["Decent hand, let's see", "Playable, seeing a flop", "Worth a call from position"],
+        trash: isZh
+          ? ["算了，这牌不行", "垃圾牌，扔了", "这也能发出来？不要了", "烂牌不浪费时间", "过过过，下一首"]
+          : ["Not worth it", "Muck it", "Trash hand, moving on"],
+        bluff: isZh
+          ? ["来点刺激的！", "该搞事了", "这把玩把大的", "吓唬吓唬他们", "让他们猜去吧"]
+          : ["Time for some action!", "Let's mix it up", "Time to apply pressure"],
       };
-      message = thoughts[category]?.[0] ?? (isZh ? "想想..." : "Thinking...");
+      const pool = thoughts[category] ?? thoughts.good;
+      message = pool[Math.floor(Math.random() * pool.length)];
     } else {
       const ctx: PostflopContext = {
         myCards: view.myCards,
@@ -310,13 +319,23 @@ ${hint}
         tone: { warmth: 0.5, sass: 0.3, intensity: 0.5, humor: 0.3 },
         catchphrases: [] as string[],
         verbalTics: [] as string[],
-        thoughtTemplates: { confident: "{handDesc}。{actionDesc}。", worried: "{handDesc}...", bluffing: "{handDesc}...", frustrated: "{handDesc}..." },
+        thoughtTemplates: {
+          confident: ["{handDesc}，{actionDesc}", "不错，{handDesc}，{actionDesc}", "{handDesc}，可以搞一搞", "手里{handDesc}，{actionDesc}"],
+          worried: ["{handDesc}，有点虚", "这{handDesc}不太稳", "{handDesc}，得小心"],
+          bluffing: ["装一下，{actionDesc}", "让他们以为我有牌", "偷一下试试"],
+          frustrated: ["烦，{handDesc}", "这牌真难受", "{handDesc}，算了"],
+        },
       } : {
         thoughtLanguage: "en" as const,
         tone: { warmth: 0.5, sass: 0.3, intensity: 0.5, humor: 0.3 },
         catchphrases: [] as string[],
         verbalTics: [] as string[],
-        thoughtTemplates: { confident: "{handDesc}. {actionDesc}.", worried: "{handDesc}...", bluffing: "{handDesc}...", frustrated: "{handDesc}..." },
+        thoughtTemplates: {
+          confident: ["{handDesc}, {actionDesc}", "Got {handDesc}, {actionDesc}", "{handDesc}, let's go"],
+          worried: ["{handDesc}, not great", "This {handDesc} feels shaky", "{handDesc}, gotta be careful"],
+          bluffing: ["Bluffing with {actionDesc}", "Making a move", "Let them think I have it"],
+          frustrated: ["{handDesc}, ugh", "This {handDesc} is rough", "{handDesc}, whatever"],
+        },
       };
       const generated = generateThought(conditions[0], action, this.config.expression ?? defaultExpression, this.psychState);
       message = generated.message;

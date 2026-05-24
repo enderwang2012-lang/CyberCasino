@@ -51,10 +51,10 @@ function defaultExpression(language: "zh" | "en" = "zh"): ExpressionConfig {
     catchphrases: [],
     verbalTics: [],
     thoughtTemplates: {
-      confident: "{handDesc}。{actionDesc}。",
-      worried: "{handDesc}，有些不确定...",
-      bluffing: "{handDesc}，试试看...",
-      frustrated: "{handDesc}，可恶...",
+      confident: ["{handDesc}，{actionDesc}", "不错，{handDesc}，{actionDesc}", "{handDesc}，搞起"],
+      worried: ["{handDesc}，有些不确定", "这{handDesc}不太稳", "{handDesc}，再想想"],
+      bluffing: ["{handDesc}，试试看", "装一下", "偷鸡一把"],
+      frustrated: ["{handDesc}，可恶", "这牌真烦", "{handDesc}，难受"],
     },
   };
 }

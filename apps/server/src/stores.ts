@@ -157,6 +157,30 @@ export class AgentStore {
     return agentsV2Map.get(userId) ?? [];
   }
 
+  deleteV2(userId: string, agentId: string): boolean {
+    const list = agentsV2Map.get(userId);
+    if (!list) return false;
+    const idx = list.findIndex((a) => a.id === agentId);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    if (list.length === 0) agentsV2Map.delete(userId);
+    this.persistAllV2();
+    if (sql) {
+      sql`DELETE FROM agents_v2 WHERE id = ${agentId}`;
+    }
+    return true;
+  }
+
+  private persistAllV2() {
+    const all = Array.from(agentsV2Map.values()).flat();
+    saveJson(AGENTS_V2_FILE, all);
+    if (sql) {
+      sql`DELETE FROM agents_v2`.then(() => {
+        for (const a of all) this.persistV2(a);
+      });
+    }
+  }
+
   nextV2Id(): string {
     return `agent-${++agentV2Counter}`;
   }

@@ -282,10 +282,10 @@ export interface ToneSpectrum {
 }
 
 export interface ThoughtTemplates {
-  confident: string;
-  worried: string;
-  bluffing: string;
-  frustrated: string;
+  confident: string | string[];
+  worried: string | string[];
+  bluffing: string | string[];
+  frustrated: string | string[];
 }
 
 export interface ExpressionConfig {
@@ -528,6 +528,7 @@ export interface ServerToClientEvents {
   "table:history": (tables: TableInfo[]) => void;
   "agent:created": (data: { agentId: string; status: string; previewUrl?: string }) => void;
   "agent:create-error": (data: { error: string; details?: string }) => void;
+  "agent:deleted": (agentId: string) => void;
 }
 
 export interface ClientToServerEvents {
@@ -537,6 +538,7 @@ export interface ClientToServerEvents {
   "user:register": (userId: string, userInfo?: { name: string; avatar: string; provider: AuthProvider }) => void;
   "agent:save": (config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => void;
   "agent:get": () => void;
+  "agent:delete": (agentId: string) => void;
   "agent:testWebhook": (url: string) => void;
   "table:sit": (tableId: string) => void;
   "table:sit-builtin": (tableId: string, personalityId: string) => void;

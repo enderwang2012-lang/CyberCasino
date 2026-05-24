@@ -20,9 +20,10 @@ interface AgentListPageProps {
   userId: string;
   onBack: () => void;
   onAgentCreated: () => void;
+  onDeleteAgent?: (agentId: string) => void;
 }
 
-export function AgentListPage({ agents, userId, onBack, onAgentCreated }: AgentListPageProps) {
+export function AgentListPage({ agents, userId, onBack, onAgentCreated, onDeleteAgent }: AgentListPageProps) {
   const { language } = useLanguage();
   const isZh = language === "zh";
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -187,6 +188,21 @@ export function AgentListPage({ agents, userId, onBack, onAgentCreated }: AgentL
                       : "Send this link to your AI assistant to help shape your player's soul."}
                   </p>
                 </div>
+
+                {onDeleteAgent && (
+                  <div className="border-t border-surface-elevated pt-3 mt-3">
+                    <button
+                      onClick={() => {
+                        if (confirm(isZh ? `确定删除牌手「${agent.name}」？` : `Delete player "${agent.name}"?`)) {
+                          onDeleteAgent(agent.id);
+                        }
+                      }}
+                      className="text-[13px] text-red-500 hover:text-red-600 min-h-[44px] flex items-center"
+                    >
+                      {isZh ? "删除牌手" : "Delete Player"}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
 
