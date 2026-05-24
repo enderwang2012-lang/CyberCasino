@@ -6,14 +6,13 @@ import { useSocket } from "@/hooks/useSocket";
 import { Lobby } from "@/components/Lobby";
 import { TableView } from "@/components/TableView";
 import { AgentSetup } from "@/components/AgentSetup";
-import { AgentListPage } from "@/components/AgentListPage";
 import { TableWaitingRoom } from "@/components/TableWaitingRoom";
 import { HistoryPage } from "@/components/HistoryPage";
 import { LandingPage } from "@/components/LandingPage";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { AgentConfigV2 } from "@cybercasino/shared";
 
-type ViewState = "lobby" | "agent-setup" | "agent-list" | "table-waiting" | "table-live" | "history";
+type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "history";
 
 function AuthenticatedApp({ user }: { user: { userId: string; name: string; avatar: string; provider: string } }) {
   const {
@@ -49,7 +48,6 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   const { language } = useLanguage();
   const [view, setView] = useState<ViewState>("lobby");
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
-  const [returnTo, setReturnTo] = useState<ViewState>("lobby");
 
   const activeTable = tables.find((t) => t.id === activeTableId);
 
@@ -96,21 +94,11 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     clearTableError();
   }
 
-  function handleAgentSetup(from: ViewState = "lobby") {
-    setReturnTo(from);
+  function handleAgentSetup() {
     setView("agent-setup");
   }
 
   function handleAgentSetupBack() {
-    setView(returnTo);
-  }
-
-  function handleAgentList() {
-    fetchAgentsList();
-    setView("agent-list");
-  }
-
-  function handleAgentListBack() {
     setView("lobby");
   }
 
@@ -126,20 +114,9 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         onCreated={() => {
           fetchAgentV2();
           fetchAgentsList();
-          setView(returnTo);
+          setView("lobby");
         }}
         onBack={handleAgentSetupBack}
-      />
-    );
-  }
-
-  if (view === "agent-list") {
-    return (
-      <AgentListPage
-        agents={agentsList}
-        userId={user.userId}
-        onBack={handleAgentListBack}
-        onAgentCreated={() => { fetchAgentV2(); fetchAgentsList(); }}
         onDeleteAgent={(id) => { deleteAgent(id); fetchAgentsList(); }}
       />
     );
@@ -169,7 +146,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         onRemoveSeat={(seatIndex) => removeSeat(activeTableId, seatIndex)}
         onStart={() => startGame(activeTableId, language)}
         onBack={handleLeave}
-        onAgentSetup={() => handleAgentSetup("table-waiting")}
+        onAgentSetup={handleAgentSetup}
         error={tableError}
       />
     );
@@ -194,8 +171,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     <Lobby
       tables={tables}
       onJoin={handleJoinTable}
-      onAgentSetup={() => handleAgentSetup("lobby")}
-      onAgentList={handleAgentList}
+      onAgentSetup={handleAgentSetup}
       onHistory={handleHistory}
       onClearSeats={clearSeats}
       connected={connected}

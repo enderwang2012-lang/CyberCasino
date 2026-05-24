@@ -7,3 +7,6 @@ dist/
 .env
 .env.local
 .gstack/
+.design/
+*.tsbuildinfo
+apps/server/data/
