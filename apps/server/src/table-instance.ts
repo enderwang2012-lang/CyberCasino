@@ -477,7 +477,11 @@ export class TableInstance {
             break;
           }
           case "raise": {
-            const raiseAmount = action.amount ?? currentBet + minRaise;
+            let raiseAmount = action.amount ?? currentBet + minRaise;
+            const minTotalBet = currentBet + minRaise;
+            if (raiseAmount < minTotalBet) {
+              raiseAmount = minTotalBet;
+            }
             const totalBet = Math.min(raiseAmount, myShadow.bet + myShadow.chips);
             const toAdd = totalBet - myShadow.bet;
             myShadow.chips -= toAdd;

@@ -188,11 +188,12 @@ export class StrategyAgent implements IPokerAgent {
     // ---------- Raise amount ----------
     let raiseAmount: number | undefined;
     if (finalAction === "raise") {
+      const minTotalBet = view.currentBet + minRaise;
       if (finalAction === strategicAction && strategicAmount != null) {
-        raiseAmount = Math.max(minRaise, strategicAmount);
+        raiseAmount = Math.max(minTotalBet, strategicAmount);
       } else {
         // Mistake-raise: default to pot-sized
-        raiseAmount = Math.max(minRaise, Math.round(potSize * 0.5));
+        raiseAmount = Math.max(minTotalBet, Math.round(potSize * 0.5));
       }
     }
 

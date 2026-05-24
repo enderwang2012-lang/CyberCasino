@@ -175,10 +175,13 @@ function applyStackAdjustments(
   callSet: Set<string>,
   adjustments: StackDepthAdjustment[],
   effectiveStackBB: number,
+  myStackBB?: number,
 ): { raiseSet: Set<string>; callSet: Set<string>; reasons: string[] } {
   const reasons: string[] = [];
   let raisers = new Set(raiseSet);
   let callers = new Set(callSet);
+  // Use player's own stack for display, effective stack for decisions
+  const displayBB = myStackBB ?? effectiveStackBB;
 
   for (const adj of adjustments) {
     if (effectiveStackBB > adj.minBB) continue;
@@ -187,7 +190,7 @@ function applyStackAdjustments(
       // Push/fold mode: all call hands become raise, no calling
       for (const hand of callers) raisers.add(hand);
       callers = new Set<string>();
-      reasons.push(`短筹码 push/fold 模式（${effectiveStackBB.toFixed(1)}bb）`);
+      reasons.push(`短筹码 push/fold 模式（${displayBB.toFixed(1)}bb）`);
       break; // push/fold overrides everything else
     }
 
@@ -196,7 +199,7 @@ function applyStackAdjustments(
         for (const expanded of expandRangeEntry(hand)) {
           if (!raisers.has(expanded) && !callers.has(expanded)) {
             raisers.add(expanded);
-            reasons.push(`筹码不深（${effectiveStackBB.toFixed(1)}bb），放宽 ${expanded}`);
+            reasons.push(`筹码不深（${displayBB.toFixed(1)}bb），放宽 ${expanded}`);
           }
         }
       }
@@ -208,7 +211,7 @@ function applyStackAdjustments(
           if (raisers.has(expanded)) {
             raisers.delete(expanded);
             callers.add(expanded);
-            reasons.push(`筹码不深（${effectiveStackBB.toFixed(1)}bb），${expanded} 从加注降为跟注`);
+            reasons.push(`筹码不深（${displayBB.toFixed(1)}bb），${expanded} 从加注降为跟注`);
           }
         }
       }
@@ -309,7 +312,8 @@ export function decidePreflop(
     const ctx = analyzePreflopContext(view);
 
     if (config.stackAdjustments?.length) {
-      const result = applyStackAdjustments(raiseSet, callSet, config.stackAdjustments, ctx.effectiveStackBB);
+      const myStackBB = view.myChips / bigBlind;
+      const result = applyStackAdjustments(raiseSet, callSet, config.stackAdjustments, ctx.effectiveStackBB, myStackBB);
       raiseSet = result.raiseSet;
       callSet = result.callSet;
       adjustments.push(...result.reasons);
@@ -328,7 +332,8 @@ export function decidePreflop(
   if (raiseSet.has(handKey)) {
     const sizingStr = currentBet <= bigBlind ? config.sizing.openRaise : config.sizing.threeBet;
     const sizingMultiplier = parseFloat(sizingStr) || 2.5;
-    const raiseAmount = Math.max(minRaise, Math.round(bigBlind * sizingMultiplier));
+    const minTotalBet = currentBet + minRaise;
+    const raiseAmount = Math.max(minTotalBet, Math.round(bigBlind * sizingMultiplier));
     return {
       action: "raise",
       amount: raiseAmount,

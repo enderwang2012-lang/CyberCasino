@@ -224,7 +224,12 @@ export async function* gameLoop(
           }
 
           case "raise": {
-            const raiseAmount = action.amount ?? currentBet + minRaise;
+            let raiseAmount = action.amount ?? currentBet + minRaise;
+            // Validate: raise must meet minimum raise requirement
+            const minTotalBet = currentBet + minRaise;
+            if (raiseAmount < minTotalBet) {
+              raiseAmount = minTotalBet;
+            }
             const totalBet = Math.min(raiseAmount, player.bet + player.chips);
             const toAdd = totalBet - player.bet;
             const actualRaise = totalBet - currentBet;
