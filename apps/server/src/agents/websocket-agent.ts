@@ -93,7 +93,8 @@ export class WebSocketAgent implements IPokerAgent {
       this.stylePrompt,
     );
 
-    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language);
+    const styleProfile = wsAgentManager.getStyleProfile(this.id);
+    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language, styleProfile);
     const decision = ruleResult.decision ?? ruleFallback(view, personality, validActions, callAmount, language);
 
     return {

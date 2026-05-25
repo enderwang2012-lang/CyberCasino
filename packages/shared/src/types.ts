@@ -203,7 +203,7 @@ export type PostflopAction =
   | "trap"
   | "donk-bet";
 
-export type Street = "flop" | "turn" | "river";
+export type Street = "preflop" | "flop" | "turn" | "river";
 
 export interface PostflopRule {
   when: PostflopCondition;
@@ -630,3 +630,313 @@ export interface ReplayData {
   rankings: { playerId: string; position: number }[];
   totalHands: number;
 }
+
+// ===========================================================================
+// Strategy Engine V2 — Types
+// ===========================================================================
+
+// --- Hand classification (postflop 9-level) ---
+
+export type HandCategory =
+  | "nuts"
+  | "very_strong_value"
+  | "medium_value"
+  | "thin_value"
+  | "showdown_value"
+  | "strong_draw"
+  | "weak_draw"
+  | "air_with_blocker"
+  | "pure_air";
+
+// --- Board texture ---
+
+export interface BoardTexture {
+  paired: boolean;
+  monotone: boolean;
+  flushDrawPresent: boolean;
+  straightConnectivity: "low" | "medium" | "high";
+  highCardStructure: "ace_high" | "broadway" | "middle" | "low";
+  dryness: "dry" | "semi_wet" | "wet";
+}
+
+// --- Style profile (10 dimensions) ---
+
+export interface StyleProfile {
+  preflopLooseness: number;  // 0=tight 1=loose — preflop hand range width
+  aggression: number;         // 0=passive 1=aggressive — bet/raise frequency
+  bluffAppetite: number;      // 0=never bluff 1=frequent bluff — bluff ratio in betting range
+  valueThinness: number;      // 0=thick value only 1=thin value — willingness to value bet marginal hands
+  cbetPressure: number;       // 0=no cbet 1=cbet everything — continuation bet frequency
+  defenseStickiness: number;  // 0=fold easily 1=sticky defender — call/fold threshold on borderline
+  sizingPressure: number;     // 0=small bets 1=overbets — bet sizing multiplier
+  trapTendency: number;       // 0=always bet 1=always trap — slowplay with strong hands
+  adaptationRate: number;     // 0=no adaptation 1=fast adaptation — opponent exploit speed
+  varianceTolerance: number;  // 0=low variance 1=high variance — tolerance for high-variance lines
+}
+
+export const STYLE_DEFAULTS: StyleProfile = {
+  preflopLooseness: 0.50,
+  aggression: 0.50,
+  bluffAppetite: 0.30,
+  valueThinness: 0.50,
+  cbetPressure: 0.50,
+  defenseStickiness: 0.50,
+  sizingPressure: 0.50,
+  trapTendency: 0.30,
+  adaptationRate: 0.50,
+  varianceTolerance: 0.50,
+};
+
+// --- High-level style (player-facing 3-5 params) ---
+
+export interface HighLevelStyle {
+  tightness?: number;         // 0=loose 1=tight — overall hand selectivity
+  aggression?: number;        // 0=passive 1=aggressive
+  bluffFrequency?: number;    // 0=honest 1=frequent bluffer
+  valueOrientation?: number;  // 0=bluff-heavy 1=value-heavy
+  adaptability?: number;      // 0=no adaptation 1=fast adaptation
+}
+
+// --- Style config (dual-layer) ---
+
+export interface StyleConfig {
+  highLevel?: HighLevelStyle;
+  override?: Partial<StyleProfile>;
+}
+
+// --- Decision state (unified input for decision pipeline) ---
+
+export type PreflopNode =
+  | "unopened"
+  | "facing_limp"
+  | "facing_open"
+  | "facing_open_and_call"
+  | "facing_three_bet"
+  | "facing_four_bet"
+  | "blind_vs_blind"
+  | "short_stack_push_fold";
+
+export interface DecisionState {
+  handId: string;
+  street: Street;
+
+  hero: {
+    seat: number;
+    position: Position;
+    holeCards: Card[];
+    stackBb: number;
+    investedBb: number;
+  };
+
+  table: {
+    playerCount: number;
+    activePlayers: number;
+    potBb: number;
+    effectiveStackBb: number;
+    anteBb: number;
+    tournamentStage?: "early" | "middle" | "bubble" | "late" | "heads_up";
+  };
+
+  board: {
+    cards: Card[];
+    texture?: BoardTexture;
+  };
+
+  actionContext: {
+    amountToCallBb: number;
+    facingBetBb: number;
+    minRaiseBb: number;
+    lastAggressorSeat?: number;
+    heroHasInitiative: boolean;
+    playersYetToAct: number;
+    actionHistory: ActionRecord[];
+    preflopNode?: PreflopNode;
+  };
+
+  derived: {
+    spr: number;
+    potOdds?: number;
+    handCategory?: HandCategory;
+    handStrength?: number;    // 0-1 absolute hand strength
+    drawStrength?: number;    // 0-1 draw equity
+    blockerScore?: number;
+    rangeAdvantage?: number;
+    nutAdvantage?: number;
+    multiway: boolean;
+  };
+}
+
+// --- Policy output (baseline strategy result) ---
+
+export type PolicyAction = ActionType | "all_in" | "bet" | "check";
+
+export interface PolicyOutput {
+  actions: Partial<Record<PolicyAction, number>>;  // probability per action
+  sizings?: Array<{
+    sizePotRatio: number;
+    probability: number;
+  }>;
+  reasoningTags: string[];
+}
+
+// --- Decision result (full audit log) ---
+
+export interface DecisionStyleShift {
+  parameter: keyof StyleProfile;
+  action: string;
+  delta: number;
+}
+
+export interface DecisionResult {
+  chosenAction: {
+    type: ActionType | "all_in";
+    amountBb?: number;
+  };
+
+  probabilities: Record<string, number>;
+
+  context: {
+    street: Street;
+    position: Position;
+    handCategory?: HandCategory;
+    boardTexture?: BoardTexture;
+    potOdds?: number;
+    spr: number;
+    multiway: boolean;
+  };
+
+  influences: {
+    baselineTopAction: string;
+    styleShifts: DecisionStyleShift[];
+    opponentShifts: Array<{
+      evidence: string;
+      action: string;
+      delta: number;
+    }>;
+    clampsApplied: string[];
+    llmOverride?: boolean;
+  };
+
+  audit: {
+    baselineVersion: string;
+    styleProfileVersion: string;
+    policySeed: string;
+    hiddenInformationIsolationPassed: boolean;
+  };
+
+  publicExplanation?: string;
+}
+
+// --- Opponent model ---
+
+export interface OpponentModel {
+  opponentId: string;
+  handsObserved: number;
+
+  vpipEstimate?: number;
+  pfrEstimate?: number;
+  threeBetEstimate?: number;
+  foldToCbetEstimate?: number;
+  aggressionEstimate?: number;
+  showdownLooseEstimate?: number;
+
+  tendencies: Array<
+    | "overfolds_flop"
+    | "calls_too_wide"
+    | "raises_too_often"
+    | "underbluffs_river"
+    | "unknown"
+  >;
+
+  confidence: number;  // 0-1, based on sample size
+}
+
+// --- Safety clamp config ---
+
+export interface PolicyClamp {
+  maxStyleLogitShift: number;
+  maxExploitLogitShift: number;
+  minHandsForExploit: number;
+  multiwayBluffMultiplier: number;
+  maxRiverHeroCallShift: number;
+}
+
+export const DEFAULT_POLICY_CLAMP: PolicyClamp = {
+  maxStyleLogitShift: 1.5,
+  maxExploitLogitShift: 1.0,
+  minHandsForExploit: 10,
+  multiwayBluffMultiplier: 0.5,
+  maxRiverHeroCallShift: 0.8,
+};
+
+// --- Bet sizing model ---
+
+export interface BetSizingModel {
+  flop: number[];
+  turn: number[];
+  river: number[];
+  raiseMultipliers: number[];
+}
+
+export const DEFAULT_BET_SIZINGS: BetSizingModel = {
+  flop: [0.33, 0.50, 0.75],
+  turn: [0.50, 0.75, 1.00],
+  river: [0.50, 0.75, 1.00, 1.50],
+  raiseMultipliers: [2.5, 3.0, 4.0],
+};
+
+// --- Poker agent config (full) ---
+
+export interface PokerAgentConfig {
+  version: string;
+  game: {
+    format: "NLHE_6MAX";
+    mode: "cash" | "tournament";
+    startingStackBb: number;
+    blindScheduleId?: string;
+  };
+  style: StyleConfig;
+  strategy: {
+    baselineVersion: string;
+    randomnessSeedPolicy: "per_hand" | "per_match";
+    styleShiftLimit: number;
+    exploitShiftLimit: number;
+    opponentModelEnabled: boolean;
+  };
+  fairness: {
+    hiddenInformationIsolation: true;
+    noBotCollusion: true;
+    opponentIdentityBlind: boolean;
+    auditLogging: boolean;
+  };
+  explanation: {
+    publicReasoningEnabled: boolean;
+    storeFullDecisionTrace: boolean;
+  };
+}
+
+// --- Equity estimation helpers ---
+
+export const DRAW_EQUITIES: Record<string, number> = {
+  "flush-draw": 0.36,
+  "straight-draw": 0.32,
+  "gutshot": 0.17,
+  "overcards": 0.25,
+  "combo-draw": 0.45,
+  "flush-draw-overcards": 0.50,
+};
+
+// --- Hand strength by rank (postflop) ---
+
+export const HAND_STRENGTH_MAP: Record<HandRank, number> = {
+  "high-card": 0.15,
+  "pair": 0.35,
+  "two-pair": 0.60,
+  "three-of-a-kind": 0.82,
+  "straight": 0.85,
+  "flush": 0.88,
+  "full-house": 0.93,
+  "four-of-a-kind": 0.97,
+  "straight-flush": 0.99,
+  "royal-flush": 1.00,
+};

@@ -5,9 +5,11 @@ import type {
   AgentDecision,
   ActionType,
   ActionRecord,
+  StyleProfile,
+  HighLevelStyle,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
-import { parseStyleToPersonality } from "./style-parser";
+import { parseStyleToPersonality, parseStyleInput } from "./style-parser";
 import { ruleDecide, ruleFallback } from "./rule-engine";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +22,7 @@ interface WsAgentConnection {
   name: string;
   token: string;
   stylePrompt: string;
+  styleProfile?: StyleProfile;
   connectedAt: number;
   lastHeartbeat: number;
 }
@@ -40,6 +43,7 @@ export class WebSocketAgentManager {
   private agentIdToToken = new Map<string, string>(); // agentId → token
   private pendingDecisions = new Map<string, PendingDecision>(); // `${agentId}:${handIndex}` → pending
   private stylePrompts = new Map<string, string>(); // agentId → stylePrompt (persisted)
+  private styleProfiles = new Map<string, StyleProfile>(); // agentId → StyleProfile (V2)
 
   // Callback to persist style prompt to DB
   private onStyleUpdate?: (agentId: string, style: string) => void;
@@ -50,6 +54,10 @@ export class WebSocketAgentManager {
 
   loadStylePrompt(agentId: string, style: string) {
     this.stylePrompts.set(agentId, style);
+  }
+
+  getStyleProfile(agentId: string): StyleProfile | undefined {
+    return this.styleProfiles.get(agentId);
   }
 
   getStylePrompt(agentId: string): string {
@@ -174,18 +182,47 @@ export class WebSocketAgentManager {
           return;
         }
 
-        // --- update_style ---
+        // --- update_style (supports text, highLevel, profile, or mixed) ---
         if (msg.type === "update_style") {
           const conn = this.connections.get(connToken);
           if (!conn) return;
 
-          const style = msg.style;
-          if (typeof style === "string") {
-            conn.stylePrompt = style;
-            this.stylePrompts.set(conn.agentId, style);
-            this.onStyleUpdate?.(conn.agentId, style);
-            ws.send(JSON.stringify({ type: "style_updated" }));
-            console.log(`[ws-agent] agent ${conn.agentId} updated style: ${style.slice(0, 50)}...`);
+          let styleText = "";
+          let styleProfile: StyleProfile | undefined;
+
+          if (typeof msg.style === "string") {
+            // Format A: plain text (backward compatible)
+            styleText = msg.style;
+            styleProfile = parseStyleInput({ text: styleText });
+          } else if (msg.highLevel || msg.profile || msg.override) {
+            // Format B/C/D: structured data
+            if (msg.profile) {
+              // Format B: full profile
+              styleProfile = parseStyleInput({ profile: msg.profile });
+            } else {
+              // Format C: highLevel + optional override
+              styleProfile = parseStyleInput({
+                highLevel: msg.highLevel,
+                override: msg.override,
+              });
+            }
+            styleText = msg.highLevel
+              ? JSON.stringify(msg.highLevel)
+              : msg.profile
+                ? JSON.stringify(msg.profile)
+                : "";
+          }
+
+          if (styleProfile) {
+            conn.stylePrompt = styleText;
+            conn.styleProfile = styleProfile;
+            this.stylePrompts.set(conn.agentId, styleText);
+            this.styleProfiles.set(conn.agentId, styleProfile);
+            this.onStyleUpdate?.(conn.agentId, styleText);
+            const responsePayload = { type: "style_updated" as const, profile: { ...styleProfile } };
+            const jsonStr = JSON.stringify(responsePayload);
+            console.log(`[ws-agent] sending style_updated response:`, jsonStr);
+            ws.send(jsonStr);
           }
           return;
         }

@@ -6,8 +6,11 @@ import type {
   ActionType,
   AgentPersonality,
   Card,
+  StyleProfile,
+  Position,
 } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
+import { runDecisionPipeline } from "./decision-pipeline";
 
 interface RuleResult {
   decision: AgentDecision | null;
@@ -252,8 +255,21 @@ export function ruleDecide(
   validActions: ActionType[],
   callAmount: number,
   minRaise: number,
-  language: "zh" | "en" = "zh"
+  language: "zh" | "en" = "zh",
+  styleProfile?: StyleProfile,
+  position: Position = "BTN",
 ): RuleResult {
+  // V2 pipeline: if styleProfile is provided, use the new decision pipeline
+  if (styleProfile) {
+    const handId = `hand-${view.handNumber}-${Date.now()}`;
+    const { decision } = runDecisionPipeline(
+      view, validActions, callAmount, minRaise,
+      styleProfile, position, handId, language,
+    );
+    return { decision, confidence: decision.thought.confidence };
+  }
+
+  // V1 fallback: original rule-based logic
   const { myCards, phase, communityCards, pots, smallBlind, bigBlind } = view;
   const potSize = pots.reduce((s, p) => s + p.amount, 0);
   const { tightness, aggression, bluffFrequency, id: pid } = personality;

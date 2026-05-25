@@ -4,10 +4,11 @@ import type {
   AgentDecision,
   ActionType,
   ActionRecord,
+  StyleProfile,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { ruleDecide, ruleFallback } from "./rule-engine";
-import { parseStyleToPersonality } from "./style-parser";
+import { parseStyleToPersonality, parseStyleInput } from "./style-parser";
 import { callWebhook } from "./webhook-caller";
 
 export class ExternalAgent implements IPokerAgent {
@@ -85,7 +86,8 @@ export class ExternalAgent implements IPokerAgent {
       this.stylePrompt
     );
 
-    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language);
+    const styleProfile: StyleProfile = parseStyleInput({ text: this.stylePrompt });
+    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language, styleProfile);
     const decision = ruleResult.decision ?? ruleFallback(view, personality, validActions, callAmount, language);
 
     return {

@@ -4,11 +4,12 @@ import type {
   ActionType,
   AgentPersonality,
   ActionRecord,
+  StyleProfile,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { ruleDecide, ruleFallback } from "./rule-engine";
 import { claudeDecide } from "./claude-agent";
-import { getPersonality } from "./personalities";
+import { getPersonality, STYLE_PRESETS } from "./personalities";
 
 export class PokerAgent implements IPokerAgent {
   readonly personality: AgentPersonality;
@@ -46,7 +47,8 @@ export class PokerAgent implements IPokerAgent {
     minRaise: number,
     language: "zh" | "en" = "zh"
   ): Promise<AgentDecision> {
-    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise, language);
+    const styleProfile: StyleProfile | undefined = STYLE_PRESETS[this.personality.id];
+    const ruleResult = ruleDecide(view, this.personality, validActions, callAmount, minRaise, language, styleProfile);
 
     if (ruleResult.decision && ruleResult.confidence >= this.personality.claudeThreshold) {
       return ruleResult.decision;

@@ -1,4 +1,4 @@
-import type { AgentPersonality } from "@cybercasino/shared";
+import type { AgentPersonality, StyleProfile } from "@cybercasino/shared";
 
 export const PERSONALITIES: AgentPersonality[] = [
   {
@@ -68,6 +68,83 @@ export const PERSONALITIES: AgentPersonality[] = [
     systemPrompt: `You are Phill Ivey, a shape-shifter at the poker table. You constantly change your style — tight one hand, loose the next. Your philosophy: "Be water. Be unreadable." You speak in a playful, teasing way. Nobody can pin you down. You might fold ten hands in a row then suddenly go all-in with a mediocre hand. Your unpredictability IS your strategy.`,
   },
 ];
+
+// --- StyleProfile presets (V2) ---
+
+export const STYLE_PRESETS: Record<string, StyleProfile> = {
+  neon: {
+    preflopLooseness: 0.20,
+    aggression: 0.25,
+    bluffAppetite: 0.05,
+    valueThinness: 0.30,
+    cbetPressure: 0.20,
+    defenseStickiness: 0.20,
+    sizingPressure: 0.30,
+    trapTendency: 0.50,
+    adaptationRate: 0.30,
+    varianceTolerance: 0.10,
+  },
+  viper: {
+    preflopLooseness: 0.70,
+    aggression: 0.85,
+    bluffAppetite: 0.40,
+    valueThinness: 0.65,
+    cbetPressure: 0.80,
+    defenseStickiness: 0.55,
+    sizingPressure: 0.75,
+    trapTendency: 0.15,
+    adaptationRate: 0.50,
+    varianceTolerance: 0.80,
+  },
+  ghost: {
+    preflopLooseness: 0.50,
+    aggression: 0.65,
+    bluffAppetite: 0.60,
+    valueThinness: 0.55,
+    cbetPressure: 0.55,
+    defenseStickiness: 0.50,
+    sizingPressure: 0.60,
+    trapTendency: 0.45,
+    adaptationRate: 0.65,
+    varianceTolerance: 0.70,
+  },
+  oracle: {
+    preflopLooseness: 0.45,
+    aggression: 0.55,
+    bluffAppetite: 0.25,
+    valueThinness: 0.50,
+    cbetPressure: 0.50,
+    defenseStickiness: 0.55,
+    sizingPressure: 0.50,
+    trapTendency: 0.30,
+    adaptationRate: 0.60,
+    varianceTolerance: 0.40,
+  },
+  shark: {
+    preflopLooseness: 0.55,
+    aggression: 0.70,
+    bluffAppetite: 0.35,
+    valueThinness: 0.60,
+    cbetPressure: 0.65,
+    defenseStickiness: 0.45,
+    sizingPressure: 0.55,
+    trapTendency: 0.35,
+    adaptationRate: 0.75,
+    varianceTolerance: 0.55,
+  },
+  fox: {
+    preflopLooseness: 0.50,
+    aggression: 0.55,
+    bluffAppetite: 0.45,
+    valueThinness: 0.50,
+    cbetPressure: 0.50,
+    defenseStickiness: 0.55,
+    sizingPressure: 0.50,
+    trapTendency: 0.40,
+    adaptationRate: 0.70,
+    varianceTolerance: 0.60,
+  },
+};
 
 export function getPersonality(id: string): AgentPersonality {
   const p = PERSONALITIES.find((p) => p.id === id);

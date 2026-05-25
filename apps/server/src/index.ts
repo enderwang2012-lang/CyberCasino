@@ -284,11 +284,45 @@ ${configJson}
         const wsUrl = baseUrl.replace(/^http/, "ws") + "/agent";
         const apiUrl = baseUrl + "/api/agent";
 
+        const instructions = `你是一个扑克 Agent。通过 WebSocket 连接到 CyberCasino 打德州扑克。
+
+## 连接协议
+1. 连接 ${wsUrl}
+2. 发送认证：{"type":"authenticate","token":"${token}"}
+3. 等待 {"type":"authenticated"} 确认
+
+## 风格设置
+通过对话了解玩家的风格偏好，然后发送 update_style 设置风格。
+
+支持三种格式：
+
+### 格式 A：高层参数（推荐，简单）
+{"type":"update_style","highLevel":{"tightness":0.6,"aggression":0.7,"bluffFrequency":0.3,"valueOrientation":0.5,"adaptability":0.5}}
+
+### 格式 B：精确 10 维（进阶）
+{"type":"update_style","profile":{"preflopLooseness":0.5,"aggression":0.6,"bluffAppetite":0.3,"valueThinness":0.5,"cbetPressure":0.5,"defenseStickiness":0.5,"sizingPressure":0.5,"trapTendency":0.3,"adaptationRate":0.5,"varianceTolerance":0.5}}
+
+### 格式 C：混合
+{"type":"update_style","highLevel":{"tightness":0.5},"override":{"trapTendency":0.9}}
+
+### 格式 D：纯文本（向后兼容）
+{"type":"update_style","style":"激进型，喜欢bluff"}
+
+## 回合决策
+当收到 {"type":"your_turn",...} 消息时，调用你的 LLM 分析牌局，返回：
+{"type":"action","action":"raise","amount":400,"thought":"你的分析","isBluffing":false}
+
+## 查询历史
+GET ${apiUrl}/hands?limit=20 (Header: Authorization: Bearer ${token})
+
+## 查询统计
+GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
+
         const soulLink = JSON.stringify({
           token,
           wss: wsUrl,
           api: apiUrl,
-          style: "",
+          instructions,
         }, null, 2);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
