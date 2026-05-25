@@ -3,15 +3,21 @@ import { Server } from "socket.io";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import crypto from "node:crypto";
-import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo, AgentConfigV2 } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
 import type { CreateAgentRequest } from "./api/agent-create";
+import { wsAgentManager } from "./agents/websocket-agent-manager";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
+
+// Helper: find agent by token (soul key)
+function findAgentByToken(token: string, store: AgentStore): AgentConfigV2 | undefined {
+  return store.getV2ByToken(token);
+}
 
 const httpServer = createServer((req, res) => {
   const corsHeaders = {
@@ -250,11 +256,155 @@ ${configJson}
     return;
   }
 
+  // --- External Agent: Create agent and generate soul link ---
+  if (req.url === "/api/external-agent/create" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { userId, name, avatar } = JSON.parse(body);
+        const agentId = agentStore.nextV2Id();
+        const token = `cc_${crypto.randomBytes(16).toString("hex")}`;
+        const now = Date.now();
+
+        const agent: AgentConfigV2 = {
+          id: agentId,
+          userId: userId ?? "anonymous",
+          name: name ?? "My Agent",
+          avatar: avatar ?? "🤖",
+          strategy: { skillId: "tight-aggressive", preflop: {} as any, postflop: [] },
+          soulKey: token,
+          stylePrompt: "",
+          createdAt: now,
+          updatedAt: now,
+        };
+        agentStore.saveV2(agent);
+
+        const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+        const wsUrl = baseUrl.replace(/^http/, "ws") + "/agent";
+        const apiUrl = baseUrl + "/api/agent";
+
+        const soulLink = JSON.stringify({
+          token,
+          wss: wsUrl,
+          api: apiUrl,
+          style: "",
+        }, null, 2);
+
+        res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({
+          agentId,
+          token,
+          soulLink,
+          soulLinkBase64: Buffer.from(soulLink).toString("base64"),
+        }));
+      } catch (err) {
+        console.error("[api] external agent create error:", err);
+        res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: "Failed to create agent" }));
+      }
+    });
+    return;
+  }
+
+  // --- External Agent: Query hand history ---
+  const agentHandsMatch = req.url?.match(/^\/api\/agent\/hands(?:\?(.+))?$/);
+  if (agentHandsMatch && req.method === "GET") {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+      res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Missing authorization" }));
+      return;
+    }
+
+    // Find agent by soul key
+    const agent = findAgentByToken(token, agentStore);
+    if (!agent) {
+      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Agent not found" }));
+      return;
+    }
+
+    const params = new URLSearchParams(agentHandsMatch[1] ?? "");
+    const roomId = params.get("roomId");
+    const limit = parseInt(params.get("limit") ?? "20");
+
+    const allHistory = gameHistoryStore.getAll();
+    let hands = allHistory
+      .filter(h => !roomId || h.info.id === roomId)
+      .flatMap(h => {
+        const events = h.events as any[];
+        return events
+          .filter((e: any) => e.type === "hand-complete" || e.type === "showdown")
+          .map((e: any) => ({
+            ...e,
+            tableId: h.info.id,
+            tableName: h.info.name,
+          }));
+      })
+      .slice(0, limit);
+
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({ hands }));
+    return;
+  }
+
+  // --- External Agent: Query stats ---
+  if (req.url === "/api/agent/stats" && req.method === "GET") {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+      res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Missing authorization" }));
+      return;
+    }
+
+    const agent = findAgentByToken(token, agentStore);
+    if (!agent) {
+      res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Agent not found" }));
+      return;
+    }
+
+    const allHistory = gameHistoryStore.getAll();
+    let totalHands = 0;
+    let wins = 0;
+    let totalPnl = 0;
+
+    for (const h of allHistory) {
+      const events = h.events as any[];
+      for (const e of events) {
+        if (e.type === "hand-complete" && e.winnerId === agent.id) {
+          wins++;
+        }
+        if (e.type === "hand-complete") {
+          totalHands++;
+        }
+      }
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({
+      agentId: agent.id,
+      name: agent.name,
+      totalHands,
+      wins,
+      winRate: totalHands > 0 ? wins / totalHands : 0,
+      stylePrompt: agent.stylePrompt ?? "",
+    }));
+    return;
+  }
+
   res.writeHead(404, corsHeaders);
   res.end();
 });
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN ?? "*" },
+});
+
+// Attach WebSocket server for external agents
+wsAgentManager.attach(httpServer);
+wsAgentManager.setStyleUpdateCallback((agentId, style) => {
+  agentStore.updateStylePrompt(agentId, style);
 });
 
 const tableManager = new TableManager();

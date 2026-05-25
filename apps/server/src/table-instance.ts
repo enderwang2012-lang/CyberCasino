@@ -23,6 +23,8 @@ import { PokerAgent } from "./agents/agent";
 import { ExternalAgent } from "./agents/external-agent";
 import { StrategyAgent } from "./agents/strategy-agent";
 import { HybridAgent } from "./agents/hybrid-agent";
+import { WebSocketAgent } from "./agents/websocket-agent";
+import { wsAgentManager } from "./agents/websocket-agent-manager";
 import { getSkillById } from "./agents/skill-system";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
 import { PERSONALITIES } from "./agents/personalities";
@@ -320,6 +322,18 @@ export class TableInstance {
     agentConfigs?: Map<string, AgentConfig>,
     v2Configs?: Map<string, AgentConfigV2>,
   ): IPokerAgent {
+    // Check if this agent has an active WebSocket connection
+    if (wsAgentManager.isConnected(seat.id)) {
+      const conn = wsAgentManager.getConnection(seat.id);
+      return new WebSocketAgent(
+        seat.id,
+        conn?.name ?? seat.name,
+        seat.avatar,
+        wsAgentManager.getStylePrompt(seat.id),
+        this.id,
+      );
+    }
+
     // V2 config takes priority (custom AI-created agents)
     if (seat.userId && v2Configs?.has(seat.userId)) {
       const v2Config = v2Configs.get(seat.userId)!;

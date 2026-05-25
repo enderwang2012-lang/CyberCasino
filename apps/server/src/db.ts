@@ -35,6 +35,9 @@ export async function ensureSchema() {
 
   await sql`CREATE INDEX IF NOT EXISTS idx_agents_v2_user ON agents_v2(user_id)`;
 
+  // Add style_prompt column if it doesn't exist
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS style_prompt TEXT DEFAULT ''`;
+
   await sql`
     CREATE TABLE IF NOT EXISTS game_history (
       table_id    TEXT PRIMARY KEY,

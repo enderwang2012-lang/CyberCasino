@@ -38,6 +38,7 @@ function rowToAgentV2(r: any): AgentConfigV2 {
     soulKey: r.soul_key ?? undefined,
     webhookUrl: r.webhook_url ?? undefined,
     webhookVerified: r.webhook_verified ?? false,
+    stylePrompt: r.style_prompt ?? undefined,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -51,7 +52,7 @@ let userMap = new Map<string, UserIdentity>();
 let agentMap = new Map<string, AgentConfig>();
 let agentsV2Map = new Map<string, AgentConfigV2[]>();
 let agentV2Counter = 0;
-let historyMap = new Map<string, { info: TableInfo; events: unknown[] }>();
+let historyMap = new Map<string, { info: TableInfo; events: unknown }>();
 
 export async function initStores() {
   if (sql) {
@@ -170,6 +171,14 @@ export class AgentStore {
     return agentsV2Map.get(userId) ?? [];
   }
 
+  getV2ByToken(token: string): AgentConfigV2 | undefined {
+    for (const [, list] of agentsV2Map) {
+      const found = list.find(a => a.soulKey === token);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
   deleteV2(userId: string, agentId: string): boolean {
     const list = agentsV2Map.get(userId);
     if (!list) return false;
@@ -200,12 +209,33 @@ export class AgentStore {
 
   private persistV2(a: AgentConfigV2) {
     if (sql) {
-      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, soul_key, webhook_url, webhook_verified, created_at, updated_at)
-          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.soulKey ?? null}, ${a.webhookUrl ?? null}, ${a.webhookVerified ?? false}, ${a.createdAt}, ${a.updatedAt})
+      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, soul_key, webhook_url, webhook_verified, style_prompt, created_at, updated_at)
+          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.soulKey ?? null}, ${a.webhookUrl ?? null}, ${a.webhookVerified ?? false}, ${a.stylePrompt ?? ""}, ${a.createdAt}, ${a.updatedAt})
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name, avatar = EXCLUDED.avatar, description = EXCLUDED.description,
             strategy = EXCLUDED.strategy, soul_key = EXCLUDED.soul_key, webhook_url = EXCLUDED.webhook_url,
-            webhook_verified = EXCLUDED.webhook_verified, updated_at = EXCLUDED.updated_at`.catch(console.error);
+            webhook_verified = EXCLUDED.webhook_verified, style_prompt = EXCLUDED.style_prompt,
+            updated_at = EXCLUDED.updated_at`.catch(console.error);
+    } else {
+      const all = Array.from(agentsV2Map.values()).flat();
+      saveJson(AGENTS_V2_FILE, all);
+    }
+  }
+
+  updateStylePrompt(agentId: string, stylePrompt: string): void {
+    // Find agent across all users
+    for (const [, list] of agentsV2Map) {
+      const agent = list.find(a => a.id === agentId);
+      if (agent) {
+        agent.stylePrompt = stylePrompt;
+        agent.updatedAt = Date.now();
+        break;
+      }
+    }
+    // Persist
+    const db = sql;
+    if (db) {
+      db`UPDATE agents_v2 SET style_prompt = ${stylePrompt}, updated_at = ${Date.now()} WHERE id = ${agentId}`.catch(console.error);
     } else {
       const all = Array.from(agentsV2Map.values()).flat();
       saveJson(AGENTS_V2_FILE, all);
@@ -218,25 +248,26 @@ export class AgentStore {
 // ---------------------------------------------------------------------------
 
 export class GameHistoryStore {
-  getAll(): { info: TableInfo; events: unknown[] }[] {
+  getAll(): { info: TableInfo; events: unknown }[] {
     return Array.from(historyMap.values());
   }
 
-  get(tableId: string): { info: TableInfo; events: unknown[] } | undefined {
+  get(tableId: string): { info: TableInfo; events: unknown } | undefined {
     return historyMap.get(tableId);
   }
 
-  save(info: TableInfo, events: unknown[]): void {
+  save(info: TableInfo, events: unknown): void {
     historyMap.set(info.id, { info, events });
     this.persist();
   }
 
   private persist() {
     const all = Array.from(historyMap.values());
-    if (sql) {
-      sql`DELETE FROM game_history`.then(() => {
+    const db = sql;
+    if (db) {
+      db`DELETE FROM game_history`.then(() => {
         for (const h of all) {
-          sql`INSERT INTO game_history (table_id, table_info, event_history, created_at)
+          db`INSERT INTO game_history (table_id, table_info, event_history, created_at)
               VALUES (${h.info.id}, ${JSON.stringify(h.info)}::jsonb, ${JSON.stringify(h.events)}::jsonb, ${h.info.finishedAt ?? Date.now()})`.catch(console.error);
         }
       });

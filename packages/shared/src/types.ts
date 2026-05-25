@@ -399,6 +399,7 @@ export interface AgentConfigV2 {
   soulKey?: string;
   webhookUrl?: string;
   webhookVerified?: boolean;
+  stylePrompt?: string;
   skillId?: string;
   createdAt: number;
   updatedAt: number;
