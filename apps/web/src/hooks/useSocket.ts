@@ -20,10 +20,15 @@ function getServerUrl() {
   return "http://localhost:3001";
 }
 
-function getJwtFromCookie(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)cybercasino-token=([^;]*)/);
-  return match?.[1] ?? null;
+async function fetchJwtToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/token", { credentials: "include" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function useSocket(
@@ -45,42 +50,50 @@ export function useSocket(
   useEffect(() => {
     if (!oauthUserId) return;
 
-    const jwt = getJwtFromCookie();
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(getServerUrl(), {
-      withCredentials: true,
-      auth: jwt ? { token: jwt } : undefined,
-    });
-    socketRef.current = socket;
+    let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
-    socket.on("connect", () => {
-      setConnected(true);
-      socket.emit("user:register", oauthUserId, oauthUserInfo as any);
-      socket.emit("lobby:join");
-    });
+    let cancelled = false;
 
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("lobby:tables", (t) => setTables(t));
-    socket.on("lobby:personalities", (list) => setPersonalities(list));
-    socket.on("game:event", (event) => {
-      setEvents((prev) => [...prev, event]);
-    });
-    socket.on("game:reset", () => setEvents([]));
+    fetchJwtToken().then((jwt) => {
+      if (cancelled) return;
 
-    socket.on("user:registered", (identity: UserIdentity) => {
-      setUserId(identity.userId);
-    });
+      socket = io(getServerUrl(), {
+        withCredentials: true,
+        auth: jwt ? { token: jwt } : undefined,
+      });
+      socketRef.current = socket;
 
-    socket.on("agent:deleted", (agentId) => {
-      setDeletedAgentId(agentId);
+      socket.on("connect", () => {
+        setConnected(true);
+        socket!.emit("user:register", oauthUserId, oauthUserInfo as any);
+        socket!.emit("lobby:join");
+      });
+
+      socket.on("disconnect", () => setConnected(false));
+      socket.on("lobby:tables", (t) => setTables(t));
+      socket.on("lobby:personalities", (list) => setPersonalities(list));
+      socket.on("game:event", (event) => {
+        setEvents((prev) => [...prev, event]);
+      });
+      socket.on("game:reset", () => setEvents([]));
+
+      socket.on("user:registered", (identity: UserIdentity) => {
+        setUserId(identity.userId);
+      });
+
+      socket.on("agent:deleted", (agentId) => {
+        setDeletedAgentId(agentId);
+      });
+      socket.on("table:error", (error) => setTableError(error));
+      socket.on("table:started", (tableId) => setTableStarted(tableId));
+      socket.on("table:stopped", () => setTableStarted(null));
+      socket.on("table:seats", (data) => setSeatUpdates(data));
+      socket.on("table:history", (tables) => setHistoryTables(tables));
     });
-    socket.on("table:error", (error) => setTableError(error));
-    socket.on("table:started", (tableId) => setTableStarted(tableId));
-    socket.on("table:stopped", () => setTableStarted(null));
-    socket.on("table:seats", (data) => setSeatUpdates(data));
-    socket.on("table:history", (tables) => setHistoryTables(tables));
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      socket?.disconnect();
     };
   }, []);
 
