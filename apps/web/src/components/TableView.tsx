@@ -94,11 +94,6 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "l
             </div>
         )}
         <div className={`absolute inset-0 flex flex-col ${activeTab === "highlights" ? "" : "invisible pointer-events-none"}`}>
-          {!isFinished && (
-            <div className="shrink-0 px-5 pt-4 pb-2 text-text-secondary text-[13px]">
-              {t("tableView.publicLiveOnly")}
-            </div>
-          )}
           <HighlightFeed events={events} />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "leaderboard" ? "" : "invisible pointer-events-none"}`}>

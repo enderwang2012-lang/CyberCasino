@@ -15,6 +15,7 @@ import type {
   ReplayData,
   ReplayHand,
   ReplayHandAction,
+  HighlightReason,
 } from "@cybercasino/shared";
 import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
@@ -281,11 +282,7 @@ export class TableInstance {
       case "player-eliminated":
         return event;
       case "hand-highlight":
-        return {
-          type: "public-commentary",
-          handNumber: event.handNumber,
-          commentary: event.commentary,
-        };
+        return event;
       default:
         return undefined;
     }
@@ -701,11 +698,12 @@ export class TableInstance {
         ...winnerIds,
         ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
       ])];
+      const commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards);
       this.emit({
         type: "hand-highlight",
         handNumber: highlightHandNumber,
         reasons,
-        commentary: this.language === "zh" ? "精彩一手，完整牌面请在赛后回放中查看。" : "Notable hand. Review the complete cards in the post-match replay.",
+        commentary,
         potTotal,
         involvedPlayerIds,
       });
@@ -786,6 +784,70 @@ export class TableInstance {
       wsAgentManager.unlockStyleForMatch(agentId, this.id);
     }
     this.lockedStyleAgentIds.clear();
+  }
+
+  private buildLiveCommentary(
+    reasons: HighlightReason[],
+    actionHistory: ActionRecord[],
+    showdownResults: ShowdownResult[] | null,
+    winnerIds: string[],
+    potTotal: number,
+    holeCards: Map<string, Card[]>,
+  ): string {
+    const RANK_NAMES: Record<number, string> = {
+      2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8",
+      9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A",
+    };
+    const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
+    const cardStr = (c: Card) => `${RANK_NAMES[c.rank]}${SUIT_SYMBOLS[c.suit]}`;
+
+    const isZh = this.language === "zh";
+    const parts: string[] = [];
+
+    // Describe showdown results
+    if (showdownResults && showdownResults.length >= 2) {
+      for (const r of showdownResults) {
+        const name = this.agents.find((a) => a.id === r.playerId)?.name ?? r.playerId;
+        const cards = r.holeCards.map(cardStr).join(" ");
+        const won = winnerIds.includes(r.playerId);
+        parts.push(isZh
+          ? `${name} 展示 ${cards}（${r.handName}）${won ? "赢下底池" : ""}`
+          : `${name} shows ${cards} (${r.handName})${won ? " and wins" : ""}`);
+      }
+    } else if (winnerIds.length > 0) {
+      // No showdown — everyone folded
+      const winnerNames = winnerIds.map((id) => this.agents.find((a) => a.id === id)?.name ?? id).join(", ");
+      const bluffer = actionHistory.find((a) => a.thought?.isBluffing);
+      if (bluffer) {
+        const blufferName = this.agents.find((a) => a.id === bluffer.playerId)?.name ?? bluffer.playerId;
+        parts.push(isZh
+          ? `${blufferName} 一手精彩诈唬，对手全部弃牌！`
+          : `${blufferName} pulls off a bluff — everyone folds!`);
+      } else {
+        parts.push(isZh
+          ? `${winnerNames} 收下底池`
+          : `${winnerNames} takes the pot`);
+      }
+    }
+
+    // Add reason context
+    if (reasons.includes("big-pot")) {
+      parts.push(isZh ? `底池 ${potTotal.toLocaleString()}，超过 8 倍大盲！` : `Pot ${potTotal.toLocaleString()} — over 8x big blind!`);
+    }
+    if (reasons.includes("bad-beat")) {
+      parts.push(isZh ? "有人带着强牌倒下了，河牌杀！" : "Strong hand goes down — river card kills!");
+    }
+    if (reasons.includes("cooler")) {
+      parts.push(isZh ? "两副强牌碰撞，谁都不想让步！" : "Two strong hands collide — neither backing down!");
+    }
+    if (reasons.includes("multi-way-allin")) {
+      parts.push(isZh ? "多人全下，火药味拉满！" : "Multi-way all-in — maximum tension!");
+    }
+    if (reasons.includes("short-stack-comeback")) {
+      parts.push(isZh ? "短码绝地翻盘！" : "Short stack comeback!");
+    }
+
+    return parts.join(isZh ? "，" : ". ") || (isZh ? "精彩一手！" : "Great hand!");
   }
 
   getStatus(): "waiting" | "playing" | "finished" {
