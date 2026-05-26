@@ -55,6 +55,7 @@ export function TableWaitingRoom({
     .map((s) => s.agent!.id);
 
   const myAgentSeated = seats.some((s) => s.agent?.userId === userId);
+  const canManageTable = seats.find((s) => s.agent?.type === "custom")?.agent?.userId === userId;
 
   function handleSeatClick(seat: TableSeat) {
     if (seat.status === "empty") {
@@ -64,7 +65,7 @@ export function TableWaitingRoom({
 
     if (!seat.agent) return;
 
-    if (seat.agent.type === "builtin") {
+    if (seat.agent.type === "builtin" && canManageTable) {
       setConfirmRemove({ seatIndex: seat.seatIndex, name: seat.agent.name });
     } else if (seat.agent.userId === userId) {
       setConfirmRemove({ seatIndex: seat.seatIndex, name: seat.agent.name });
@@ -95,6 +96,9 @@ export function TableWaitingRoom({
       </button>
 
       <h2 className="text-[28px] font-semibold text-text-primary mb-1 tracking-tight">{t("tableWaiting.title")}</h2>
+      <p className="text-[13px] font-medium mb-2 text-[#BF5AF2]">
+        {t("lobby.ranked")}
+      </p>
       <p className="text-text-secondary text-[15px] mb-8">{t("tableWaiting.seated", { occupied, total })}</p>
 
       <div className="grid grid-cols-3 gap-2.5 mb-8 w-full max-w-sm">
@@ -131,9 +135,9 @@ export function TableWaitingRoom({
       <div className="w-full max-w-sm">
         <button
           onClick={onStart}
-          disabled={!isFull}
+          disabled={!isFull || !canManageTable}
           className={`w-full py-3 rounded-full font-medium text-[15px] transition-colors ${
-            isFull
+            isFull && canManageTable
               ? "bg-accent hover:bg-accent-hover text-white"
               : "bg-surface-deep text-text-tertiary cursor-not-allowed"
           }`}
@@ -151,6 +155,7 @@ export function TableWaitingRoom({
           agentConfig={agentConfig}
           agentV2={agentV2}
           myAgentSeated={myAgentSeated}
+          canManageTable={canManageTable}
           personalities={personalities}
           seatedPersonalityIds={seatedPersonalityIds}
           onSelectSelf={handleSelectSelf}

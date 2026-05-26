@@ -32,7 +32,7 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   }, [roster]);
 
   const highlights = useMemo(
-    () => events.filter((e) => e.type === "hand-highlight"),
+    () => events.filter((e) => e.type === "hand-highlight" || e.type === "public-commentary"),
     [events]
   );
 
@@ -60,6 +60,18 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain">
       {highlights.map((event, idx) => {
+        if (event.type === "public-commentary") {
+          return (
+            <div key={idx} className="bg-white rounded-2xl p-5 shadow-sm">
+              <div className="text-[13px] text-text-tertiary font-medium mb-3">
+                {t("highlightFeed.hand", { number: event.handNumber })}
+              </div>
+              <div className="text-[15px] text-text-primary leading-relaxed whitespace-pre-wrap">
+                {event.commentary}
+              </div>
+            </div>
+          );
+        }
         if (event.type !== "hand-highlight") return null;
         return (
           <div

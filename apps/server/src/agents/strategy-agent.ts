@@ -13,6 +13,9 @@ import type {
   ImperfectionConfig,
   PlayerProfile,
   PostflopCondition,
+  StrategyPackage,
+  AgentActionAudit,
+  ArenaTableMode,
 } from "@cybercasino/shared";
 import type { PostflopContext } from "./strategy/postflop";
 import type { IPokerAgent } from "./agent-interface";
@@ -23,6 +26,7 @@ import { calculateDifficulty, estimateHandStrength } from "./imperfection/decisi
 import { buildDecisionDistribution, sampleFromDistribution } from "./imperfection/decision-distribution";
 import { createInitialState, updateAfterHand, describeState } from "./imperfection/psychological-state";
 import { generateThought, classifyPreflopHand } from "./thought/thought-generator";
+import { packageForAgent, seedToRandom } from "./strategy-package";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -69,18 +73,28 @@ export class StrategyAgent implements IPokerAgent {
   readonly id: string;
   readonly name: string;
   readonly avatar: string;
-  readonly agentType: "builtin" | "external" = "external";
+  readonly agentType: "builtin" | "external";
 
   private config: StrategyConfig;
+  private readonly strategyPackage: StrategyPackage;
   private actionHistory: ActionRecord[] = [];
   private profiles: Map<string, PlayerProfile> = new Map();
   private psychState: PsychologicalState;
 
-  constructor(agentConfig: AgentConfigV2) {
+  constructor(
+    agentConfig: AgentConfigV2,
+    agentType: "builtin" | "external" = "external",
+    private readonly tableMode: ArenaTableMode = "ranked",
+  ) {
     this.id = agentConfig.id;
     this.name = agentConfig.name;
     this.avatar = agentConfig.avatar;
-    this.config = agentConfig.strategy;
+    this.agentType = agentType;
+    this.strategyPackage = packageForAgent(
+      agentConfig,
+      agentType === "builtin" ? "platform_builtin" : "bootstrap_ai",
+    );
+    this.config = this.strategyPackage.strategy;
     this.psychState = createInitialState();
   }
 
@@ -95,6 +109,14 @@ export class StrategyAgent implements IPokerAgent {
     minRaise: number,
     language: "zh" | "en" = "zh",
   ): Promise<AgentDecision> {
+    const decisionSeed = [
+      this.strategyPackage.manifest.contentHash ?? this.strategyPackage.manifest.packageId,
+      this.id,
+      view.handNumber,
+      view.phase,
+      view.actionHistory.length,
+    ].join(":");
+    const random = seedToRandom(decisionSeed);
     const position = this.detectPosition(view);
     const isIP = this.detectIsIP(view);
     const playerCount = view.players.length;
@@ -145,10 +167,16 @@ export class StrategyAgent implements IPokerAgent {
         view.currentBet,
         minRaise,
         validActions,
+        random,
       );
 
       strategicAction = postflopDecision.action;
       strategicAmount = postflopDecision.amount;
+    }
+
+    if (!validActions.includes(strategicAction)) {
+      strategicAction = validActions.includes("check") ? "check" : "fold";
+      strategicAmount = undefined;
     }
 
     // ---------- Imperfection: humanize the decision ----------
@@ -182,7 +210,7 @@ export class StrategyAgent implements IPokerAgent {
       this.psychState.tilt,
     );
 
-    const sampled = sampleFromDistribution(distribution.weights);
+    const sampled = sampleFromDistribution(distribution.weights, random);
     const finalAction: ActionType = sampled.action;
 
     // ---------- Raise amount ----------
@@ -218,12 +246,35 @@ export class StrategyAgent implements IPokerAgent {
       };
     }
 
+    const audit: AgentActionAudit = {
+      agentId: this.id,
+      handNumber: view.handNumber,
+      street: view.phase === "showdown" ? "river" : view.phase,
+      tableMode: this.tableMode,
+      executionMode: this.agentType === "builtin" ? "house_bot" : "verified_package",
+      runtime: "declarative_v1",
+      packageId: this.strategyPackage.manifest.packageId,
+      packageVersion: this.strategyPackage.manifest.version,
+      packageHash: this.strategyPackage.manifest.contentHash,
+      stateScope: "visible_information_only",
+      validActions: [...validActions],
+      proposedAction: { type: finalAction, amount: raiseAmount },
+      executedAction: { type: finalAction, amount: raiseAmount },
+      validation: { accepted: true, corrections: [] },
+      sampling: {
+        seed: decisionSeed,
+        probabilities: Object.fromEntries(distribution.weights),
+      },
+      decidedAt: Date.now(),
+    };
+
     return {
       action: {
         type: finalAction,
         amount: raiseAmount,
       },
       thought,
+      audit,
     };
   }
 

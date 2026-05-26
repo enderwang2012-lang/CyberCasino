@@ -188,6 +188,7 @@ export function matchRules(
   conditions: PostflopCondition[],
   rules: PostflopRule[],
   ctx: PostflopContext,
+  random: () => number = Math.random,
 ): PostflopRule | null {
   // Sort by priority (lower = higher priority, default 0)
   const sorted = [...rules].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
@@ -207,9 +208,17 @@ export function matchRules(
       if (!rule.streets.includes(ctx.street)) continue;
     }
 
+    // Facing-bet rules must be selected according to the actual wager size.
+    if (rule.vsBetSize && rule.vsBetSize !== "any") {
+      if (ctx.callAmount <= 0) continue;
+      const betRatio = ctx.potSize > 0 ? ctx.callAmount / ctx.potSize : 1;
+      const betSize = betRatio <= 0.33 ? "small" : betRatio <= 0.75 ? "medium" : "large";
+      if (rule.vsBetSize !== betSize) continue;
+    }
+
     // Frequency filter (probability of applying this rule)
     if (rule.frequency !== undefined && rule.frequency < 1) {
-      if (Math.random() > rule.frequency) continue;
+      if (random() > rule.frequency) continue;
     }
 
     return rule;
@@ -228,26 +237,30 @@ export function resolveAction(
   currentBet: number,
   minRaise: number,
 ): { type: ActionType; amount?: number } {
+  const raiseTo = (ratio: number) => ({
+    type: "raise" as const,
+    amount: Math.max(currentBet + minRaise, currentBet + Math.round(potSize * ratio)),
+  });
   switch (action) {
     case "value-bet-small":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.33)) };
+      return raiseTo(0.33);
     case "value-bet-medium":
     case "semi-bluff-small":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.5)) };
+      return raiseTo(0.5);
     case "value-bet-large":
     case "semi-bluff-medium":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.75)) };
+      return raiseTo(0.75);
     case "value-bet-pot":
     case "semi-bluff-large":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 1.0)) };
+      return raiseTo(1.0);
     case "overbet":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 1.5)) };
+      return raiseTo(1.5);
     case "bluff-small":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.33)) };
+      return raiseTo(0.33);
     case "bluff-medium":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.67)) };
+      return raiseTo(0.67);
     case "bluff-large":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.75)) };
+      return raiseTo(0.75);
     case "check-call":
     case "slowplay":
     case "trap":
@@ -258,9 +271,9 @@ export function resolveAction(
       if (currentBet > 0) return { type: "fold" };
       return { type: "check" };
     case "check-raise":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.75)) };
+      return raiseTo(0.75);
     case "donk-bet":
-      return { type: "raise", amount: Math.max(minRaise, Math.round(potSize * 0.33)) };
+      return raiseTo(0.33);
     default:
       return { type: "check" };
   }
@@ -276,9 +289,10 @@ export function decidePostflop(
   currentBet: number,
   minRaise: number,
   validActions: ActionType[],
+  random: () => number = Math.random,
 ): PostflopDecision {
   const conditions = classifyHand(ctx);
-  const matchedRule = matchRules(conditions, rules, ctx);
+  const matchedRule = matchRules(conditions, rules, ctx, random);
 
   if (matchedRule) {
     const resolved = resolveAction(matchedRule.action, ctx.potSize, currentBet, minRaise);

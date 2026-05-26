@@ -38,6 +38,11 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
           chipMap.set(p.id, p.chips);
         }
       }
+      if (event.type === "public-standings") {
+        for (const p of event.players) {
+          chipMap.set(p.id, p.chips);
+        }
+      }
     }
 
     const eliminations = new Map<string, { position: number; hand: number }>();

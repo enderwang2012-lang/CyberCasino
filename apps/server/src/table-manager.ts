@@ -16,6 +16,7 @@ function randomCasinoName(): string {
 
 const DEFAULT_CONFIG: TableConfig = {
   name: "",
+  mode: "ranked",
   smallBlind: 50,
   bigBlind: 100,
   startingChips: 5000,
@@ -57,10 +58,6 @@ export class TableManager {
     return table;
   }
 
-  getPresetTableId(): string | null {
-    return this.presetTableId;
-  }
-
   getTable(id: string): TableInstance | undefined {
     return this.tables.get(id);
   }
@@ -86,22 +83,33 @@ export class TableManager {
     return this.finishedTables;
   }
 
-  archiveFinishedTable(tableId: string): void {
+  isAgentPlaying(agentId: string): boolean {
+    for (const table of this.tables.values()) {
+      if (table.getStatus() !== "playing") continue;
+      if (table.getSeats().some((seat) => seat.agent?.id === agentId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async archiveFinishedTable(tableId: string): Promise<boolean> {
     const table = this.tables.get(tableId);
-    if (!table || table.getStatus() !== "finished") return;
+    if (!table || table.getStatus() !== "finished") return false;
 
     const info = this.toTableInfo(table);
     info.finishedAt = Date.now();
+
+    if (this.historyStore) {
+      const replayData = table.getReplayData();
+      await this.historyStore.saveCompletedMatch(info, replayData, table.getAuditRecords());
+    }
+
     this.finishedTables.unshift(info);
     if (this.finishedTables.length > 50) {
       this.finishedTables.pop();
     }
-
-    // Persist to database/file — store reconstructed ReplayData
-    if (this.historyStore) {
-      const replayData = table.getReplayData();
-      this.historyStore.save(info, replayData);
-    }
+    return true;
   }
 
   private toTableInfo(table: TableInstance): TableInfo {

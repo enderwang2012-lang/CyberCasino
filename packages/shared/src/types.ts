@@ -61,6 +61,7 @@ export interface AgentThought {
 export interface AgentDecision {
   action: Action;
   thought: AgentThought;
+  audit?: AgentActionAudit;
 }
 
 export interface AgentGameView {
@@ -362,6 +363,40 @@ export interface StrategyConfig {
   [key: string]: unknown;
 }
 
+// The first verified runtime executes StrategyConfig as a constrained DSL.
+// Future code/WASM runtimes can be added without changing the match contract.
+export type StrategyRuntime = "declarative_v1";
+export type ArenaExecutionMode = "verified_package" | "remote_agent";
+// The current product exposes formal ranked competition only.
+// Execution mode remains an internal capability/audit property.
+export type ArenaTableMode = "ranked";
+
+export interface StrategyPackageManifest {
+  packageId: string;
+  version: number;
+  agentId?: string;
+  runtime: StrategyRuntime;
+  createdAt: number;
+  createdBy: "bootstrap_ai" | "user_upload" | "platform_builtin";
+  basedOnVersion?: number;
+  declaredStyle?: StyleProfile;
+  contentHash?: string;
+}
+
+export interface StrategyPackage {
+  manifest: StrategyPackageManifest;
+  strategy: StrategyConfig;
+  publicHistorySnapshotIds?: string[];
+}
+
+export interface StrategyVersionSummary {
+  version: number;
+  packageId: string;
+  contentHash?: string;
+  basedOnVersion?: number;
+  createdAt: number;
+}
+
 // Skill System
 export interface SkillConfig {
   id: string;
@@ -396,10 +431,18 @@ export interface AgentConfigV2 {
   avatar: string;
   description?: string;
   strategy: StrategyConfig;
+  strategyPackage?: StrategyPackage;
+  strategyVersions?: StrategyVersionSummary[];
+  strategyVersion?: number;
+  executionMode?: ArenaExecutionMode;
   soulKey?: string;
   webhookUrl?: string;
   webhookVerified?: boolean;
   stylePrompt?: string;
+  styleProfile?: StyleProfile;
+  pendingStylePrompt?: string;
+  pendingStyleProfile?: StyleProfile;
+  pendingStrategyVersion?: number;
   skillId?: string;
   createdAt: number;
   updatedAt: number;
@@ -475,6 +518,8 @@ export interface SeatAgent {
   avatar: string;
   type: "custom" | "builtin";
   userId?: string;
+  executionMode?: ArenaExecutionMode | "house_bot";
+  strategyVersion?: number;
 }
 
 // Highlight types
@@ -494,7 +539,7 @@ export type GameEvent =
   | { type: "cards-dealt"; hands: Record<string, Card[]> }
   | { type: "phase-change"; phase: GamePhase; communityCards: Card[] }
   | { type: "action-required"; playerId: string; validActions: ActionType[]; currentBet: number; minRaise: number; callAmount: number }
-  | { type: "action-taken"; playerId: string; action: Action; thought: AgentThought; allIn?: boolean }
+  | { type: "action-taken"; playerId: string; action: Action; thought: AgentThought; audit?: AgentActionAudit; allIn?: boolean }
   | { type: "pot-updated"; pots: Pot[] }
   | { type: "showdown"; results: ShowdownResult[] }
   | { type: "hand-complete"; winners: Winner[]; players: PlayerState[] }
@@ -503,6 +548,8 @@ export type GameEvent =
   | { type: "tournament-complete"; rankings: { playerId: string; position: number; handsPlayed: number }[] }
   | { type: "agent-roster"; agents: SeatAgent[] }
   | { type: "hand-highlight"; handNumber: number; reasons: HighlightReason[]; commentary: string; potTotal: number; involvedPlayerIds: string[] }
+  | { type: "public-commentary"; handNumber: number; commentary: string }
+  | { type: "public-standings"; handNumber: number; players: { id: string; chips: number }[] }
   | { type: "ai:thinking"; playerId: string; playerName: string }
   | { type: "ai:thought"; playerId: string; thought: AgentThought; action: Action };
 
@@ -515,6 +562,7 @@ export interface WebhookPingResult {
 
 export interface ServerToClientEvents {
   "game:event": (event: GameEvent) => void;
+  "game:reset": () => void;
   "game:state": (state: GameState) => void;
   "lobby:tables": (tables: TableInfo[]) => void;
   "lobby:personalities": (list: BuiltinPersonalityInfo[]) => void;
@@ -562,6 +610,7 @@ export interface BlindSchedule {
 
 export interface TableConfig {
   name: string;
+  mode: ArenaTableMode;
   smallBlind: number;
   bigBlind: number;
   startingChips: number;
@@ -608,6 +657,7 @@ export interface ReplayHandAction {
   action: ActionType;
   amount?: number;
   thought?: string;
+  audit?: AgentActionAudit;
 }
 
 export interface ReplayHand {
@@ -625,10 +675,24 @@ export interface ReplayData {
   tableId: string;
   tableName: string;
   config: TableConfig;
-  players: { id: string; name: string; avatar: string; type: string }[];
+  players: { id: string; name: string; avatar: string; type: string; strategyVersion?: number }[];
   hands: ReplayHand[];
   rankings: { playerId: string; position: number }[];
   totalHands: number;
+  timeline?: GameEvent[];
+}
+
+export interface RankedStanding {
+  agentId: string;
+  name: string;
+  avatar: string;
+  rating: number;
+  gamesPlayed: number;
+  ratedGames?: number;
+  wins: number;
+  averageFinish: number;
+  activeStrategyVersion?: number;
+  provisional?: boolean;
 }
 
 // ===========================================================================
@@ -825,6 +889,33 @@ export interface DecisionResult {
   };
 
   publicExplanation?: string;
+}
+
+// Action-level audit for fair arena execution. It records protocol compliance
+// and reproducible sampling, not whether a poker decision was strategically good.
+export interface AgentActionAudit {
+  agentId: string;
+  handNumber: number;
+  street: Street;
+  tableMode: ArenaTableMode;
+  executionMode: ArenaExecutionMode | "house_bot";
+  runtime: StrategyRuntime | "remote_websocket" | "platform_fallback" | "legacy";
+  packageId?: string;
+  packageVersion?: number;
+  packageHash?: string;
+  stateScope: "visible_information_only";
+  validActions: ActionType[];
+  proposedAction: Action;
+  executedAction: Action;
+  validation: {
+    accepted: boolean;
+    corrections: string[];
+  };
+  sampling?: {
+    seed: string;
+    probabilities: Partial<Record<ActionType, number>>;
+  };
+  decidedAt: number;
 }
 
 // --- Opponent model ---

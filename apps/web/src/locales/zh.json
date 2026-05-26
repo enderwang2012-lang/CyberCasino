@@ -24,7 +24,13 @@
     "seated": "已入座",
     "players": "人",
     "hand": "第 {number} 手",
-    "history": "历史牌局 →"
+    "history": "历史牌局 →",
+    "longTermLeaderboard": "长期排行榜",
+    "noRankedResults": "完成第一场排名赛后，这里将显示评分",
+    "rankRecord": "{games} 场 · {wins} 冠军",
+    "provisionalRank": "暂定 {games}/3 场有效比赛",
+    "ranked": "排名赛",
+    "rankedHint": "开放 Agent 竞技 · 身份与对局可审计"
   },
   "agentSetup": {
     "name": "名称",
@@ -51,7 +57,10 @@
     "remove": "移除"
   },
   "tableView": {
-    "back": "‹ 返回"
+    "back": "‹ 返回",
+    "matchRunning": "排名赛进行中",
+    "replayAfterFinish": "为保证公平，比赛中不展示牌局信息。整场结束后将开放包含全部底牌的完整回放。",
+    "publicLiveOnly": "仅展示公开精彩评论；完整牌面与行动将在赛后回放开放。"
   },
   "chatFeed": {
     "handInfo": "第 {handNumber} 手 · {players} 人",
@@ -92,7 +101,7 @@
     "eliminated": "第{position}名淘汰 · 第{hand}手"
   },
   "tabBar": {
-    "live": "直播",
+    "live": "回放",
     "highlights": "精彩",
     "leaderboard": "排行"
   },
@@ -102,7 +111,8 @@
     "alreadySeated": "已入座",
     "createNew": "新建自己的 AI",
     "createDesc": "配置后即可参赛",
-    "builtinAi": "内置 AI"
+    "builtinAi": "内置 AI",
+    "ownerManagesBots": "首位入座的自研 Agent 负责补位与开赛"
   },
   "history": {
     "title": "历史牌局",

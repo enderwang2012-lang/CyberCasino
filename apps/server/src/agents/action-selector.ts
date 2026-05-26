@@ -25,16 +25,18 @@ export function selectAction(
   // Filter to only valid actions
   const valid: Record<string, number> = {};
   let total = 0;
-  for (const [action, prob] of Object.entries(probabilities)) {
+  for (const [policyAction, prob] of Object.entries(probabilities)) {
+    const action = policyAction === "bet" || policyAction === "all_in" ? "raise" : policyAction;
     if (validActions.includes(action)) {
-      valid[action] = prob;
+      const selectedAction = policyAction === "all_in" ? "all_in" : action;
+      valid[selectedAction] = (valid[selectedAction] ?? 0) + prob;
       total += prob;
     }
   }
 
   // If no valid actions match, fall back to first valid action
   if (total === 0 || Object.keys(valid).length === 0) {
-    const fallback = validActions.includes("check") ? "check" : validActions[0];
+    const fallback = validActions.includes("check") ? "check" : validActions.includes("fold") ? "fold" : validActions[0];
     return { type: fallback as ActionType };
   }
 
@@ -75,16 +77,22 @@ function computeSizing(action: string, state: DecisionState): number | undefined
   const bb = state.table.potBb > 0 ? 1 : 1; // always in BB units
 
   if (action === "all_in") {
-    return state.hero.stackBb;
+    return state.hero.investedBb + state.hero.stackBb;
   }
 
   if (action === "raise") {
     // Preflop: standard 3x open
     if (state.street === "preflop") {
-      return Math.max(state.actionContext.minRaiseBb, 3.0);
+      return Math.max(
+        state.actionContext.facingBetBb + state.actionContext.minRaiseBb,
+        state.actionContext.facingBetBb > 1 ? state.actionContext.facingBetBb * 3 : 3.0,
+      );
     }
     // Postflop: pot-size raise
-    return Math.max(state.actionContext.minRaiseBb, state.table.potBb * 0.75);
+    return Math.max(
+      state.actionContext.facingBetBb + state.actionContext.minRaiseBb,
+      state.actionContext.facingBetBb + state.table.potBb * 0.75,
+    );
   }
 
   if (action === "bet") {

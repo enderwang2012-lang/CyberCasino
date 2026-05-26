@@ -333,7 +333,10 @@ export function decidePreflop(
     const sizingStr = currentBet <= bigBlind ? config.sizing.openRaise : config.sizing.threeBet;
     const sizingMultiplier = parseFloat(sizingStr) || 2.5;
     const minTotalBet = currentBet + minRaise;
-    const raiseAmount = Math.max(minTotalBet, Math.round(bigBlind * sizingMultiplier));
+    const isPushFold = adjustments.some((reason) => reason.includes("push/fold"));
+    const raiseAmount = isPushFold && view
+      ? view.myBet + view.myChips
+      : Math.max(minTotalBet, Math.round(bigBlind * sizingMultiplier));
     return {
       action: "raise",
       amount: raiseAmount,

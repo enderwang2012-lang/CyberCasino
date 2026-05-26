@@ -18,14 +18,13 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   const {
     connected, tables, events, agentConfig,
     tableError, webhookPingResult, tableStarted, seatUpdates,
-    personalities, historyTables,
+    personalities, historyTables, deletedAgentId,
     joinTable, leaveTable, saveAgent, testWebhook,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
     startGame, getHistory, refreshLobby, clearTableError, deleteAgent,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
   const [agentV2, setAgentV2] = useState<AgentConfigV2 | null>(null);
-  const [agentsList, setAgentsList] = useState<AgentConfigV2[]>([]);
 
   const fetchAgentV2 = useCallback(async () => {
     try {
@@ -35,15 +34,13 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     } catch { /* ignore */ }
   }, [user.userId]);
 
-  const fetchAgentsList = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/agents/list?userId=${encodeURIComponent(user.userId)}`);
-      const data = await res.json();
-      setAgentsList(data.agents ?? []);
-    } catch { /* ignore */ }
-  }, [user.userId]);
+  useEffect(() => { fetchAgentV2(); }, [fetchAgentV2]);
 
-  useEffect(() => { fetchAgentV2(); fetchAgentsList(); }, [fetchAgentV2, fetchAgentsList]);
+  useEffect(() => {
+    if (!deletedAgentId) return;
+    setAgentV2((current) => current?.id === deletedAgentId ? null : current);
+    void fetchAgentV2();
+  }, [deletedAgentId, fetchAgentV2]);
 
   const { language } = useLanguage();
   const [view, setView] = useState<ViewState>("lobby");
@@ -113,11 +110,11 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         userId={user.userId}
         onCreated={() => {
           fetchAgentV2();
-          fetchAgentsList();
           setView("lobby");
         }}
         onBack={handleAgentSetupBack}
-        onDeleteAgent={(id) => { deleteAgent(id); fetchAgentsList(); }}
+        deletedAgentId={deletedAgentId}
+        onDeleteAgent={(id) => { deleteAgent(id); }}
       />
     );
   }
@@ -159,9 +156,9 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       <TableView
         tableId={activeTableId}
         tableName={viewingTable?.name}
-        events={events}
-        onLeave={handleLeave}
-        defaultTab={isFinished ? "leaderboard" : "live"}
+          events={events}
+          onLeave={handleLeave}
+        defaultTab={isFinished ? "leaderboard" : "highlights"}
         isFinished={isFinished}
       />
     );

@@ -8,13 +8,14 @@ interface TabBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
   hasNewHighlight: boolean;
+  showReplay?: boolean;
 }
 
-export function TabBar({ activeTab, onTabChange, hasNewHighlight }: TabBarProps) {
+export function TabBar({ activeTab, onTabChange, hasNewHighlight, showReplay = true }: TabBarProps) {
   const { t } = useLanguage();
 
   const TABS: { id: TabId; label: string }[] = [
-    { id: "live", label: t("tabBar.live") },
+    ...(showReplay ? [{ id: "live" as const, label: t("tabBar.live") }] : []),
     { id: "highlights", label: t("tabBar.highlights") },
     { id: "leaderboard", label: t("tabBar.leaderboard") },
   ];

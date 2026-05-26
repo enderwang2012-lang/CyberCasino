@@ -8,11 +8,19 @@ import { TableManager } from "./table-manager";
 import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
 import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
-import { validateStrategyConfig, validatePreview, createAgentFromAI } from "./api/agent-create";
+import { validateStrategyConfig, validateStrategyPackage, validatePreview, createAgentFromAI } from "./api/agent-create";
 import type { CreateAgentRequest } from "./api/agent-create";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
+import { verifyJwt } from "./auth";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
+const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
+
+function authenticatedUser(req: { headers: { cookie?: string | string[] } }) {
+  const cookie = Array.isArray(req.headers.cookie) ? req.headers.cookie.join(";") : req.headers.cookie;
+  const token = cookie?.match(/(?:^|;\s*)cybercasino-token=([^;]*)/)?.[1];
+  return token ? verifyJwt(token, JWT_SECRET) : null;
+}
 
 // Helper: find agent by token (soul key)
 function findAgentByToken(token: string, store: AgentStore): AgentConfigV2 | undefined {
@@ -42,6 +50,11 @@ const httpServer = createServer((req, res) => {
   const mineMatch = req.url?.match(/^\/api\/agents\/mine\?userId=(.+)$/);
   if (mineMatch && req.method === "GET") {
     const userId = decodeURIComponent(mineMatch[1]);
+    if (authenticatedUser(req)?.userId !== userId) {
+      res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
     const agent = agentStore.getV2ByUserId(userId);
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify(agent ? { agent } : { agent: null }));
@@ -52,6 +65,11 @@ const httpServer = createServer((req, res) => {
   const listMatch = req.url?.match(/^\/api\/agents\/list\?userId=(.+)$/);
   if (listMatch && req.method === "GET") {
     const userId = decodeURIComponent(listMatch[1]);
+    if (authenticatedUser(req)?.userId !== userId) {
+      res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
     const agents = agentStore.getAllV2ByUserId(userId);
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({ agents }));
@@ -64,10 +82,33 @@ const httpServer = createServer((req, res) => {
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
       try {
-        const { userId, name, avatar, soulKey: existingSoulKey } = JSON.parse(body);
-        const key = existingSoulKey || `user-${userId ?? "anonymous"}-${crypto.randomBytes(4).toString("hex")}`;
+        const session = authenticatedUser(req);
+        if (!session) {
+          res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+        const { name, avatar, soulKey: existingSoulKey } = JSON.parse(body);
+        const currentAgent = agentStore.getV2ByUserId(session.userId);
+        if (currentAgent && !existingSoulKey) {
+          res.writeHead(409, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Only one agent is supported", message: "当前账号已有参赛 Agent，请使用现有灵魂链接继续编辑。" }));
+          return;
+        }
+        if (existingSoulKey) {
+          const storedAgent = agentStore.getV2ByToken(existingSoulKey);
+          const pendingSoul = soulStore.get(existingSoulKey);
+          if ((storedAgent && storedAgent.userId !== session.userId)
+            || (pendingSoul && pendingSoul.userId !== session.userId)
+            || (currentAgent && currentAgent.soulKey !== existingSoulKey)) {
+            res.writeHead(403, { "Content-Type": "application/json", ...corsHeaders });
+            res.end(JSON.stringify({ error: "Soul link does not belong to this user" }));
+            return;
+          }
+        }
+        const key = existingSoulKey || `user-${session.userId}-${crypto.randomBytes(4).toString("hex")}`;
         soulStore.set(key, {
-          userId: userId ?? "anonymous", name, avatar: avatar ?? "🤖", createdAt: Date.now(),
+          userId: session.userId, name, avatar: avatar ?? "🤖", createdAt: Date.now(),
         });
         const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
@@ -85,7 +126,15 @@ const httpServer = createServer((req, res) => {
   const soulMatch = req.url?.match(/^\/api\/agents\/soul\/(user-[a-zA-Z0-9:-]+)$/);
   if (soulMatch && req.method === "GET") {
     const key = soulMatch[1];
-    const soul = soulStore.get(key);
+    const persistedAgent = agentStore.getV2ByToken(key);
+    const soul = soulStore.get(key) ?? (persistedAgent
+      ? {
+          userId: persistedAgent.userId,
+          name: persistedAgent.name,
+          avatar: persistedAgent.avatar,
+          createdAt: persistedAgent.createdAt,
+        }
+      : undefined);
     if (!soul) {
       res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders });
       res.end(JSON.stringify({ error: "Soul not found" }));
@@ -102,14 +151,14 @@ const httpServer = createServer((req, res) => {
         .replace(/\{AVATAR\}/g, soul.avatar);
 
       // Check if agent already exists → edit mode
-      const existingAgent = agentStore.getV2ByUserId(soul.userId);
+      const existingAgent = persistedAgent ?? agentStore.getV2ByUserId(soul.userId);
       if (existingAgent) {
-        const configJson = JSON.stringify(existingAgent.strategy, null, 2);
+        const configJson = JSON.stringify(existingAgent.strategyPackage ?? existingAgent.strategy, null, 2);
         const editSection = `## 编辑模式
 
 牌手「${soul.name}」已有完整策略配置，你不需要从零创建。
 
-以下是当前配置：
+以下是当前策略包（旧牌手可能显示为待升级的策略配置）：
 
 \`\`\`json
 ${configJson}
@@ -119,24 +168,22 @@ ${configJson}
 1. 先快速总结当前牌手的风格特点（2-3 句）
 2. 然后问用户想怎么调整："想怎么改？比如调整松紧度、改变某个位置的起手牌范围、修改性格/语气、或者降低犯错率？"
 
-改动时**在现有配置基础上修改**，不要重新设计。用户没说改的部分保持原样。`;
+改动时**在现有策略基础上生成下一版 Strategy Package**，不要重新设计。用户没说改的部分保持原样，并在 manifest 中递增 version、填写 basedOnVersion。`;
         template = template.replace("{CONFIG_CONTEXT}", editSection);
       } else {
         template = template.replace("{CONFIG_CONTEXT}", "");
       }
 
-      // Append a brief note about LLM integration
-      const webhookNote = `
+      // Append a brief note about open ranked competition.
+      const executionModeNote = `
 
 ---
 
-## 进阶：接入自己的 LLM
+## 排名赛说明
 
-平台默认使用 DeepSeek 为你的牌手提供 AI 思考。如果你有自己的 LLM API Key（DeepSeek、OpenAI、Claude 等），可以在提交配置时填入 webhook URL，让牌手使用更强大的模型。
-
-详见上方「进阶：接入自己的 LLM」章节。不接入也完全没问题，牌手会使用平台默认的 DeepSeek。
+提交 \`Strategy Package v1\` 后可直接参与「排名赛」。远程 WebSocket 或 webhook Agent 同样可以参加排名赛。排名赛比较完整 Agent 能力，平台只统一约束身份、合法牌局信息、动作协议、时限与结果审计，不统一策略方法或模型能力。
 `;
-      template += webhookNote;
+      template += executionModeNote;
 
       res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", ...corsHeaders });
       res.end(template);
@@ -176,13 +223,17 @@ ${configJson}
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        let { config, preview, soulKey, skillId, webhookUrl } = parsed as CreateAgentRequest & { soulKey?: string; skillId?: string; webhookUrl?: string };
+        let { config, strategyPackage, preview, soulKey, skillId, webhookUrl } = parsed as CreateAgentRequest & { soulKey?: string; skillId?: string; webhookUrl?: string };
         // Fallback: extract soul key from Authorization header (AI sends token there)
         if (!soulKey && req.headers.authorization?.startsWith("Bearer ")) {
           soulKey = req.headers.authorization.slice(7);
         }
 
-        const configResult = validateStrategyConfig(config);
+        const configResult = strategyPackage
+          ? validateStrategyPackage(strategyPackage)
+          : config
+            ? validateStrategyConfig(config)
+            : { valid: false, errors: ["config 或 strategyPackage 必须提供一个"] };
         if (!configResult.valid) {
           res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
           res.end(JSON.stringify({ error: "Invalid strategy config", details: configResult.errors }));
@@ -196,23 +247,48 @@ ${configJson}
           return;
         }
 
-        // Resolve userId from soul key or request body
-        let userId = parsed.userId ?? "anonymous";
+        // The capability token must have been issued by the platform or
+        // belong to an existing stored agent. Never infer identity from text.
+        let userId: string | undefined;
         let finalPreview = preview;
         if (soulKey) {
-          // soulKey is now "user-{userId}" — extract userId directly
-          if (soulKey.startsWith("user-")) {
-            userId = soulKey.slice(5);
-          }
           const soul = soulStore.get(soulKey);
           if (soul) {
             userId = soul.userId;
             finalPreview = { ...preview, name: soul.name, avatar: soul.avatar };
+          } else {
+            userId = agentStore.getV2ByToken(soulKey)?.userId;
           }
         }
+        if (!userId) {
+          res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Invalid soul token" }));
+          return;
+        }
 
-        const agent = createAgentFromAI(userId, { config, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId);
-        if (webhookUrl) agent.webhookUrl = webhookUrl;
+        const existingAgent = soulKey ? agentStore.getV2ByToken(soulKey) : undefined;
+        const currentAgent = agentStore.getV2ByUserId(userId);
+        if (currentAgent && !existingAgent) {
+          res.writeHead(409, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({
+            error: "Only one agent is supported",
+            message: "当前账号已有参赛 Agent，请基于现有灵魂链接提交新策略版本。",
+          }));
+          return;
+        }
+        if (existingAgent && tableManager.isAgentPlaying(existingAgent.id)) {
+          res.writeHead(409, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({
+            error: "Agent is currently competing",
+            message: "比赛进行中不能修改该 Agent 的策略；请在比赛结束后提交新版本。",
+          }));
+          return;
+        }
+        const agent = createAgentFromAI(userId, { config, strategyPackage, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId, existingAgent);
+        if (webhookUrl) {
+          agent.webhookUrl = webhookUrl;
+          agent.executionMode = "remote_agent";
+        }
         agentStore.saveV2(agent);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
@@ -256,23 +332,42 @@ ${configJson}
     return;
   }
 
+  if (req.url === "/api/leaderboard" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({ standings: gameHistoryStore.getLeaderboard() }));
+    return;
+  }
+
   // --- External Agent: Create agent and generate soul link ---
   if (req.url === "/api/external-agent/create" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
       try {
-        const { userId, name, avatar } = JSON.parse(body);
+        const session = authenticatedUser(req);
+        if (!session) {
+          res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+        if (agentStore.getV2ByUserId(session.userId)) {
+          res.writeHead(409, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Only one agent is supported", message: "当前账号已有参赛 Agent。" }));
+          return;
+        }
+        const { name, avatar } = JSON.parse(body);
         const agentId = agentStore.nextV2Id();
         const token = `cc_${crypto.randomBytes(16).toString("hex")}`;
         const now = Date.now();
 
         const agent: AgentConfigV2 = {
           id: agentId,
-          userId: userId ?? "anonymous",
+          userId: session.userId,
           name: name ?? "My Agent",
           avatar: avatar ?? "🤖",
           strategy: { skillId: "tight-aggressive", preflop: {} as any, postflop: [] },
+          executionMode: "remote_agent",
+          strategyVersion: 1,
           soulKey: token,
           stylePrompt: "",
           createdAt: now,
@@ -293,6 +388,7 @@ ${configJson}
 
 ## 风格设置
 通过对话了解玩家的风格偏好，然后发送 update_style 设置风格。
+比赛开始后，本场使用的 platform fallback prompt 会被冻结。此时发送 update_style 会保存为下一场配置，并收到 style_update_deferred，不改变正在进行的比赛。
 
 支持三种格式：
 
@@ -364,18 +460,14 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
     const limit = parseInt(params.get("limit") ?? "20");
 
     const allHistory = gameHistoryStore.getAll();
-    let hands = allHistory
+    const hands = allHistory
       .filter(h => !roomId || h.info.id === roomId)
-      .flatMap(h => {
-        const events = h.events as any[];
-        return events
-          .filter((e: any) => e.type === "hand-complete" || e.type === "showdown")
-          .map((e: any) => ({
-            ...e,
+      .filter(h => h.events.players.some((player) => player.id === agent.id))
+      .flatMap(h => h.events.hands.map((hand) => ({
+            ...hand,
             tableId: h.info.id,
             tableName: h.info.name,
-          }));
-      })
+          })))
       .slice(0, limit);
 
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
@@ -402,19 +494,19 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
     const allHistory = gameHistoryStore.getAll();
     let totalHands = 0;
     let wins = 0;
-    let totalPnl = 0;
+    let tournaments = 0;
+    let tournamentWins = 0;
 
     for (const h of allHistory) {
-      const events = h.events as any[];
-      for (const e of events) {
-        if (e.type === "hand-complete" && e.winnerId === agent.id) {
-          wins++;
-        }
-        if (e.type === "hand-complete") {
-          totalHands++;
-        }
+      if (!h.events.players.some((player) => player.id === agent.id)) continue;
+      tournaments++;
+      totalHands += h.events.hands.length;
+      for (const hand of h.events.hands) {
+        if (hand.winners.some((winner) => winner.playerId === agent.id)) wins++;
       }
+      if (h.events.rankings.some((result) => result.playerId === agent.id && result.position === 1)) tournamentWins++;
     }
+    const standing = gameHistoryStore.getLeaderboard().find((entry) => entry.agentId === agent.id);
 
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({
@@ -423,6 +515,10 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
       totalHands,
       wins,
       winRate: totalHands > 0 ? wins / totalHands : 0,
+      tournaments,
+      tournamentWins,
+      rating: standing?.rating ?? 1000,
+      activeStrategyVersion: agent.strategyVersion ?? agent.strategyPackage?.manifest.version,
       stylePrompt: agent.stylePrompt ?? "",
     }));
     return;
@@ -432,13 +528,13 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
   res.end();
 });
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: process.env.CORS_ORIGIN ?? "*" },
+  cors: { origin: process.env.CORS_ORIGIN ?? "http://localhost:3000", credentials: true },
 });
 
 // Attach WebSocket server for external agents
 wsAgentManager.attach(httpServer);
-wsAgentManager.setStyleUpdateCallback((agentId, style) => {
-  agentStore.updateStylePrompt(agentId, style);
+wsAgentManager.setStyleUpdateCallback((agentId, style, profile, status) => {
+  agentStore.updateStylePrompt(agentId, style, profile, status);
 });
 
 const tableManager = new TableManager();
@@ -446,6 +542,13 @@ const userStore = new UserStore();
 const agentStore = new AgentStore();
 const gameHistoryStore = new GameHistoryStore();
 tableManager.setHistoryStore(gameHistoryStore);
+wsAgentManager.setAuthenticationResolver((token) => {
+  const agent = findAgentByToken(token, agentStore);
+  const legacyRemote = !agent?.executionMode && agent?.soulKey?.startsWith("cc_");
+  if (!agent || (agent.executionMode !== "remote_agent" && !legacyRemote)) return undefined;
+  wsAgentManager.loadStylePrompt(agent.id, agent.stylePrompt ?? "", agent.styleProfile);
+  return { id: agent.id, name: agent.name };
+});
 
 // Soul store: key → { userId, name, avatar, createdAt, agent?, existingConfig? }
 const soulStore = new Map<string, { userId: string; name: string; avatar: string; createdAt: number }>();
@@ -481,35 +584,70 @@ function broadcastSeats(tableId: string) {
   }
 }
 
+function createNextRankedTable(): void {
+  const newTable = tableManager.ensurePresetTable();
+  wireTableEvents(newTable.id);
+  broadcastLobby();
+}
+
 function wireTableEvents(tableId: string) {
   const table = tableManager.getTable(tableId);
   if (!table) return;
 
-  table.onEvent((event) => {
-    if (event.type === "action-required") return;
+  table.onLiveEvent((event) => {
     io.to(`table:${tableId}`).emit("game:event", event);
+  });
+
+  table.onEvent((event) => {
     if (event.type === "tournament-complete") {
-      tableManager.archiveFinishedTable(tableId);
-      const newTable = tableManager.ensurePresetTable();
-      wireTableEvents(newTable.id);
-      broadcastLobby();
+      void tableManager.archiveFinishedTable(tableId).then((archived) => {
+        if (!archived) return;
+        io.to(`table:${tableId}`).emit("game:reset");
+        for (const completedEvent of table.getEventHistory()) {
+          io.to(`table:${tableId}`).emit("game:event", completedEvent);
+        }
+        createNextRankedTable();
+      }).catch((err) => {
+        console.error(`[table:${tableId}] failed to persist completed match:`, err);
+        io.to(`table:${tableId}`).emit("table:error", "比赛结果保存失败，本场暂未计入排名，请稍后重试。");
+        createNextRankedTable();
+      });
     }
   });
 }
 
+function abortFailedTable(tableId: string, err: unknown): void {
+  console.error(`[table:${tableId}] error:`, err);
+  tableManager.getTable(tableId)?.stop();
+  io.to(`table:${tableId}`).emit("table:error", "比赛异常终止，本场不计入排名，请返回大厅重新加入。");
+  io.to(`table:${tableId}`).emit("table:stopped", tableId);
+  tableManager.removeTable(tableId);
+  createNextRankedTable();
+}
+
 // Create initial preset table on startup
-const initialTable = tableManager.ensurePresetTable();
-wireTableEvents(initialTable.id);
+const initialRankedTable = tableManager.ensurePresetTable();
+wireTableEvents(initialRankedTable.id);
 
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
 
   socket.on("user:register", (userId, userInfo) => {
-    if (!userId) { socket.emit("table:error", "请先登录"); return; }
+    const session = authenticatedUser({ headers: { cookie: socket.handshake.headers.cookie } });
+    if (!userId || !session || session.userId !== userId) {
+      socket.emit("table:error", "登录身份校验失败，请重新登录");
+      return;
+    }
 
     let identity = userStore.get(userId);
-    if (!identity && userInfo && (userId.startsWith("github:") || userId.startsWith("google:"))) {
-      identity = { userId, name: userInfo.name, avatar: userInfo.avatar, provider: userInfo.provider, createdAt: Date.now() };
+    if (!identity && (userId.startsWith("github:") || userId.startsWith("google:"))) {
+      identity = {
+        userId,
+        name: session.name,
+        avatar: session.avatar,
+        provider: session.provider as "github" | "google",
+        createdAt: Date.now(),
+      };
       userStore.upsert(identity);
     }
     if (!identity) { socket.emit("table:error", "用户不存在，请重新登录"); return; }
@@ -533,6 +671,11 @@ io.on("connection", (socket) => {
   socket.on("agent:save", (partial) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
+    const existing = agentStore.getByUserId(userId);
+    if (existing && tableManager.isAgentPlaying(existing.id)) {
+      socket.emit("table:error", "比赛进行中不能修改正在参赛 Agent 的策略");
+      return;
+    }
     const config = agentStore.save(userId, partial);
     socket.emit("agent:saved", config);
   });
@@ -546,6 +689,10 @@ io.on("connection", (socket) => {
   socket.on("agent:delete", (agentId) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
+    if (tableManager.isAgentPlaying(agentId)) {
+      socket.emit("table:error", "比赛进行中不能删除正在参赛的 Agent");
+      return;
+    }
     agentStore.deleteV2(userId, agentId);
     socket.emit("agent:deleted", agentId);
   });
@@ -569,10 +716,22 @@ io.on("connection", (socket) => {
   // --- Table lifecycle ---
   socket.on("table:join", (tableId) => {
     const table = tableManager.getTable(tableId);
-    if (!table) return;
+    if (!table) {
+      const replay = gameHistoryStore.get(tableId)?.events;
+      for (const event of replay?.timeline ?? []) {
+        socket.emit("game:event", event);
+      }
+      return;
+    }
     socket.join(`table:${tableId}`);
-    for (const event of table.getEventHistory()) {
-      socket.emit("game:event", event);
+    if (table.getStatus() === "playing") {
+      for (const event of table.getLiveEventHistory()) {
+        socket.emit("game:event", event);
+      }
+    } else if (table.getStatus() === "finished") {
+      for (const event of table.getEventHistory()) {
+        socket.emit("game:event", event);
+      }
     }
     console.log(`[${socket.id}] joined table ${tableId}`);
   });
@@ -614,7 +773,11 @@ io.on("connection", (socket) => {
       ? { id: v2Config.id, name: v2Config.name, avatar: v2Config.avatar, userId, stylePrompt: "", webhookVerified: true }
       : v1Config!;
 
-    if (!table.sit(seatConfig)) {
+    const legacyRemoteV2 = !!v2Config && !v2Config.executionMode && v2Config.soulKey?.startsWith("cc_");
+    const executionMode = v2Config?.executionMode === "remote_agent" || legacyRemoteV2 || (!v2Config && !!v1Config)
+      ? "remote_agent"
+      : "verified_package";
+    if (!table.sit(seatConfig, executionMode, v2Config?.strategyVersion ?? v2Config?.strategyPackage?.manifest.version)) {
       socket.emit("table:error", "Cannot sit (table full or already seated)");
       return;
     }
@@ -630,8 +793,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("table:sit-builtin", (tableId, personalityId) => {
+    const userId = socketUserMap.get(socket.id);
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
+    if (!table.canManage(userId)) { socket.emit("table:error", "请先让自己的 Agent 入座后再配置牌桌"); return; }
 
     if (!table.sitBuiltin(personalityId)) {
       socket.emit("table:error", "Cannot place AI (already seated or table full)");
@@ -651,7 +816,7 @@ io.on("connection", (socket) => {
     const seat = seats[seatIndex];
     if (!seat || seat.status === "empty") return;
 
-    if (seat.agent?.type === "builtin") {
+    if (seat.agent?.type === "builtin" && table.canManage(userId)) {
       table.removeSeat(seatIndex);
       broadcastSeats(tableId);
     } else if (seat.agent?.userId === userId) {
@@ -663,30 +828,32 @@ io.on("connection", (socket) => {
   });
 
   socket.on("table:clear-seats", (tableId) => {
+    const userId = socketUserMap.get(socket.id);
     const table = tableManager.getTable(tableId);
     if (!table) return;
     if (table.getStatus() !== "waiting") return;
+    if (!table.canManage(userId)) { socket.emit("table:error", "只有牌桌创建者可以清空座位"); return; }
     table.clearAllSeats();
     broadcastSeats(tableId);
   });
 
   socket.on("table:start", (tableId, language) => {
+    const userId = socketUserMap.get(socket.id);
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
+    if (!table.canManage(userId)) { socket.emit("table:error", "只有牌桌创建者可以开始排名赛"); return; }
 
     if (!table.isFull()) {
       socket.emit("table:error", "需要6位玩家才能开始");
       return;
     }
 
-    io.to(`table:${tableId}`).emit("table:started", tableId);
-    broadcastLobby();
-
     const agentConfigs = tableManager.getAgentConfigs(tableId);
     const v2Configs = tableManager.getAgentV2Configs(tableId);
-    table.start(agentConfigs, language ?? "zh", v2Configs).catch((err) => {
-      console.error(`[table:${tableId}] error:`, err);
-    });
+    const match = table.start(agentConfigs, language ?? "zh", v2Configs);
+    io.to(`table:${tableId}`).emit("table:started", tableId);
+    broadcastLobby();
+    match.catch((err) => abortFailedTable(tableId, err));
   });
 
   socket.on("table:history", () => {
@@ -704,6 +871,7 @@ io.on("connection", (socket) => {
 });
 
 initStores().then(() => {
+  agentStore.activatePendingStylesAfterRestart();
   tableManager.loadPersistedHistory();
   httpServer.listen(PORT, () => {
     console.log(`CyberCasino server running on port ${PORT}`);

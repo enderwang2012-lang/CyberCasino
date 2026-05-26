@@ -11,10 +11,11 @@ interface AgentSetupProps {
   userId: string;
   onCreated: () => void;
   onBack: () => void;
+  deletedAgentId?: string | null;
   onDeleteAgent?: (agentId: string) => void;
 }
 
-export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSetupProps) {
+export function AgentSetup({ userId, onCreated, onBack, deletedAgentId, onDeleteAgent }: AgentSetupProps) {
   const { language } = useLanguage();
   const isZh = language === "zh";
 
@@ -50,6 +51,14 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
     }
     fetchExisting();
   }, [userId]);
+
+  useEffect(() => {
+    if (!deletedAgentId || existingAgent?.id !== deletedAgentId) return;
+    setExistingAgent(null);
+    setNewAgent(null);
+    setSoulUrl(null);
+    setShowCreate(false);
+  }, [deletedAgentId, existingAgent?.id]);
 
   // ── Poll for agent creation after soul generation ──
   useEffect(() => {
@@ -140,8 +149,8 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
         </h2>
         <p className="text-text-secondary text-[15px] mb-6">
           {isZh
-            ? "管理你的牌手，或创建新的牌手"
-            : "Manage your player, or create a new one"}
+            ? "管理并持续升级你的唯一参赛 Agent"
+            : "Manage and continuously upgrade your competition agent"}
         </p>
 
         {/* ── Loading ── */}
@@ -161,6 +170,18 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
               <div className="flex-1">
                 <div className="text-text-primary text-[18px] font-semibold">{existingAgent.name}</div>
                 <div className="text-text-secondary text-[13px]">{existingAgent.description ?? ""}</div>
+                {(existingAgent.strategyVersion ?? existingAgent.strategyPackage?.manifest.version) && (
+                  <div className="text-[#BF5AF2] text-[12px] mt-1">
+                    Strategy v{existingAgent.strategyVersion ?? existingAgent.strategyPackage?.manifest.version}
+                  </div>
+                )}
+                {existingAgent.pendingStrategyVersion && (
+                  <div className="text-warning text-[12px] mt-1">
+                    {isZh
+                      ? `v${existingAgent.pendingStrategyVersion} 已保存，将于下一场生效`
+                      : `v${existingAgent.pendingStrategyVersion} saved and activates next match`}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -198,7 +219,6 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
                   onClick={() => {
                     if (confirm(isZh ? `确定删除牌手「${existingAgent.name}」？` : `Delete player "${existingAgent.name}"?`)) {
                       onDeleteAgent(existingAgent.id);
-                      setExistingAgent(null);
                     }
                   }}
                   className="text-[13px] text-red-500 hover:text-red-600 min-h-[44px] flex items-center"
@@ -240,7 +260,7 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
         {/* ════════════════════════════════════════════ */}
         {/* ── Inline Creation Form ── */}
         {/* ════════════════════════════════════════════ */}
-        {!loadingExisting && showCreate && !newAgent && (
+        {!loadingExisting && !existingAgent && showCreate && !newAgent && (
           <div className="bg-white rounded-2xl p-5 shadow-sm mb-4 relative">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-text-primary text-[17px] font-semibold">
@@ -352,7 +372,7 @@ export function AgentSetup({ userId, onCreated, onBack, onDeleteAgent }: AgentSe
         )}
 
         {/* ── Create New Button ── */}
-        {!loadingExisting && !showCreate && !newAgent && (
+        {!loadingExisting && !existingAgent && !showCreate && !newAgent && (
           <button
             onClick={handleOpenCreate}
             className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"

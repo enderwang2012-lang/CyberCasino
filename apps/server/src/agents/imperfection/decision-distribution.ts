@@ -103,6 +103,7 @@ export function buildDecisionDistribution(
  */
 export function sampleFromDistribution(
   weights: Map<ActionType, number>,
+  random: () => number = Math.random,
 ): { action: ActionType; isMistake: boolean } {
   const entries = [...weights.entries()];
   if (entries.length === 0) {
@@ -120,7 +121,7 @@ export function sampleFromDistribution(
     throw new Error("Distribution has zero total weight");
   }
 
-  let rand = Math.random() * totalWeight;
+  let rand = random() * totalWeight;
 
   for (const [action, weight] of entries) {
     rand -= weight;

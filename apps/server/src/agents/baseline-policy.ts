@@ -78,7 +78,7 @@ function preflopPolicy(state: DecisionState): PolicyOutput {
   if (state.table.effectiveStackBb <= 8) {
     tags.push("short_stack");
     if (effectivePercentile <= 0.30) {
-      return { actions: { raise: 1.0 }, sizings: [{ sizePotRatio: 0, probability: 1.0 }], reasoningTags: [...tags, "push"] };
+      return { actions: { all_in: 1.0 }, reasoningTags: [...tags, "push"] };
     }
     return { actions: { fold: 1.0 }, reasoningTags: [...tags, "fold"] };
   }
@@ -177,7 +177,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
         const raiseSize = Math.max(facingBet * 3, potBb * 0.75);
         return { actions: { raise: 1.0 }, sizings: [{ sizePotRatio: raiseSize / potBb, probability: 1.0 }], reasoningTags: tags };
       }
-      return { actions: { bet: 1.0 }, sizings: [{ sizePotRatio: sizing, probability: 1.0 }], reasoningTags: tags };
+      return { actions: { raise: 1.0 }, sizings: [{ sizePotRatio: sizing, probability: 1.0 }], reasoningTags: tags };
     }
 
     case "medium_value": {
@@ -193,7 +193,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
       }
       // Bet for value/protection
       const sizing = boardTexture.dryness === "wet" ? options[1] : options[0];
-      return { actions: { bet: 0.7, check: 0.3 }, sizings: [{ sizePotRatio: sizing, probability: 1.0 }], reasoningTags: [...tags, "thin_value"] };
+      return { actions: { raise: 0.7, check: 0.3 }, sizings: [{ sizePotRatio: sizing, probability: 1.0 }], reasoningTags: [...tags, "thin_value"] };
     }
 
     case "thin_value": {
@@ -202,7 +202,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
         return { actions: { call: 0.6, fold: 0.4 }, reasoningTags: [...tags, "marginal_call"] };
       }
       // Small bet for value/protection
-      return { actions: { bet: 0.5, check: 0.5 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "thin_bet"] };
+      return { actions: { raise: 0.5, check: 0.5 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "thin_bet"] };
     }
 
     case "showdown_value": {
@@ -214,7 +214,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
         }
         return { actions: { fold: 0.6, call: 0.4 }, reasoningTags: [...tags, "fold_to_big"] };
       }
-      return { actions: { check: 0.8, bet: 0.2 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "check"] };
+      return { actions: { check: 0.8, raise: 0.2 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "check"] };
     }
 
     case "strong_draw": {
@@ -228,9 +228,9 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
           }
           return { actions: { raise: 0.5, fold: 0.5 }, sizings: [{ sizePotRatio: 0.75, probability: 1.0 }], reasoningTags: [...tags, "semi_bluff"] };
         }
-        return { actions: { bet: 0.7, check: 0.3 }, sizings: [{ sizePotRatio: options[1], probability: 1.0 }], reasoningTags: [...tags, "semi_bluff_bet"] };
+        return { actions: { raise: 0.7, check: 0.3 }, sizings: [{ sizePotRatio: options[1], probability: 1.0 }], reasoningTags: [...tags, "semi_bluff_bet"] };
       }
-      return { actions: { check: 0.6, bet: 0.4 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "draw_no_outs"] };
+      return { actions: { check: 0.6, raise: 0.4 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "draw_no_outs"] };
     }
 
     case "weak_draw": {
@@ -241,7 +241,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
         }
         return { actions: { fold: 0.7, call: 0.3 }, reasoningTags: [...tags, "fold_draw"] };
       }
-      return { actions: { check: 0.7, bet: 0.3 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "check_draw"] };
+      return { actions: { check: 0.7, raise: 0.3 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "check_draw"] };
     }
 
     case "air_with_blocker": {
@@ -250,7 +250,7 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
         return { actions: { fold: 0.7, raise: 0.3 }, sizings: [{ sizePotRatio: 0.75, probability: 1.0 }], reasoningTags: [...tags, "blocker_bluff"] };
       }
       // Can bluff with blocker
-      return { actions: { bet: 0.4, check: 0.6 }, sizings: [{ sizePotRatio: options[1], probability: 1.0 }], reasoningTags: [...tags, "blocker_bet"] };
+      return { actions: { raise: 0.4, check: 0.6 }, sizings: [{ sizePotRatio: options[1], probability: 1.0 }], reasoningTags: [...tags, "blocker_bet"] };
     }
 
     case "pure_air":
@@ -261,9 +261,9 @@ function postflopPolicy(state: DecisionState): PolicyOutput {
       }
       // Bluff opportunity
       if (heroHasInitiative && boardTexture.dryness !== "wet") {
-        return { actions: { bet: 0.35, check: 0.65 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "cbet_bluff"] };
+        return { actions: { raise: 0.35, check: 0.65 }, sizings: [{ sizePotRatio: options[0], probability: 1.0 }], reasoningTags: [...tags, "cbet_bluff"] };
       }
-      return { actions: { check: 0.9, bet: 0.1 }, reasoningTags: [...tags, "check_giveup"] };
+      return { actions: { check: 0.9, raise: 0.1 }, reasoningTags: [...tags, "check_giveup"] };
     }
   }
 }

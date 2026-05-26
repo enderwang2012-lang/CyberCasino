@@ -38,11 +38,14 @@ export function useSocket(
   const [seatUpdates, setSeatUpdates] = useState<{ tableId: string; seats: TableSeat[] } | null>(null);
   const [personalities, setPersonalities] = useState<BuiltinPersonalityInfo[]>([]);
   const [historyTables, setHistoryTables] = useState<TableInfo[]>([]);
+  const [deletedAgentId, setDeletedAgentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!oauthUserId) return;
 
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(getServerUrl());
+    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(getServerUrl(), {
+      withCredentials: true,
+    });
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -57,6 +60,7 @@ export function useSocket(
     socket.on("game:event", (event) => {
       setEvents((prev) => [...prev, event]);
     });
+    socket.on("game:reset", () => setEvents([]));
 
     socket.on("user:registered", (identity: UserIdentity) => {
       setUserId(identity.userId);
@@ -66,8 +70,9 @@ export function useSocket(
     socket.on("agent:saved", (config) => setAgentConfig(config));
     socket.on("agent:config", (config) => setAgentConfig(config));
     socket.on("agent:webhookPing", (result) => setWebhookPingResult(result));
-    socket.on("agent:deleted", () => {
+    socket.on("agent:deleted", (agentId) => {
       setAgentConfig(null);
+      setDeletedAgentId(agentId);
     });
     socket.on("table:error", (error) => setTableError(error));
     socket.on("table:started", (tableId) => setTableStarted(tableId));
@@ -133,6 +138,7 @@ export function useSocket(
   const clearTableError = useCallback(() => setTableError(null), []);
 
   const deleteAgent = useCallback((agentId: string) => {
+    setDeletedAgentId(null);
     socketRef.current?.emit("agent:delete", agentId);
   }, []);
 
@@ -148,6 +154,7 @@ export function useSocket(
     seatUpdates,
     personalities,
     historyTables,
+    deletedAgentId,
     joinTable,
     leaveTable,
     saveAgent,

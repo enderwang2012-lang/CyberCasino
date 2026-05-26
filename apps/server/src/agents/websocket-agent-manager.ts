@@ -33,6 +33,16 @@ interface PendingDecision {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface AuthenticatedAgent {
+  id: string;
+  name: string;
+}
+
+interface PendingStyleUpdate {
+  stylePrompt: string;
+  styleProfile: StyleProfile;
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket Agent Manager
 // ---------------------------------------------------------------------------
@@ -44,16 +54,24 @@ export class WebSocketAgentManager {
   private pendingDecisions = new Map<string, PendingDecision>(); // `${agentId}:${handIndex}` → pending
   private stylePrompts = new Map<string, string>(); // agentId → stylePrompt (persisted)
   private styleProfiles = new Map<string, StyleProfile>(); // agentId → StyleProfile (V2)
+  private activeMatchLocks = new Map<string, Set<string>>(); // agentId → table IDs
+  private pendingStyleUpdates = new Map<string, PendingStyleUpdate>(); // agentId → next-match style
 
   // Callback to persist style prompt to DB
-  private onStyleUpdate?: (agentId: string, style: string) => void;
+  private onStyleUpdate?: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void;
+  private resolveToken?: (token: string) => AuthenticatedAgent | undefined;
 
-  setStyleUpdateCallback(cb: (agentId: string, style: string) => void) {
+  setStyleUpdateCallback(cb: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void) {
     this.onStyleUpdate = cb;
   }
 
-  loadStylePrompt(agentId: string, style: string) {
+  setAuthenticationResolver(cb: (token: string) => AuthenticatedAgent | undefined) {
+    this.resolveToken = cb;
+  }
+
+  loadStylePrompt(agentId: string, style: string, profile?: StyleProfile) {
     this.stylePrompts.set(agentId, style);
+    this.styleProfiles.set(agentId, profile ?? parseStyleInput({ text: style }));
   }
 
   getStyleProfile(agentId: string): StyleProfile | undefined {
@@ -62,6 +80,67 @@ export class WebSocketAgentManager {
 
   getStylePrompt(agentId: string): string {
     return this.stylePrompts.get(agentId) ?? "";
+  }
+
+  lockStyleForMatch(agentId: string, tableId: string): void {
+    const locks = this.activeMatchLocks.get(agentId) ?? new Set<string>();
+    locks.add(tableId);
+    this.activeMatchLocks.set(agentId, locks);
+  }
+
+  unlockStyleForMatch(agentId: string, tableId: string): void {
+    const locks = this.activeMatchLocks.get(agentId);
+    if (!locks) return;
+
+    locks.delete(tableId);
+    if (locks.size > 0) return;
+    this.activeMatchLocks.delete(agentId);
+
+    const pending = this.pendingStyleUpdates.get(agentId);
+    if (!pending) return;
+
+    this.pendingStyleUpdates.delete(agentId);
+    this.applyActiveStyle(agentId, pending.stylePrompt, pending.styleProfile);
+    this.onStyleUpdate?.(agentId, pending.stylePrompt, pending.styleProfile, "activate_pending");
+
+    const conn = this.getConnection(agentId);
+    if (conn?.ws.readyState === WebSocket.OPEN) {
+      conn.ws.send(JSON.stringify({
+        type: "style_update_applied",
+        appliesTo: "next_match",
+        profile: { ...pending.styleProfile },
+      }));
+    }
+  }
+
+  isStyleLocked(agentId: string): boolean {
+    return (this.activeMatchLocks.get(agentId)?.size ?? 0) > 0;
+  }
+
+  updateStyle(
+    agentId: string,
+    stylePrompt: string,
+    styleProfile: StyleProfile,
+  ): "applied" | "deferred" {
+    if (this.isStyleLocked(agentId)) {
+      this.pendingStyleUpdates.set(agentId, { stylePrompt, styleProfile });
+      this.onStyleUpdate?.(agentId, stylePrompt, styleProfile, "pending");
+      return "deferred";
+    }
+
+    this.applyActiveStyle(agentId, stylePrompt, styleProfile);
+    this.onStyleUpdate?.(agentId, stylePrompt, styleProfile, "active");
+    return "applied";
+  }
+
+  private applyActiveStyle(agentId: string, stylePrompt: string, styleProfile: StyleProfile): void {
+    this.stylePrompts.set(agentId, stylePrompt);
+    this.styleProfiles.set(agentId, styleProfile);
+    const conn = this.getConnection(agentId);
+    if (conn) {
+      conn.stylePrompt = stylePrompt;
+      conn.styleProfile = styleProfile;
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -101,14 +180,18 @@ export class WebSocketAgentManager {
             return;
           }
 
-          // Token validation happens via the agent store lookup
-          // For now, accept any token that matches our format
+          const authenticatedAgent = this.resolveToken?.(token);
+          if (!authenticatedAgent) {
+            ws.send(JSON.stringify({ type: "error", message: "Invalid agent token" }));
+            ws.close(4003, "Authentication failed");
+            return;
+          }
+
           connToken = token;
           authenticated = true;
 
-          // We'll resolve the agentId when the game loop creates the agent
-          // For now, store the connection by token
-          const agentId = msg.agentId ?? `ext-${token.slice(0, 12)}`;
+          // Identity is resolved exclusively from the server-held token.
+          const agentId = authenticatedAgent.id;
 
           // Close existing connection for this token if any
           const existing = this.connections.get(token);
@@ -119,9 +202,10 @@ export class WebSocketAgentManager {
           const conn: WsAgentConnection = {
             ws,
             agentId,
-            name: msg.name ?? "External Agent",
+            name: authenticatedAgent.name,
             token,
             stylePrompt: this.stylePrompts.get(agentId) ?? "",
+            styleProfile: this.styleProfiles.get(agentId),
             connectedAt: Date.now(),
             lastHeartbeat: Date.now(),
           };
@@ -160,15 +244,15 @@ export class WebSocketAgentManager {
 
           // Validate action
           const action = msg.action as string;
-          if (!["fold", "check", "call", "raise", "allin"].includes(action)) {
+          if (!["fold", "check", "call", "raise"].includes(action)) {
             pending.reject(new Error(`Invalid action: ${action}`));
             return;
           }
 
           const decision: AgentDecision = {
             action: {
-              type: action === "allin" ? "raise" : action as ActionType,
-              amount: action === "raise" ? (msg.amount ?? 0) : action === "allin" ? undefined : undefined,
+              type: action as ActionType,
+              amount: action === "raise" ? msg.amount : undefined,
             },
             thought: {
               message: msg.thought ?? "...",
@@ -214,14 +298,16 @@ export class WebSocketAgentManager {
           }
 
           if (styleProfile) {
-            conn.stylePrompt = styleText;
-            conn.styleProfile = styleProfile;
-            this.stylePrompts.set(conn.agentId, styleText);
-            this.styleProfiles.set(conn.agentId, styleProfile);
-            this.onStyleUpdate?.(conn.agentId, styleText);
-            const responsePayload = { type: "style_updated" as const, profile: { ...styleProfile } };
+            const updateStatus = this.updateStyle(conn.agentId, styleText, styleProfile);
+            const responsePayload = updateStatus === "deferred"
+              ? {
+                  type: "style_update_deferred" as const,
+                  appliesTo: "next_match" as const,
+                  profile: { ...styleProfile },
+                }
+              : { type: "style_updated" as const, profile: { ...styleProfile } };
             const jsonStr = JSON.stringify(responsePayload);
-            console.log(`[ws-agent] sending style_updated response:`, jsonStr);
+            console.log(`[ws-agent] sending ${responsePayload.type} response:`, jsonStr);
             ws.send(jsonStr);
           }
           return;

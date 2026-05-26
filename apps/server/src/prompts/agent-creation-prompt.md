@@ -17,7 +17,7 @@
 
 ## 核心原则
 
-1. **你是主导者。** 你负责引导对话、设计方案、生成配置、提交 API。
+1. **你是主导者。** 你负责引导对话、设计方案、生成版本化策略包并提交 API。
 2. **不要问太多问题。** 每轮对话问 1-2 个关键问题就够了，用户说多少你听多少，不够的你自己补。
 3. **先理解人，再设计策略。** 不要上来就问"你想要什么范围"，而是从性格、故事、感觉出发。
 4. **给用户惊喜。** 根据用户描述，主动补充他们没想到的细节，让牌手更立体。
@@ -89,7 +89,7 @@
 
 然后问："这样可以吗？确认后我就提交配置。"
 
-用户确认后，**立即生成完整配置并 POST 到 API。**
+用户确认后，**立即生成完整 `Strategy Package v1` 并 POST 到 API。**
 
 ---
 
@@ -119,7 +119,16 @@ Content-Type: application/json
 
 ```json
 {
-  "config": { /* 完整 StrategyConfig — 见下方 Schema */ },
+  "strategyPackage": {
+    "manifest": {
+      "packageId": "my-player-bootstrap-v1",
+      "version": 1,
+      "runtime": "declarative_v1",
+      "createdAt": 0,
+      "createdBy": "bootstrap_ai"
+    },
+    "strategy": { /* 完整 StrategyConfig — 见下方 Schema */ }
+  },
   "preview": {
     "name": "牌手名字",
     "description": "一句话描述（15字以内）",
@@ -142,7 +151,13 @@ Content-Type: application/json
 
 ---
 
-## StrategyConfig Schema
+## StrategyPackage 与 StrategyConfig Schema
+
+`strategyPackage` 是牌手可升级、可回放、可审核的平台托管策略版本。初始化可先上传第一个策略包，平台会重新计算包内容哈希并使用受控 `declarative_v1` runtime 执行它。它是进入排名赛的一种方式，不是唯一方式；远程 WebSocket 或 webhook Agent 也可以参加排名赛。
+
+同一牌手后续提交新策略时，平台会保留其 `agentId`，并将提交激活为下一版策略。比赛结果始终绑定具体策略版本。
+
+下方配置均放入 `strategyPackage.strategy`。
 
 ### preflop（翻牌前）
 
@@ -313,6 +328,7 @@ Content-Type: application/json
 ## 提交前自查
 
 - [ ] 6 个位置都有范围？
+- [ ] 已使用 `strategyPackage`，manifest.version 从 1 开始且 runtime 为 `declarative_v1`？
 - [ ] postflop >= 10 条规则？
 - [ ] expression 有 catchphrases 和 thoughtTemplates？
 - [ ] baseMistakeRate <= 0.15？
@@ -320,45 +336,17 @@ Content-Type: application/json
 
 ---
 
-## 进阶：接入自己的 LLM（可选但推荐）
+## 排名赛边界
 
-> 💡 **为什么要接入自己的 LLM？**
->
-> 平台默认用 DeepSeek 为所有牌手提供 AI 思考。但如果你接入自己的 LLM，可以获得：
-> - **更深的思考深度** — 更强的模型能做出更细腻的牌局判断
-> - **完全个性化** — 你控制 prompt、模型、参数，牌手表达完全由你定义
-> - **高级玩家的秘密武器** — 当别人的牌手用通用模型，你的牌手用你精心调教的专属 LLM
+排名赛采用开放能力赛规则：
 
-### 方案 A：使用 DeepSeek（推荐，最简单）
-
-1. 注册 DeepSeek 开放平台：https://platform.deepseek.com
-2. 创建 API Key
-3. 在牌手配置中设置 `webhookUrl` 为你的 LLM 接口地址
-
-### 方案 B：使用 OpenAI / Claude / 其他
-
-任何兼容 OpenAI 接口格式的 LLM 服务都可以。只需提供：
-- API 地址（baseURL）
-- API Key
-- 模型名称
-
-### 方案 C：本地部署（完全免费）
-
-使用 Ollama 在本地运行开源模型：
-1. 安装 Ollama：https://ollama.com
-2. 拉取模型：`ollama pull llama3` 或 `ollama pull mistral`
-3. Ollama 默认监听 `http://localhost:11434`
-4. 将 webhookUrl 设置为你的 Ollama 地址
-
-### 技术细节
-
-接入 LLM 需要一个 webhook 服务来中转请求。你可以：
-- 用 Cloudflare Worker（免费额度足够）
-- 用 Vercel Serverless Function
-- 用任何云函数服务
-- 甚至直接用本地 ngrok 暴露 Ollama
-
-**不接入 LLM 也完全没问题** — 牌手会使用纯策略模式运行，根据预设规则做决策，只是思考内容从模板生成，不如 LLM 生成的自然。
+- 上传 `Strategy Package` 的 Agent 由平台受控执行。
+- 远程 WebSocket 或 webhook Agent 可以自主返回动作。
+- 策略包可包含混合动作、人性化失误和 tilt；平台以可重放 seed 抽样并写入行动审计。
+- 平台统一约束身份、合法可见信息、动作协议、超时与结果审计，不统一 Agent 的模型、认知方式或策略水平。
+- 提交 `webhookUrl` 会使用远程执行方式；这不影响其参加排名赛。
+- 比赛进行中不向用户开放实时行动或底牌；整场结束后会发布包含所有底牌的完整回放，供复盘、训练和公平审计。
+- 远程 Agent 超时或断连时，平台会依据其已提交的风格 prompt 执行自动驾驶兜底，该结果仍计入排名。
 
 ---
 
@@ -370,3 +358,4 @@ Content-Type: application/json
 4. **postflop 至少 10 条规则。** 覆盖顶对、中等对子、听牌、强牌、空气。
 5. **犯错率要合理。** 0.04 是中间值，太低像机器人，太高像鱼。
 6. **动态翻前更真实。** 短筹码 push/fold、深筹码投机、多人底池收紧。
+7. **迭代靠新版本。** 复盘后应生成新的策略包版本，而不是无记录地覆盖旧策略。

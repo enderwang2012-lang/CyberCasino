@@ -1,5 +1,6 @@
 import type {
   GameEvent,
+  AgentActionAudit,
   TableConfig,
   ActionType,
   Card,
@@ -22,24 +23,13 @@ import type { IPokerAgent } from "./agents/agent-interface";
 import { PokerAgent } from "./agents/agent";
 import { ExternalAgent } from "./agents/external-agent";
 import { StrategyAgent } from "./agents/strategy-agent";
-import { HybridAgent } from "./agents/hybrid-agent";
 import { WebSocketAgent } from "./agents/websocket-agent";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
-import { getSkillById } from "./agents/skill-system";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
+import { createStrategyPackage } from "./agents/strategy-package";
+import { auditDecision } from "./agents/action-audit";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
-import { generateCommentary } from "./highlight-commentary";
-
-// Built-in personality → Skill mapping
-const BUILTIN_SKILL_MAP: Record<string, string> = {
-  neon: "tight-passive",      // Sashimi 🍣 — 紧弱
-  viper: "loose-aggressive",  // 盖哥 🔴 — 松凶
-  ghost: "high-variance",     // Dwan 👻 — 诈唬/高波动
-  oracle: "gto-exploit",      // 臧书奴 📖 — 平衡/读心
-  shark: "tight-aggressive",  // 谭老板 🦈 — 紧凶
-  fox: "gto-exploit",         // Phill Ivey 🦊 — 多变
-};
 
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
@@ -68,7 +58,9 @@ export class TableInstance {
   private playerStates: Map<string, { chips: number }> = new Map();
   private running = false;
   private listeners: ((event: GameEvent) => void)[] = [];
+  private liveListeners: ((event: GameEvent) => void)[] = [];
   private eventHistory: GameEvent[] = [];
+  private liveEventHistory: GameEvent[] = [];
   private eliminationOrder: string[] = [];
   private currentBlindLevel = 0;
   private currentSmallBlind: number;
@@ -76,6 +68,8 @@ export class TableInstance {
   private blindSchedule: BlindSchedule;
   private autoStart: boolean;
   private language: "zh" | "en" = "zh";
+  private controllerUserId?: string;
+  private lockedStyleAgentIds = new Set<string>();
 
   constructor(id: string, config: TableConfig, creatorUserId?: string, autoStart = false) {
     this.id = id;
@@ -93,7 +87,11 @@ export class TableInstance {
 
   // --- Seat management ---
 
-  sit(agentConfig: AgentConfig): boolean {
+  sit(
+    agentConfig: AgentConfig,
+    executionMode: "verified_package" | "remote_agent" = "remote_agent",
+    strategyVersion?: number,
+  ): boolean {
     if (this.running) return false;
     if (this.seats.some((s) => s.agent?.userId === agentConfig.userId)) return false;
 
@@ -107,7 +105,10 @@ export class TableInstance {
       avatar: agentConfig.avatar,
       type: "custom",
       userId: agentConfig.userId,
+      executionMode,
+      strategyVersion,
     };
+    this.controllerUserId ??= agentConfig.userId;
     return true;
   }
 
@@ -127,6 +128,7 @@ export class TableInstance {
       name: p.name,
       avatar: p.avatar,
       type: "builtin",
+      executionMode: "house_bot",
     };
     return true;
   }
@@ -138,6 +140,9 @@ export class TableInstance {
     const agent = seat.agent ?? null;
     seat.status = "empty";
     seat.agent = undefined;
+    if (agent?.userId && agent.userId === this.controllerUserId) {
+      this.controllerUserId = this.seats.find((entry) => entry.agent?.type === "custom")?.agent?.userId;
+    }
     return agent;
   }
 
@@ -147,6 +152,7 @@ export class TableInstance {
       seat.status = "empty";
       seat.agent = undefined;
     }
+    this.controllerUserId = undefined;
   }
 
   isFull(): boolean {
@@ -160,6 +166,10 @@ export class TableInstance {
     seat.status = "empty";
     seat.agent = undefined;
     return true;
+  }
+
+  canManage(userId: string | undefined): boolean {
+    return !!userId && this.controllerUserId === userId;
   }
 
   fillWithAI(): void {
@@ -181,13 +191,26 @@ export class TableInstance {
           name: p.name,
           avatar: p.avatar,
           type: "builtin",
+          executionMode: "house_bot",
         };
       }
     }
   }
 
   getSeats(): TableSeat[] {
-    return this.seats.map((s) => ({ ...s }));
+    return this.seats.map((seat) => ({
+      ...seat,
+      agent: seat.agent
+        ? {
+            id: seat.agent.id,
+            name: seat.agent.name,
+            avatar: seat.agent.avatar,
+            type: seat.agent.type,
+            userId: seat.agent.userId,
+            strategyVersion: seat.agent.strategyVersion,
+          }
+        : undefined,
+    }));
   }
 
   getOccupiedCount(): number {
@@ -200,14 +223,73 @@ export class TableInstance {
     this.listeners.push(listener);
   }
 
+  onLiveEvent(listener: (event: GameEvent) => void): void {
+    this.liveListeners.push(listener);
+  }
+
+  getLiveEventHistory(): GameEvent[] {
+    return this.liveEventHistory.map((event) => JSON.parse(JSON.stringify(event)));
+  }
+
+  getAuditRecords(): AgentActionAudit[] {
+    return this.eventHistory.flatMap((event) =>
+      event.type === "action-taken" && event.audit ? [event.audit] : []
+    );
+  }
+
   getEventHistory(): GameEvent[] {
-    return this.eventHistory.filter((e) => e.type !== "action-required");
+    if (this.getStatus() !== "finished") return [];
+    return this.eventHistory
+      .filter((event) => event.type !== "action-required")
+      .map((event) => this.toPublicEvent(event));
+  }
+
+  private toPublicEvent(event: GameEvent): GameEvent {
+    if (event.type !== "action-taken" || !event.audit) return event;
+    return {
+      type: "action-taken",
+      playerId: event.playerId,
+      action: event.action,
+      thought: event.thought,
+      allIn: event.allIn,
+    };
   }
 
   private emit(event: GameEvent): void {
     this.eventHistory.push(JSON.parse(JSON.stringify(event)));
+    const publicEvent = this.toPublicEvent(event);
+    const liveEvent = this.toLiveEvent(publicEvent);
+    if (liveEvent) {
+      this.liveEventHistory.push(JSON.parse(JSON.stringify(liveEvent)));
+      for (const listener of this.liveListeners) {
+        listener(liveEvent);
+      }
+    }
     for (const listener of this.listeners) {
-      listener(event);
+      listener(publicEvent);
+    }
+  }
+
+  private toLiveEvent(event: GameEvent): GameEvent | undefined {
+    switch (event.type) {
+      case "agent-roster":
+        return event;
+      case "hand-complete":
+        return {
+          type: "public-standings",
+          handNumber: this.handNumber,
+          players: event.players.map((player) => ({ id: player.id, chips: player.chips })),
+        };
+      case "player-eliminated":
+        return event;
+      case "hand-highlight":
+        return {
+          type: "public-commentary",
+          handNumber: event.handNumber,
+          commentary: event.commentary,
+        };
+      default:
+        return undefined;
     }
   }
 
@@ -228,7 +310,7 @@ export class TableInstance {
         this.seats[i] = {
           seatIndex: i,
           status: "occupied",
-          agent: { id: p.id, name: p.name, avatar: p.avatar, type: "builtin" },
+          agent: { id: p.id, name: p.name, avatar: p.avatar, type: "builtin", executionMode: "house_bot" },
         };
       });
     }
@@ -236,13 +318,16 @@ export class TableInstance {
     this.agents = this.seats
       .filter((s) => s.status === "occupied" && s.agent)
       .map((s) => this.createAgent(s.agent!, agentConfigs, v2Configs));
+    for (const agent of this.agents) {
+      if (agent instanceof WebSocketAgent) {
+        wsAgentManager.lockStyleForMatch(agent.id, this.id);
+        this.lockedStyleAgentIds.add(agent.id);
+      }
+    }
 
-    const roster: SeatAgent[] = this.agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      avatar: a.avatar,
-      type: a.agentType === "external" ? "custom" : "builtin",
-    }));
+    const roster: SeatAgent[] = this.getSeats()
+      .filter((seat) => seat.status === "occupied" && seat.agent)
+      .map((seat) => seat.agent!);
     this.emit({ type: "agent-roster", agents: roster });
 
     for (const agent of this.agents) {
@@ -283,10 +368,8 @@ export class TableInstance {
         consecutiveErrors++;
         console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
         if (consecutiveErrors >= 5) {
-          console.error(`[table:${this.id}] too many consecutive errors, stopping tournament`);
           this.running = false;
-          this.emitTournamentComplete();
-          break;
+          throw new Error(`Tournament aborted after ${consecutiveErrors} consecutive hand errors: ${String(err)}`);
         }
         await new Promise((r) => setTimeout(r, 2000));
         continue;
@@ -315,6 +398,7 @@ export class TableInstance {
 
   stop(): void {
     this.running = false;
+    this.unlockMatchStyles();
   }
 
   private createAgent(
@@ -322,7 +406,20 @@ export class TableInstance {
     agentConfigs?: Map<string, AgentConfig>,
     v2Configs?: Map<string, AgentConfigV2>,
   ): IPokerAgent {
-    // Check if this agent has an active WebSocket connection
+    const v2Config = seat.userId ? v2Configs?.get(seat.userId) : undefined;
+    const isLegacyRemote = !!v2Config && !v2Config.executionMode && v2Config.soulKey?.startsWith("cc_");
+    const isRemoteRuntime = v2Config?.executionMode === "remote_agent" || isLegacyRemote;
+
+    // Uploaded packages are platform-executed and cannot be replaced by a live
+    // remote connection. This is one ranked capability class, not the only one.
+    if (v2Config) {
+      if (!isRemoteRuntime) {
+        return new StrategyAgent(v2Config, "external", this.config.mode);
+      }
+    }
+
+    // Ranked competition permits authenticated remote runtimes and identifies
+    // them separately in audit records.
     if (wsAgentManager.isConnected(seat.id)) {
       const conn = wsAgentManager.getConnection(seat.id);
       return new WebSocketAgent(
@@ -331,58 +428,55 @@ export class TableInstance {
         seat.avatar,
         wsAgentManager.getStylePrompt(seat.id),
         this.id,
+        wsAgentManager.getStyleProfile(seat.id),
       );
     }
 
-    // V2 config takes priority (custom AI-created agents)
-    if (seat.userId && v2Configs?.has(seat.userId)) {
-      const v2Config = v2Configs.get(seat.userId)!;
-      // HybridAgent: V2 config with webhookUrl
-      if (v2Config.webhookUrl) {
-        const skill = getSkillById((v2Config.strategy as any).skillId) ?? getSkillById("tight-aggressive");
-        return new HybridAgent({
-          id: v2Config.id,
-          name: v2Config.name,
-          avatar: v2Config.avatar,
-          webhookUrl: v2Config.webhookUrl,
-          skill: skill!,
-          preflop: v2Config.strategy.preflop,
-          postflop: v2Config.strategy.postflop,
-          expression: v2Config.strategy.expression,
-        });
-      }
-      // No webhook — use platform LLM (DeepSeek) with strategy config
-      const skill = getSkillById((v2Config.strategy as any).skillId) ?? getSkillById("tight-aggressive");
-      return new HybridAgent({
+    if (v2Config?.webhookUrl && isRemoteRuntime) {
+      return new ExternalAgent({
         id: v2Config.id,
+        userId: v2Config.userId,
         name: v2Config.name,
         avatar: v2Config.avatar,
-        usePlatformLlm: true,
-        skill: skill!,
-        preflop: v2Config.strategy.preflop,
-        postflop: v2Config.strategy.postflop,
-        expression: v2Config.strategy.expression,
+        stylePrompt: v2Config.stylePrompt ?? "",
+        webhookUrl: v2Config.webhookUrl,
+        webhookVerified: v2Config.webhookVerified,
       });
     }
 
-    // Builtin agents: use HybridAgent with platform LLM + matched Skill
+    if (v2Config && isRemoteRuntime) {
+      return new WebSocketAgent(
+        v2Config.id,
+        v2Config.name,
+        v2Config.avatar,
+        v2Config.stylePrompt ?? "",
+        this.id,
+        wsAgentManager.getStyleProfile(v2Config.id),
+      );
+    }
+
+    // House bots execute the same declarative package runtime, but remain
+    // identifiable as non-ranked fillers/benchmarks.
     if (seat.type === "builtin") {
       const personality = PERSONALITIES.find((p) => p.id === seat.id);
       const strategy = builtinStrategies.get(seat.id);
-      const skillId = BUILTIN_SKILL_MAP[seat.id] ?? "tight-aggressive";
-      const skill = getSkillById(skillId)!;
 
       if (strategy) {
-        return new HybridAgent({
+        return new StrategyAgent({
           id: seat.id,
+          userId: "platform",
           name: personality?.name ?? seat.name,
           avatar: personality?.avatar ?? seat.avatar,
-          usePlatformLlm: true,
-          skill,
-          preflop: strategy.preflop,
-          postflop: strategy.postflop,
-          expression: strategy.expression,
-        });
+          strategy,
+          strategyPackage: createStrategyPackage(strategy, {
+            agentId: seat.id,
+            packageId: `house-${seat.id}`,
+            createdBy: "platform_builtin",
+          }),
+          executionMode: "verified_package",
+          createdAt: 0,
+          updatedAt: 0,
+        }, "builtin", this.config.mode);
       }
       return new PokerAgent(seat.id);
     }
@@ -477,7 +571,19 @@ export class TableInstance {
           playerName: agent.name,
         });
 
-        const decision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
+        const rawDecision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
+        const platformFallback = rawDecision.thought.message.startsWith("[Auto-pilot]");
+        const decision = auditDecision(rawDecision, view, validActions, minRaise, {
+          tableMode: this.config.mode,
+          executionMode: agent.agentType === "builtin" ? "house_bot" : agent instanceof StrategyAgent ? "verified_package" : "remote_agent",
+          runtime: platformFallback
+            ? "platform_fallback"
+            : agent instanceof StrategyAgent
+              ? "declarative_v1"
+              : agent instanceof WebSocketAgent
+                ? "remote_websocket"
+                : "legacy",
+        });
 
         // Emit thought event after decision
         this.emit({
@@ -522,7 +628,7 @@ export class TableInstance {
           await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
         }
 
-        return { action: decision.action, thought: decision.thought };
+        return { action: decision.action, thought: decision.thought, audit: decision.audit };
       }
     );
 
@@ -596,7 +702,8 @@ export class TableInstance {
       this.emit(event);
     }
 
-    // Highlight detection (fire-and-forget)
+    // Highlights are recorded without an external commentary call while the
+    // match is running. Full-card replay is released only after completion.
     const reasons = detectHighlights({
       handNumber: this.handNumber,
       actionHistory,
@@ -613,46 +720,17 @@ export class TableInstance {
 
     if (reasons.length > 0) {
       const highlightHandNumber = this.handNumber;
-      const playerNames = new Map<string, string>();
-      for (const agent of this.agents) {
-        playerNames.set(agent.id, agent.name);
-      }
       const involvedPlayerIds = [...new Set([
         ...winnerIds,
         ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
       ])];
-
-      generateCommentary({
+      this.emit({
+        type: "hand-highlight",
         handNumber: highlightHandNumber,
         reasons,
-        actionHistory: [...actionHistory],
-        holeCards: new Map(holeCards),
-        communityCards: [...currentPhaseCards],
-        showdownResults: capturedShowdownResults,
+        commentary: this.language === "zh" ? "精彩一手，完整牌面请在赛后回放中查看。" : "Notable hand. Review the complete cards in the post-match replay.",
         potTotal,
-        bigBlind: this.currentBigBlind,
-        playerNames,
-        winnerIds,
-      }).then((commentary) => {
-        console.log(`[highlight] hand #${highlightHandNumber}: commentary generated (${commentary.length} chars)`);
-        this.emit({
-          type: "hand-highlight",
-          handNumber: highlightHandNumber,
-          reasons,
-          commentary,
-          potTotal,
-          involvedPlayerIds,
-        });
-      }).catch((err) => {
-        console.error(`[highlight] commentary generation failed:`, err);
-        this.emit({
-          type: "hand-highlight",
-          handNumber: highlightHandNumber,
-          reasons,
-          commentary: "精彩一手！这把牌打得太刺激了！",
-          potTotal,
-          involvedPlayerIds,
-        });
+        involvedPlayerIds,
       });
     }
   }
@@ -722,7 +800,15 @@ export class TableInstance {
       });
     }
 
+    this.unlockMatchStyles();
     this.emit({ type: "tournament-complete", rankings });
+  }
+
+  private unlockMatchStyles(): void {
+    for (const agentId of this.lockedStyleAgentIds) {
+      wsAgentManager.unlockStyleForMatch(agentId, this.id);
+    }
+    this.lockedStyleAgentIds.clear();
   }
 
   getStatus(): "waiting" | "playing" | "finished" {
@@ -736,7 +822,7 @@ export class TableInstance {
   }
 
   getReplayData(): ReplayData {
-    const players = new Map<string, { id: string; name: string; avatar: string; type: string }>();
+    const players = new Map<string, { id: string; name: string; avatar: string; type: string; strategyVersion?: number }>();
     const hands: ReplayHand[] = [];
     const rankings: { playerId: string; position: number }[] = [];
 
@@ -755,6 +841,7 @@ export class TableInstance {
               name: agent.name,
               avatar: agent.avatar,
               type: agent.type,
+              strategyVersion: agent.strategyVersion,
             });
           }
           break;
@@ -846,6 +933,7 @@ export class TableInstance {
       hands,
       rankings,
       totalHands: this.handNumber,
+      timeline: this.getEventHistory(),
     };
   }
 }

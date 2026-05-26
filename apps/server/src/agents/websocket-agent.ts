@@ -3,6 +3,7 @@ import type {
   AgentDecision,
   ActionType,
   ActionRecord,
+  StyleProfile,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { wsAgentManager } from "./websocket-agent-manager";
@@ -24,19 +25,24 @@ export class WebSocketAgent implements IPokerAgent {
   readonly avatar: string;
   readonly agentType = "external" as const;
 
-  private stylePrompt: string;
-  private tableId: string;
+  private readonly stylePrompt: string;
+  private readonly styleProfile?: StyleProfile;
+  private readonly tableId: string;
 
-  constructor(id: string, name: string, avatar: string, stylePrompt = "", tableId = "") {
+  constructor(
+    id: string,
+    name: string,
+    avatar: string,
+    stylePrompt = "",
+    tableId = "",
+    styleProfile?: StyleProfile,
+  ) {
     this.id = id;
     this.name = name;
     this.avatar = avatar;
     this.stylePrompt = stylePrompt;
     this.tableId = tableId;
-  }
-
-  setStylePrompt(prompt: string) {
-    this.stylePrompt = prompt;
+    this.styleProfile = styleProfile;
   }
 
   async decide(
@@ -93,8 +99,7 @@ export class WebSocketAgent implements IPokerAgent {
       this.stylePrompt,
     );
 
-    const styleProfile = wsAgentManager.getStyleProfile(this.id);
-    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language, styleProfile);
+    const ruleResult = ruleDecide(view, personality, validActions, callAmount, minRaise, language, this.styleProfile);
     const decision = ruleResult.decision ?? ruleFallback(view, personality, validActions, callAmount, language);
 
     return {

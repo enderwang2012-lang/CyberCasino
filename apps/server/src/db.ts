@@ -26,9 +26,18 @@ export async function ensureSchema() {
       avatar          TEXT NOT NULL,
       description     TEXT,
       strategy        JSONB NOT NULL,
+      strategy_package JSONB,
+      strategy_versions JSONB,
+      strategy_version INTEGER DEFAULT 1,
+      execution_mode  TEXT DEFAULT 'verified_package',
       soul_key        TEXT,
       webhook_url     TEXT,
       webhook_verified BOOLEAN DEFAULT FALSE,
+      style_prompt    TEXT DEFAULT '',
+      style_profile   JSONB,
+      pending_style_prompt TEXT,
+      pending_style_profile JSONB,
+      pending_strategy_version INTEGER,
       created_at      BIGINT NOT NULL,
       updated_at      BIGINT NOT NULL
     )`;
@@ -37,6 +46,14 @@ export async function ensureSchema() {
 
   // Add style_prompt column if it doesn't exist
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS style_prompt TEXT DEFAULT ''`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS style_profile JSONB`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_style_prompt TEXT`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_style_profile JSONB`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_strategy_version INTEGER`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_package JSONB`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_versions JSONB`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_version INTEGER DEFAULT 1`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'verified_package'`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS game_history (
@@ -44,5 +61,12 @@ export async function ensureSchema() {
       table_info  JSONB NOT NULL,
       event_history JSONB NOT NULL,
       created_at  BIGINT NOT NULL
+    )`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS match_action_audits (
+      table_id     TEXT PRIMARY KEY,
+      action_audits JSONB NOT NULL,
+      created_at   BIGINT NOT NULL
     )`;
 }

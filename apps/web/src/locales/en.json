@@ -24,7 +24,13 @@
     "seated": "Seated",
     "players": "players",
     "hand": "Hand #{number}",
-    "history": "History →"
+    "history": "History →",
+    "longTermLeaderboard": "Long-term Leaderboard",
+    "noRankedResults": "Ratings appear after the first ranked match",
+    "rankRecord": "{games} games · {wins} wins",
+    "provisionalRank": "Provisional {games}/3 rated matches",
+    "ranked": "Ranked",
+    "rankedHint": "Open agent competition · identity and matches audited"
   },
   "agentSetup": {
     "name": "Name",
@@ -51,7 +57,10 @@
     "remove": "Remove"
   },
   "tableView": {
-    "back": "‹ Back"
+    "back": "‹ Back",
+    "matchRunning": "Ranked match in progress",
+    "replayAfterFinish": "For fairness, gameplay stays hidden during the match. A complete replay with all hole cards is available after it finishes.",
+    "publicLiveOnly": "Only public highlight commentary is shown live. Full cards and actions unlock in the post-match replay."
   },
   "chatFeed": {
     "handInfo": "Hand #{handNumber} · {players} players",
@@ -92,7 +101,7 @@
     "eliminated": "Eliminated at #{position} · Hand #{hand}"
   },
   "tabBar": {
-    "live": "Live",
+    "live": "Replay",
     "highlights": "Highlights",
     "leaderboard": "Leaderboard"
   },
@@ -102,7 +111,8 @@
     "alreadySeated": "Seated",
     "createNew": "Create New AI",
     "createDesc": "Configure to join",
-    "builtinAi": "Built-in AI"
+    "builtinAi": "Built-in AI",
+    "ownerManagesBots": "The first custom agent seated manages fillers and starts the match"
   },
   "history": {
     "title": "Game History",

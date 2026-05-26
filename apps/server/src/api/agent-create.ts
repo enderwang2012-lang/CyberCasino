@@ -1,9 +1,11 @@
-import type { StrategyConfig, AgentPreview, AgentConfigV2, Position } from "@cybercasino/shared";
+import type { StrategyConfig, StrategyPackage, AgentPreview, AgentConfigV2, Position } from "@cybercasino/shared";
+import { createStrategyPackage, hashStrategy } from "../agents/strategy-package";
 
 const POSITIONS: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
 
 export interface CreateAgentRequest {
-  config: StrategyConfig;
+  config?: StrategyConfig;
+  strategyPackage?: StrategyPackage;
   preview: AgentPreview;
 }
 
@@ -57,6 +59,25 @@ export function validateStrategyConfig(config: StrategyConfig): ValidationResult
   return { valid: errors.length === 0, errors };
 }
 
+export function validateStrategyPackage(strategyPackage: StrategyPackage): ValidationResult {
+  const errors: string[] = [];
+  if (!strategyPackage?.manifest || strategyPackage.manifest.runtime !== "declarative_v1") {
+    errors.push("strategyPackage.manifest.runtime 必须为 declarative_v1");
+  }
+  if (!Number.isInteger(strategyPackage?.manifest?.version) || strategyPackage.manifest.version < 1) {
+    errors.push("strategyPackage.manifest.version 必须为正整数");
+  }
+  if (!strategyPackage?.manifest?.packageId || typeof strategyPackage.manifest.packageId !== "string") {
+    errors.push("strategyPackage.manifest.packageId 缺失");
+  }
+  if (!strategyPackage?.strategy) {
+    errors.push("strategyPackage.strategy 缺失");
+  } else {
+    errors.push(...validateStrategyConfig(strategyPackage.strategy).errors);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 export function validatePreview(preview: AgentPreview): ValidationResult {
   const errors: string[] = [];
 
@@ -81,18 +102,73 @@ export function createAgentFromAI(
   nextId: () => string,
   soulKey?: string,
   skillId?: string,
+  existingAgent?: AgentConfigV2,
 ): AgentConfigV2 {
   const now = Date.now();
+  const id = existingAgent?.id ?? nextId();
+  const strategy = request.strategyPackage?.strategy ?? request.config;
+  if (!strategy) throw new Error("Strategy config or strategy package is required");
+  const incomingPackage = request.strategyPackage;
+  const previousVersion = existingAgent?.strategyPackage?.manifest.version;
+  const version = previousVersion
+    ? previousVersion + 1
+    : Math.max(1, incomingPackage?.manifest.version ?? 1);
+  const contentHash = hashStrategy(strategy);
+  const strategyPackage = incomingPackage
+    ? {
+        ...incomingPackage,
+        manifest: {
+          ...incomingPackage.manifest,
+          packageId: existingAgent ? `${id}-v${version}` : incomingPackage.manifest.packageId,
+          version,
+          agentId: id,
+          createdAt: now,
+          basedOnVersion: previousVersion,
+          contentHash,
+        },
+        strategy,
+      }
+    : createStrategyPackage(strategy, {
+        agentId: id,
+        packageId: `${id}-v${version}`,
+        version,
+        basedOnVersion: previousVersion,
+        createdBy: "bootstrap_ai",
+        createdAt: now,
+      });
+  const strategyVersions = [
+    ...(existingAgent?.strategyVersions ?? (existingAgent?.strategyPackage
+      ? [{
+          version: existingAgent.strategyPackage.manifest.version,
+          packageId: existingAgent.strategyPackage.manifest.packageId,
+          contentHash: existingAgent.strategyPackage.manifest.contentHash,
+          basedOnVersion: existingAgent.strategyPackage.manifest.basedOnVersion,
+          createdAt: existingAgent.strategyPackage.manifest.createdAt,
+        }]
+      : [])),
+    {
+      version: strategyPackage.manifest.version,
+      packageId: strategyPackage.manifest.packageId,
+      contentHash: strategyPackage.manifest.contentHash,
+      basedOnVersion: strategyPackage.manifest.basedOnVersion,
+      createdAt: strategyPackage.manifest.createdAt,
+    },
+  ].filter((entry, index, entries) => entries.findIndex((item) => item.version === entry.version) === index);
   return {
-    id: nextId(),
+    ...existingAgent,
+    id,
     userId,
     name: request.preview.name,
     avatar: request.preview.avatar ?? "🤖",
     description: request.preview.description,
-    strategy: request.config,
-    soulKey,
-    skillId,
-    createdAt: now,
+    strategy,
+    strategyPackage,
+    strategyVersions,
+    strategyVersion: strategyPackage.manifest.version,
+    executionMode: existingAgent?.executionMode ?? "verified_package",
+    soulKey: soulKey ?? existingAgent?.soulKey,
+    skillId: skillId ?? existingAgent?.skillId,
+    createdAt: existingAgent?.createdAt ?? now,
     updatedAt: now,
   };
 }

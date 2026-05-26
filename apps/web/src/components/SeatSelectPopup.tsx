@@ -7,6 +7,7 @@ interface SeatSelectPopupProps {
   agentConfig: AgentConfig | null;
   agentV2?: AgentConfigV2 | null;
   myAgentSeated: boolean;
+  canManageTable: boolean;
   personalities: BuiltinPersonalityInfo[];
   seatedPersonalityIds: string[];
   onSelectSelf: () => void;
@@ -19,6 +20,7 @@ export function SeatSelectPopup({
   agentConfig,
   agentV2,
   myAgentSeated,
+  canManageTable,
   personalities,
   seatedPersonalityIds,
   onSelectSelf,
@@ -85,17 +87,21 @@ export function SeatSelectPopup({
         <div className="mx-5 h-px bg-separator" />
 
         <div className="px-5 py-4">
-          <p className="text-text-tertiary text-[12px] font-medium uppercase tracking-wide mb-3">{t("seatSelect.builtinAi")}</p>
+          <p className="text-text-tertiary text-[12px] font-medium uppercase tracking-wide mb-1">{t("seatSelect.builtinAi")}</p>
+          {!canManageTable && (
+            <p className="text-text-tertiary text-[12px] mb-3">{t("seatSelect.ownerManagesBots")}</p>
+          )}
           <div className="space-y-1">
             {personalities.map((p) => {
               const isSeated = seatedPersonalityIds.includes(p.id);
+              const disabled = isSeated || !canManageTable;
               return (
                 <button
                   key={p.id}
-                  onClick={() => !isSeated && onSelectBuiltin(p.id)}
-                  disabled={isSeated}
+                  onClick={() => !disabled && onSelectBuiltin(p.id)}
+                  disabled={disabled}
                   className={`w-full text-left flex items-center gap-4 p-3 rounded-xl transition-colors ${
-                    isSeated ? "opacity-40 cursor-not-allowed" : "active:bg-surface-elevated"
+                    disabled ? "opacity-40 cursor-not-allowed" : "active:bg-surface-elevated"
                   }`}
                 >
                   <span className="text-[32px]">{p.avatar}</span>

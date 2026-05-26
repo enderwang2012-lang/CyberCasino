@@ -6,6 +6,7 @@ import type {
   ActionType,
   PlayerState,
   AgentThought,
+  AgentActionAudit,
   Winner,
   ShowdownResult,
 } from "@cybercasino/shared";
@@ -32,7 +33,7 @@ type DecisionCallback = (
   currentBet: number,
   minRaise: number,
   callAmount: number
-) => Promise<{ action: Action; thought: AgentThought }>;
+) => Promise<{ action: Action; thought: AgentThought; audit?: AgentActionAudit }>;
 
 export async function* gameLoop(
   players: GamePlayer[],
@@ -197,7 +198,7 @@ export async function* gameLoop(
           callAmount: Math.min(callAmount, player.chips),
         };
 
-        const { action, thought } = await getDecision(
+        const { action, thought, audit } = await getDecision(
           player.id,
           validActions,
           currentBet,
@@ -247,7 +248,7 @@ export async function* gameLoop(
           }
         }
 
-        yield { type: "action-taken", playerId: player.id, action, thought, allIn: player.allIn || undefined };
+        yield { type: "action-taken", playerId: player.id, action, thought, audit, allIn: player.allIn || undefined };
         yield { type: "pot-updated", pots: potManager.calculatePots() };
 
         if (state.filter((p) => !p.folded).length === 1) break;

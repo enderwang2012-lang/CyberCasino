@@ -312,14 +312,6 @@ export function AgentListPage({ agents, userId, onBack, onAgentCreated, onDelete
               </div>
             )}
 
-            {!showCreate && (
-              <button
-                onClick={handleOpenCreate}
-                className="w-full bg-accent hover:bg-accent-hover text-white py-3.5 rounded-full font-medium text-[17px] transition-colors"
-              >
-                {isZh ? "新建牌手" : "Create New Player"}
-              </button>
-            )}
           </div>
         )}
       </div>

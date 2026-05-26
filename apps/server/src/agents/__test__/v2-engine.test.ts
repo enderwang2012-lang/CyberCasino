@@ -8,7 +8,7 @@ import { describe, it, expect } from "bun:test";
 import { expandHighLevel, resolveStyle } from "../style-resolver";
 import { parseTextToHighLevel, parseStyleInput } from "../style-parser";
 import { STYLE_DEFAULTS } from "@cybercasino/shared";
-import type { StyleProfile, DecisionState, Card, PolicyOutput } from "@cybercasino/shared";
+import type { StyleProfile, DecisionState, Card, PolicyOutput, AgentGameView } from "@cybercasino/shared";
 import { evaluatePreflopPercentile, analyzeBoardTexture, evaluateDraws } from "../hand-classifier";
 import { baselinePolicy } from "../baseline-policy";
 import { styleAdjustment, applyStyleModifier } from "../style-modifier";
@@ -295,7 +295,7 @@ describe("decision-pipeline", () => {
     expect(result.decision.action.type).toBe("fold");
   });
 
-  it("monster postflop → bet/raise", () => {
+  it("monster postflop favors value aggression while preserving mixed play", () => {
     const view = makePipelineView({
       myCards: [{ rank: 14, suit: "h" }, { rank: 14, suit: "s" }],
       communityCards: [
@@ -305,17 +305,17 @@ describe("decision-pipeline", () => {
     });
     const style = resolveStyle({ highLevel: { aggression: 0.6 } });
     const result = runDecisionPipeline(
-      view, ["bet", "check"], 0, 100, style, "BTN", "test-3", "zh",
+      view as any, ["raise", "check"], 0, 100, style, "BTN", "test-3", "zh",
     );
-    // Should bet or raise with top set
-    expect(["raise", "bet"]).toContain(result.decision.action.type);
+    expect(result.result.probabilities.raise).toBeGreaterThan(result.result.probabilities.check);
+    expect(["raise", "check"]).toContain(result.decision.action.type);
   });
 });
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function makePipelineView(overrides: Record<string, any> = {}) {
+function makePipelineView(overrides: Partial<AgentGameView> = {}): AgentGameView {
   return {
     handNumber: 1,
     phase: "preflop",
@@ -330,8 +330,8 @@ function makePipelineView(overrides: Record<string, any> = {}) {
     smallBlind: 50,
     pots: [{ amount: 150, eligiblePlayerIds: ["hero", "villain"] }],
     players: [
-      { id: "hero", name: "Hero", chips: 10000, bet: 0, folded: false, allIn: false, seatIndex: 0 },
-      { id: "villain", name: "Villain", chips: 10000, bet: 100, folded: false, allIn: false, seatIndex: 1 },
+      { id: "hero", name: "Hero", avatar: "", chips: 10000, bet: 0, folded: false, allIn: false, seatIndex: 0 },
+      { id: "villain", name: "Villain", avatar: "", chips: 10000, bet: 100, folded: false, allIn: false, seatIndex: 1 },
     ],
     dealerSeatIndex: 0,
     actionHistory: [],
