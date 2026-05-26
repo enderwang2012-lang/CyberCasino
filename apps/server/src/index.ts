@@ -15,9 +15,9 @@ import { verifyJwt } from "./auth";
 const PORT = parseInt(process.env.PORT ?? "3001");
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
 
-function authenticatedUser(req: { headers: { cookie?: string | string[] } }) {
+function authenticatedUser(req: { headers: { cookie?: string | string[] } }, handshakeAuth?: { token?: string }) {
   const cookie = Array.isArray(req.headers.cookie) ? req.headers.cookie.join(";") : req.headers.cookie;
-  const token = cookie?.match(/(?:^|;\s*)cybercasino-token=([^;]*)/)?.[1];
+  const token = handshakeAuth?.token || cookie?.match(/(?:^|;\s*)cybercasino-token=([^;]*)/)?.[1];
   return token ? verifyJwt(token, JWT_SECRET) : null;
 }
 
@@ -634,7 +634,7 @@ io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
 
   socket.on("user:register", (userId, userInfo) => {
-    const session = authenticatedUser({ headers: { cookie: socket.handshake.headers.cookie } });
+    const session = authenticatedUser({ headers: { cookie: socket.handshake.headers.cookie } }, socket.handshake.auth);
     if (!userId || !session || session.userId !== userId) {
       socket.emit("table:error", "登录身份校验失败，请重新登录");
       return;

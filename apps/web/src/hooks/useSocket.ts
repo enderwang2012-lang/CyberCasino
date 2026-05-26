@@ -20,6 +20,12 @@ function getServerUrl() {
   return "http://localhost:3001";
 }
 
+function getJwtFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)cybercasino-token=([^;]*)/);
+  return match?.[1] ?? null;
+}
+
 export function useSocket(
   oauthUserId: string | undefined,
   oauthUserInfo?: { name: string; avatar: string; provider: string },
@@ -39,8 +45,10 @@ export function useSocket(
   useEffect(() => {
     if (!oauthUserId) return;
 
+    const jwt = getJwtFromCookie();
     const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(getServerUrl(), {
       withCredentials: true,
+      auth: jwt ? { token: jwt } : undefined,
     });
     socketRef.current = socket;
 
