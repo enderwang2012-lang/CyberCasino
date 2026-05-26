@@ -16,10 +16,10 @@ type ViewState = "lobby" | "agent-setup" | "table-waiting" | "table-live" | "his
 
 function AuthenticatedApp({ user }: { user: { userId: string; name: string; avatar: string; provider: string } }) {
   const {
-    connected, tables, events, agentConfig,
-    tableError, webhookPingResult, tableStarted, seatUpdates,
+    connected, tables, events,
+    tableError, tableStarted, seatUpdates,
     personalities, historyTables, deletedAgentId,
-    joinTable, leaveTable, saveAgent, testWebhook,
+    joinTable, leaveTable,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
     startGame, getHistory, refreshLobby, clearTableError, deleteAgent,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
@@ -135,7 +135,6 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         tableId={activeTableId}
         seats={activeTable.seats}
         userId={user.userId}
-        agentConfig={agentConfig}
         agentV2={agentV2}
         personalities={personalities}
         onSitSelf={() => sitAtTable(activeTableId)}
@@ -172,7 +171,6 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       onHistory={handleHistory}
       onClearSeats={clearSeats}
       connected={connected}
-      agentConfig={agentConfig}
       agentV2={agentV2}
     />
   );

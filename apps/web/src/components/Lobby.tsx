@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useEffect, useState } from "react";
-import type { TableInfo, AgentConfig, AgentConfigV2, RankedStanding } from "@cybercasino/shared";
+import type { TableInfo, AgentConfigV2, RankedStanding } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LobbyProps {
@@ -11,11 +11,10 @@ interface LobbyProps {
   onHistory: () => void;
   onClearSeats: (tableId: string) => void;
   connected: boolean;
-  agentConfig: AgentConfig | null;
   agentV2?: AgentConfigV2 | null;
 }
 
-export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentConfig, agentV2 }: LobbyProps) {
+export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, connected, agentV2 }: LobbyProps) {
   const { t } = useLanguage();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [standings, setStandings] = useState<RankedStanding[]>([]);
@@ -27,11 +26,7 @@ export function Lobby({ tables, onJoin, onAgentSetup, onHistory, onClearSeats, c
       .catch(() => setStandings([]));
   }, [tables]);
 
-  const displayAgent = agentV2
-    ? { name: agentV2.name, avatar: agentV2.avatar }
-    : agentConfig
-      ? { name: agentConfig.name, avatar: agentConfig.avatar }
-      : null;
+  const displayAgent = agentV2 ? { name: agentV2.name, avatar: agentV2.avatar } : null;
 
   const presetTable = tables.find((t) => t.status === "waiting" || t.status === "playing");
   const finishedTable = tables.find((t) => t.status === "finished");

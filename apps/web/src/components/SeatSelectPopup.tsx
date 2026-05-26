@@ -1,10 +1,9 @@
 "use client";
 
-import type { AgentConfig, AgentConfigV2, BuiltinPersonalityInfo } from "@cybercasino/shared";
+import type { AgentConfigV2, BuiltinPersonalityInfo } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface SeatSelectPopupProps {
-  agentConfig: AgentConfig | null;
   agentV2?: AgentConfigV2 | null;
   myAgentSeated: boolean;
   canManageTable: boolean;
@@ -17,7 +16,6 @@ interface SeatSelectPopupProps {
 }
 
 export function SeatSelectPopup({
-  agentConfig,
   agentV2,
   myAgentSeated,
   canManageTable,
@@ -29,11 +27,7 @@ export function SeatSelectPopup({
   onClose,
 }: SeatSelectPopupProps) {
   const { t } = useLanguage();
-  const displayAgent = agentV2
-    ? { name: agentV2.name, avatar: agentV2.avatar }
-    : agentConfig
-      ? { name: agentConfig.name, avatar: agentConfig.avatar }
-      : null;
+  const displayAgent = agentV2 ? { name: agentV2.name, avatar: agentV2.avatar } : null;
   const selfDisabled = myAgentSeated || !displayAgent;
 
   return (

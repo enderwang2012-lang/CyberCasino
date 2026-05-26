@@ -29,10 +29,8 @@ export async function ensureSchema() {
       strategy_package JSONB,
       strategy_versions JSONB,
       strategy_version INTEGER DEFAULT 1,
-      execution_mode  TEXT DEFAULT 'verified_package',
+      execution_mode  TEXT DEFAULT 'remote_agent',
       soul_key        TEXT,
-      webhook_url     TEXT,
-      webhook_verified BOOLEAN DEFAULT FALSE,
       style_prompt    TEXT DEFAULT '',
       style_profile   JSONB,
       pending_style_prompt TEXT,
@@ -53,7 +51,10 @@ export async function ensureSchema() {
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_package JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_versions JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_version INTEGER DEFAULT 1`;
-  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'verified_package'`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'remote_agent'`;
+  await sql`ALTER TABLE agents_v2 ALTER COLUMN execution_mode SET DEFAULT 'remote_agent'`;
+  await sql`ALTER TABLE agents_v2 DROP COLUMN IF EXISTS webhook_url`;
+  await sql`ALTER TABLE agents_v2 DROP COLUMN IF EXISTS webhook_verified`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS game_history (

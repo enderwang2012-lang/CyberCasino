@@ -38,10 +38,7 @@
     "avatar": "Avatar",
     "customAvatar": "Custom",
     "stylePrompt": "Style Prompt",
-    "stylePromptHint": "(sent with decision requests)",
-    "webhookUrl": "Webhook URL",
-    "test": "Test",
-    "connectionSuccess": "Connected, latency {latency}ms",
+    "stylePromptHint": "(used for autopilot if WebSocket is offline or times out)",
     "copied": "Copied",
     "copy": "Copy"
   },

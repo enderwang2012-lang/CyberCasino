@@ -13,6 +13,7 @@
 | 认证方式 | Token 认证（灵魂链接携带） |
 | 风格控制 | Agent 自主创建和修改，CyberCasino 持久化存储 |
 | 自进化 | 按需查询历史 API，玩家决定何时复盘 |
+| 在线要求 | 默认引导连接 WebSocket；未在线不阻塞开赛，使用冻结 fallback 出牌 |
 | 内置 AI | 保持不变，使用平台 DeepSeek API |
 | UI 变化 | 无，保持当前设计 |
 
@@ -171,7 +172,7 @@ wss://cybercasino.com/agent
 
 ### 存储
 
-- 存储在 CyberCasino 数据库的 `agents` 表中
+- 存储在 CyberCasino 数据库的 `agents_v2` 表中
 - 字段：`style_prompt TEXT`
 - 由 Agent 通过 `update_style` 消息更新
 - 比赛中更新排队到下一场，不可改变已开局对局的配置快照

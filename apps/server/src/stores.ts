@@ -1,4 +1,4 @@
-import type { UserIdentity, AgentConfig, AgentConfigV2, TableInfo, ReplayData, RankedStanding, AgentActionAudit } from "@cybercasino/shared";
+import type { UserIdentity, AgentConfigV2, TableInfo, ReplayData, RankedStanding, AgentActionAudit } from "@cybercasino/shared";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sql, ensureSchema } from "./db";
@@ -9,7 +9,6 @@ import { sql, ensureSchema } from "./db";
 
 const DATA_DIR = join(import.meta.dirname, "..", "data");
 const USERS_FILE = join(DATA_DIR, "users.json");
-const AGENTS_FILE = join(DATA_DIR, "agents.json");
 const AGENTS_V2_FILE = join(DATA_DIR, "agents_v2.json");
 const HISTORY_FILE = join(DATA_DIR, "game_history.json");
 const AUDITS_FILE = join(DATA_DIR, "match_action_audits.json");
@@ -45,8 +44,6 @@ function rowToAgentV2(r: any): AgentConfigV2 {
     strategyVersion: r.strategy_version ? Number(r.strategy_version) : undefined,
     executionMode: r.execution_mode ?? undefined,
     soulKey: r.soul_key ?? undefined,
-    webhookUrl: r.webhook_url ?? undefined,
-    webhookVerified: r.webhook_verified ?? false,
     stylePrompt: r.style_prompt ?? undefined,
     styleProfile: r.style_profile
       ? (typeof r.style_profile === "string" ? JSON.parse(r.style_profile) : r.style_profile)
@@ -66,7 +63,6 @@ function rowToAgentV2(r: any): AgentConfigV2 {
 // ---------------------------------------------------------------------------
 
 let userMap = new Map<string, UserIdentity>();
-let agentMap = new Map<string, AgentConfig>();
 let agentsV2Map = new Map<string, AgentConfigV2[]>();
 let agentV2Counter = 0;
 let historyMap = new Map<string, { info: TableInfo; events: ReplayData }>();
@@ -105,8 +101,6 @@ export async function initStores() {
     console.log(`[stores] loaded ${userMap.size} users, ${agentRows.length} agents, ${historyRows.length} game histories from PostgreSQL`);
   } else {
     userMap = new Map(Object.entries(loadJson<Record<string, UserIdentity>>(USERS_FILE, {})));
-    const agents = loadJson<AgentConfig[]>(AGENTS_FILE, []);
-    for (const a of agents) { delete (a as any).mode; agentMap.set(a.userId, a); }
     const agentsV2 = loadJson<AgentConfigV2[]>(AGENTS_V2_FILE, []);
     for (const agent of agentsV2) {
       const list = agentsV2Map.get(agent.userId) ?? [];
@@ -157,27 +151,6 @@ export class UserStore {
 // ---------------------------------------------------------------------------
 
 export class AgentStore {
-  save(userId: string, partial: Omit<AgentConfig, "id" | "userId" | "webhookVerified">): AgentConfig {
-    const existing = agentMap.get(userId);
-    const config: AgentConfig = {
-      ...partial,
-      id: existing?.id ?? `agent-${agentMap.size + 1}`,
-      userId,
-      webhookVerified: existing?.webhookVerified ?? false,
-    };
-    agentMap.set(userId, config);
-    return config;
-  }
-
-  getByUserId(userId: string): AgentConfig | undefined {
-    return agentMap.get(userId);
-  }
-
-  markWebhookVerified(userId: string): void {
-    const config = agentMap.get(userId);
-    if (config) config.webhookVerified = true;
-  }
-
   saveV2(agent: AgentConfigV2): void {
     const list = agentsV2Map.get(agent.userId) ?? [];
     const existingIndex = list.findIndex((entry) => entry.id === agent.id);
@@ -237,13 +210,12 @@ export class AgentStore {
 
   private persistV2(a: AgentConfigV2) {
     if (sql) {
-      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, strategy_package, strategy_versions, strategy_version, execution_mode, soul_key, webhook_url, webhook_verified, style_prompt, style_profile, pending_style_prompt, pending_style_profile, pending_strategy_version, created_at, updated_at)
-          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.strategyPackage ? JSON.stringify(a.strategyPackage) : null}::jsonb, ${a.strategyVersions ? JSON.stringify(a.strategyVersions) : null}::jsonb, ${a.strategyVersion ?? a.strategyPackage?.manifest.version ?? 1}, ${a.executionMode ?? "verified_package"}, ${a.soulKey ?? null}, ${a.webhookUrl ?? null}, ${a.webhookVerified ?? false}, ${a.stylePrompt ?? ""}, ${a.styleProfile ? JSON.stringify(a.styleProfile) : null}::jsonb, ${a.pendingStylePrompt ?? null}, ${a.pendingStyleProfile ? JSON.stringify(a.pendingStyleProfile) : null}::jsonb, ${a.pendingStrategyVersion ?? null}, ${a.createdAt}, ${a.updatedAt})
+      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, strategy_package, strategy_versions, strategy_version, execution_mode, soul_key, style_prompt, style_profile, pending_style_prompt, pending_style_profile, pending_strategy_version, created_at, updated_at)
+          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.strategyPackage ? JSON.stringify(a.strategyPackage) : null}::jsonb, ${a.strategyVersions ? JSON.stringify(a.strategyVersions) : null}::jsonb, ${a.strategyVersion ?? a.strategyPackage?.manifest.version ?? 1}, ${a.executionMode ?? "remote_agent"}, ${a.soulKey ?? null}, ${a.stylePrompt ?? ""}, ${a.styleProfile ? JSON.stringify(a.styleProfile) : null}::jsonb, ${a.pendingStylePrompt ?? null}, ${a.pendingStyleProfile ? JSON.stringify(a.pendingStyleProfile) : null}::jsonb, ${a.pendingStrategyVersion ?? null}, ${a.createdAt}, ${a.updatedAt})
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name, avatar = EXCLUDED.avatar, description = EXCLUDED.description,
             strategy = EXCLUDED.strategy, strategy_package = EXCLUDED.strategy_package, strategy_versions = EXCLUDED.strategy_versions, strategy_version = EXCLUDED.strategy_version, execution_mode = EXCLUDED.execution_mode,
-            soul_key = EXCLUDED.soul_key, webhook_url = EXCLUDED.webhook_url,
-            webhook_verified = EXCLUDED.webhook_verified, style_prompt = EXCLUDED.style_prompt, style_profile = EXCLUDED.style_profile,
+            soul_key = EXCLUDED.soul_key, style_prompt = EXCLUDED.style_prompt, style_profile = EXCLUDED.style_profile,
             pending_style_prompt = EXCLUDED.pending_style_prompt, pending_style_profile = EXCLUDED.pending_style_profile, pending_strategy_version = EXCLUDED.pending_strategy_version,
             updated_at = EXCLUDED.updated_at`.catch(console.error);
     } else {

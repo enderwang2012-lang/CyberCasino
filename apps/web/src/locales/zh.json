@@ -38,10 +38,7 @@
     "avatar": "头像",
     "customAvatar": "自定义",
     "stylePrompt": "风格 Prompt",
-    "stylePromptHint": "(随决策请求发送给 Webhook)",
-    "webhookUrl": "Webhook URL",
-    "test": "测试",
-    "connectionSuccess": "连接成功，延迟 {latency}ms",
+    "stylePromptHint": "(用于 WebSocket 断连或超时时的自动驾驶)",
     "copied": "已复制",
     "copy": "复制"
   },

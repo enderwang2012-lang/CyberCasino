@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { AgentConfig, TableConfig } from "@cybercasino/shared";
+import type { AgentConfigV2, TableConfig } from "@cybercasino/shared";
 import { TableInstance } from "./table-instance";
 import { TableManager } from "./table-manager";
 
@@ -14,13 +14,12 @@ function config(mode: TableConfig["mode"]): TableConfig {
   };
 }
 
-function agent(id: string): AgentConfig {
+function agent(id: string): Pick<AgentConfigV2, "id" | "userId" | "name" | "avatar"> {
   return {
     id,
     userId: `user-${id}`,
     name: id,
     avatar: "",
-    stylePrompt: "",
   };
 }
 

@@ -7,10 +7,8 @@ import type {
   TableInfo,
   ServerToClientEvents,
   ClientToServerEvents,
-  AgentConfig,
   UserIdentity,
   TableSeat,
-  WebhookPingResult,
   BuiltinPersonalityInfo,
 } from "@cybercasino/shared";
 
@@ -31,9 +29,7 @@ export function useSocket(
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [tableError, setTableError] = useState<string | null>(null);
-  const [webhookPingResult, setWebhookPingResult] = useState<WebhookPingResult | null>(null);
   const [tableStarted, setTableStarted] = useState<string | null>(null);
   const [seatUpdates, setSeatUpdates] = useState<{ tableId: string; seats: TableSeat[] } | null>(null);
   const [personalities, setPersonalities] = useState<BuiltinPersonalityInfo[]>([]);
@@ -64,14 +60,9 @@ export function useSocket(
 
     socket.on("user:registered", (identity: UserIdentity) => {
       setUserId(identity.userId);
-      socket.emit("agent:get");
     });
 
-    socket.on("agent:saved", (config) => setAgentConfig(config));
-    socket.on("agent:config", (config) => setAgentConfig(config));
-    socket.on("agent:webhookPing", (result) => setWebhookPingResult(result));
     socket.on("agent:deleted", (agentId) => {
-      setAgentConfig(null);
       setDeletedAgentId(agentId);
     });
     socket.on("table:error", (error) => setTableError(error));
@@ -92,15 +83,6 @@ export function useSocket(
 
   const leaveTable = useCallback((tableId: string) => {
     socketRef.current?.emit("table:leave", tableId);
-  }, []);
-
-  const saveAgent = useCallback((config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => {
-    socketRef.current?.emit("agent:save", config);
-  }, []);
-
-  const testWebhook = useCallback((url: string) => {
-    setWebhookPingResult(null);
-    socketRef.current?.emit("agent:testWebhook", url);
   }, []);
 
   const sitAtTable = useCallback((tableId: string) => {
@@ -147,9 +129,7 @@ export function useSocket(
     tables,
     events,
     userId,
-    agentConfig,
     tableError,
-    webhookPingResult,
     tableStarted,
     seatUpdates,
     personalities,
@@ -157,8 +137,6 @@ export function useSocket(
     deletedAgentId,
     joinTable,
     leaveTable,
-    saveAgent,
-    testWebhook,
     sitAtTable,
     sitBuiltin,
     removeSeat,

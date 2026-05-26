@@ -436,8 +436,6 @@ export interface AgentConfigV2 {
   strategyVersion?: number;
   executionMode?: ArenaExecutionMode;
   soulKey?: string;
-  webhookUrl?: string;
-  webhookVerified?: boolean;
   stylePrompt?: string;
   styleProfile?: StyleProfile;
   pendingStylePrompt?: string;
@@ -466,44 +464,6 @@ export interface UserIdentity {
   avatar: string;
   provider: AuthProvider;
   createdAt: number;
-}
-
-export interface AgentConfig {
-  id: string;
-  userId: string;
-  name: string;
-  avatar: string;
-  stylePrompt: string;
-  webhookUrl?: string;
-  webhookVerified?: boolean;
-}
-
-export interface WebhookRequest {
-  type: "decision";
-  gameView: AgentGameView;
-  validActions: ActionType[];
-  callAmount: number;
-  minRaise: number;
-  stylePrompt: string;
-  skill?: SkillConfig;
-  strategyHint?: {
-    suggestedAction: ActionType;
-    confidence: number;
-    handStrength: number;
-  };
-}
-
-export interface WebhookPingRequest {
-  type: "ping";
-  timestamp: number;
-}
-
-export interface WebhookResponse {
-  action: ActionType;
-  amount?: number;
-  thought: string;
-  isBluffing?: boolean;
-  confidence?: number;
 }
 
 export interface TableSeat {
@@ -554,12 +514,6 @@ export type GameEvent =
   | { type: "ai:thought"; playerId: string; thought: AgentThought; action: Action };
 
 // Socket.IO event types for client-server communication
-export interface WebhookPingResult {
-  success: boolean;
-  latencyMs?: number;
-  error?: string;
-}
-
 export interface ServerToClientEvents {
   "game:event": (event: GameEvent) => void;
   "game:reset": () => void;
@@ -567,9 +521,6 @@ export interface ServerToClientEvents {
   "lobby:tables": (tables: TableInfo[]) => void;
   "lobby:personalities": (list: BuiltinPersonalityInfo[]) => void;
   "user:registered": (identity: UserIdentity) => void;
-  "agent:saved": (config: AgentConfig) => void;
-  "agent:config": (config: AgentConfig | null) => void;
-  "agent:webhookPing": (result: WebhookPingResult) => void;
   "table:seats": (data: { tableId: string; seats: TableSeat[] }) => void;
   "table:started": (tableId: string) => void;
   "table:stopped": (tableId: string) => void;
@@ -585,10 +536,7 @@ export interface ClientToServerEvents {
   "table:join": (tableId: string) => void;
   "table:leave": (tableId: string) => void;
   "user:register": (userId: string, userInfo?: { name: string; avatar: string; provider: AuthProvider }) => void;
-  "agent:save": (config: Omit<AgentConfig, "id" | "userId" | "webhookVerified">) => void;
-  "agent:get": () => void;
   "agent:delete": (agentId: string) => void;
-  "agent:testWebhook": (url: string) => void;
   "table:sit": (tableId: string) => void;
   "table:sit-builtin": (tableId: string, personalityId: string) => void;
   "table:remove-seat": (tableId: string, seatIndex: number) => void;

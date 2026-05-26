@@ -1,4 +1,4 @@
-import type { StrategyConfig, StrategyPackage, AgentPreview, AgentConfigV2, Position } from "@cybercasino/shared";
+import type { StrategyConfig, StrategyPackage, AgentPreview, AgentConfigV2, ArenaExecutionMode, Position } from "@cybercasino/shared";
 import { createStrategyPackage, hashStrategy } from "../agents/strategy-package";
 
 const POSITIONS: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
@@ -6,6 +6,7 @@ const POSITIONS: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
 export interface CreateAgentRequest {
   config?: StrategyConfig;
   strategyPackage?: StrategyPackage;
+  executionMode?: ArenaExecutionMode;
   preview: AgentPreview;
 }
 
@@ -165,7 +166,7 @@ export function createAgentFromAI(
     strategyPackage,
     strategyVersions,
     strategyVersion: strategyPackage.manifest.version,
-    executionMode: existingAgent?.executionMode ?? "verified_package",
+    executionMode: request.executionMode ?? existingAgent?.executionMode ?? "remote_agent",
     soulKey: soulKey ?? existingAgent?.soulKey,
     skillId: skillId ?? existingAgent?.skillId,
     createdAt: existingAgent?.createdAt ?? now,

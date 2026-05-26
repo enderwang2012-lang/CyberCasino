@@ -6,7 +6,6 @@ import crypto from "node:crypto";
 import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo, AgentConfigV2 } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
-import { pingWebhook } from "./agents/webhook-ping";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validateStrategyPackage, validatePreview, createAgentFromAI } from "./api/agent-create";
 import type { CreateAgentRequest } from "./api/agent-create";
@@ -144,8 +143,10 @@ const httpServer = createServer((req, res) => {
       const promptPath = join(import.meta.dirname, "../src/prompts/agent-creation-prompt.md");
       let template = readFileSync(promptPath, "utf-8");
       const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+      const wsAgentUrl = baseUrl.replace(/^http/, "ws") + "/agent";
       template = template
         .replace(/\{API_BASE_URL\}/g, baseUrl)
+        .replace(/\{WS_AGENT_URL\}/g, wsAgentUrl)
         .replace("{API_TOKEN}", key)
         .replace(/\{NAME\}/g, soul.name)
         .replace(/\{AVATAR\}/g, soul.avatar);
@@ -181,7 +182,7 @@ ${configJson}
 
 ## 排名赛说明
 
-提交 \`Strategy Package v1\` 后可直接参与「排名赛」。远程 WebSocket 或 webhook Agent 同样可以参加排名赛。排名赛比较完整 Agent 能力，平台只统一约束身份、合法牌局信息、动作协议、时限与结果审计，不统一策略方法或模型能力。
+默认使用认证 WebSocket 将牌局视图发送给你的外部 Agent，由它自主返回动作；提交的 \`Strategy Package v1\` 同时作为未连接或超时时的平台 fallback。你也可以显式选择 \`verified_package\`，完全由平台执行策略包。WebSocket 不作为开赛前强制在线检查，未连接时 fallback 的结果仍计入排名。
 `;
       template += executionModeNote;
 
@@ -223,7 +224,7 @@ ${configJson}
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        let { config, strategyPackage, preview, soulKey, skillId, webhookUrl } = parsed as CreateAgentRequest & { soulKey?: string; skillId?: string; webhookUrl?: string };
+        let { config, strategyPackage, executionMode, preview, soulKey, skillId } = parsed as CreateAgentRequest & { soulKey?: string; skillId?: string };
         // Fallback: extract soul key from Authorization header (AI sends token there)
         if (!soulKey && req.headers.authorization?.startsWith("Bearer ")) {
           soulKey = req.headers.authorization.slice(7);
@@ -237,6 +238,11 @@ ${configJson}
         if (!configResult.valid) {
           res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
           res.end(JSON.stringify({ error: "Invalid strategy config", details: configResult.errors }));
+          return;
+        }
+        if (executionMode && executionMode !== "remote_agent" && executionMode !== "verified_package") {
+          res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "Invalid executionMode" }));
           return;
         }
 
@@ -284,11 +290,7 @@ ${configJson}
           }));
           return;
         }
-        const agent = createAgentFromAI(userId, { config, strategyPackage, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId, existingAgent);
-        if (webhookUrl) {
-          agent.webhookUrl = webhookUrl;
-          agent.executionMode = "remote_agent";
-        }
+        const agent = createAgentFromAI(userId, { config, strategyPackage, executionMode, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId, existingAgent);
         agentStore.saveV2(agent);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
@@ -544,8 +546,7 @@ const gameHistoryStore = new GameHistoryStore();
 tableManager.setHistoryStore(gameHistoryStore);
 wsAgentManager.setAuthenticationResolver((token) => {
   const agent = findAgentByToken(token, agentStore);
-  const legacyRemote = !agent?.executionMode && agent?.soulKey?.startsWith("cc_");
-  if (!agent || (agent.executionMode !== "remote_agent" && !legacyRemote)) return undefined;
+  if (!agent || agent.executionMode !== "remote_agent") return undefined;
   wsAgentManager.loadStylePrompt(agent.id, agent.stylePrompt ?? "", agent.styleProfile);
   return { id: agent.id, name: agent.name };
 });
@@ -667,25 +668,6 @@ io.on("connection", (socket) => {
     socket.emit("lobby:personalities", personalitiesInfo);
   });
 
-  // --- Agent config ---
-  socket.on("agent:save", (partial) => {
-    const userId = socketUserMap.get(socket.id);
-    if (!userId) { socket.emit("table:error", "Not registered"); return; }
-    const existing = agentStore.getByUserId(userId);
-    if (existing && tableManager.isAgentPlaying(existing.id)) {
-      socket.emit("table:error", "比赛进行中不能修改正在参赛 Agent 的策略");
-      return;
-    }
-    const config = agentStore.save(userId, partial);
-    socket.emit("agent:saved", config);
-  });
-
-  socket.on("agent:get", () => {
-    const userId = socketUserMap.get(socket.id);
-    if (!userId) { socket.emit("agent:config", null); return; }
-    socket.emit("agent:config", agentStore.getByUserId(userId) ?? null);
-  });
-
   socket.on("agent:delete", (agentId) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
@@ -695,15 +677,6 @@ io.on("connection", (socket) => {
     }
     agentStore.deleteV2(userId, agentId);
     socket.emit("agent:deleted", agentId);
-  });
-
-  socket.on("agent:testWebhook", async (url) => {
-    const userId = socketUserMap.get(socket.id);
-    const result = await pingWebhook(url);
-    if (result.success && userId) {
-      agentStore.markWebhookVerified(userId);
-    }
-    socket.emit("agent:webhookPing", result);
   });
 
   // --- Lobby ---
@@ -745,10 +718,8 @@ io.on("connection", (socket) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
 
-    // Check v2 (AI-created StrategyAgent) first, then v1 (webhook mode)
     const v2Config = agentStore.getV2ByUserId(userId);
-    const v1Config = agentStore.getByUserId(userId);
-    if (!v2Config && !v1Config) { socket.emit("table:error", "No agent configured"); return; }
+    if (!v2Config) { socket.emit("table:error", "No agent configured"); return; }
 
     const table = tableManager.getTable(tableId);
     if (!table) { socket.emit("table:error", "Table not found"); return; }
@@ -769,25 +740,13 @@ io.on("connection", (socket) => {
     }
 
     // Build a seat-compatible config (identity fields only)
-    const seatConfig = v2Config
-      ? { id: v2Config.id, name: v2Config.name, avatar: v2Config.avatar, userId, stylePrompt: "", webhookVerified: true }
-      : v1Config!;
-
-    const legacyRemoteV2 = !!v2Config && !v2Config.executionMode && v2Config.soulKey?.startsWith("cc_");
-    const executionMode = v2Config?.executionMode === "remote_agent" || legacyRemoteV2 || (!v2Config && !!v1Config)
-      ? "remote_agent"
-      : "verified_package";
-    if (!table.sit(seatConfig, executionMode, v2Config?.strategyVersion ?? v2Config?.strategyPackage?.manifest.version)) {
+    const executionMode = v2Config.executionMode === "verified_package" ? "verified_package" : "remote_agent";
+    if (!table.sit(v2Config, executionMode, v2Config.strategyVersion ?? v2Config.strategyPackage?.manifest.version)) {
       socket.emit("table:error", "Cannot sit (table full or already seated)");
       return;
     }
 
-    if (v2Config) {
-      tableManager.setAgentV2Config(tableId, userId, v2Config);
-    }
-    if (v1Config) {
-      tableManager.setAgentConfig(tableId, userId, v1Config);
-    }
+    tableManager.setAgentV2Config(tableId, userId, v2Config);
     socket.join(`table:${tableId}`);
     broadcastSeats(tableId);
   });
@@ -848,9 +807,8 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const agentConfigs = tableManager.getAgentConfigs(tableId);
     const v2Configs = tableManager.getAgentV2Configs(tableId);
-    const match = table.start(agentConfigs, language ?? "zh", v2Configs);
+    const match = table.start(language ?? "zh", v2Configs);
     io.to(`table:${tableId}`).emit("table:started", tableId);
     broadcastLobby();
     match.catch((err) => abortFailedTable(tableId, err));

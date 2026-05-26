@@ -9,7 +9,6 @@ import type {
   BlindSchedule,
   TableSeat,
   SeatAgent,
-  AgentConfig,
   AgentConfigV2,
   ActionRecord,
   ShowdownResult,
@@ -21,7 +20,6 @@ import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
 import type { IPokerAgent } from "./agents/agent-interface";
 import { PokerAgent } from "./agents/agent";
-import { ExternalAgent } from "./agents/external-agent";
 import { StrategyAgent } from "./agents/strategy-agent";
 import { WebSocketAgent } from "./agents/websocket-agent";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
@@ -88,7 +86,7 @@ export class TableInstance {
   // --- Seat management ---
 
   sit(
-    agentConfig: AgentConfig,
+    agentConfig: Pick<AgentConfigV2, "id" | "userId" | "name" | "avatar">,
     executionMode: "verified_package" | "remote_agent" = "remote_agent",
     strategyVersion?: number,
   ): boolean {
@@ -296,7 +294,6 @@ export class TableInstance {
   // --- Game control ---
 
   async start(
-    agentConfigs?: Map<string, AgentConfig>,
     language: "zh" | "en" = "zh",
     v2Configs?: Map<string, AgentConfigV2>,
   ): Promise<void> {
@@ -317,7 +314,7 @@ export class TableInstance {
 
     this.agents = this.seats
       .filter((s) => s.status === "occupied" && s.agent)
-      .map((s) => this.createAgent(s.agent!, agentConfigs, v2Configs));
+      .map((s) => this.createAgent(s.agent!, v2Configs));
     for (const agent of this.agents) {
       if (agent instanceof WebSocketAgent) {
         wsAgentManager.lockStyleForMatch(agent.id, this.id);
@@ -403,12 +400,10 @@ export class TableInstance {
 
   private createAgent(
     seat: SeatAgent,
-    agentConfigs?: Map<string, AgentConfig>,
     v2Configs?: Map<string, AgentConfigV2>,
   ): IPokerAgent {
     const v2Config = seat.userId ? v2Configs?.get(seat.userId) : undefined;
-    const isLegacyRemote = !!v2Config && !v2Config.executionMode && v2Config.soulKey?.startsWith("cc_");
-    const isRemoteRuntime = v2Config?.executionMode === "remote_agent" || isLegacyRemote;
+    const isRemoteRuntime = v2Config?.executionMode !== "verified_package";
 
     // Uploaded packages are platform-executed and cannot be replaced by a live
     // remote connection. This is one ranked capability class, not the only one.
@@ -430,18 +425,6 @@ export class TableInstance {
         this.id,
         wsAgentManager.getStyleProfile(seat.id),
       );
-    }
-
-    if (v2Config?.webhookUrl && isRemoteRuntime) {
-      return new ExternalAgent({
-        id: v2Config.id,
-        userId: v2Config.userId,
-        name: v2Config.name,
-        avatar: v2Config.avatar,
-        stylePrompt: v2Config.stylePrompt ?? "",
-        webhookUrl: v2Config.webhookUrl,
-        webhookVerified: v2Config.webhookVerified,
-      });
     }
 
     if (v2Config && isRemoteRuntime) {
@@ -481,13 +464,7 @@ export class TableInstance {
       return new PokerAgent(seat.id);
     }
 
-    // V1 custom agent (webhook mode)
-    const config = seat.userId && agentConfigs?.get(seat.userId);
-    if (!config) {
-      return new PokerAgent(PERSONALITIES[0].id);
-    }
-
-    return new ExternalAgent(config);
+    return new PokerAgent(PERSONALITIES[0].id);
   }
 
   private async playHand(activePlayers: IPokerAgent[]): Promise<void> {
