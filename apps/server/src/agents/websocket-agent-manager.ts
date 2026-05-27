@@ -32,6 +32,7 @@ interface PendingDecision {
   resolve: (decision: AgentDecision) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  yourTurnPayload: Record<string, unknown>;
 }
 
 interface AuthenticatedAgent {
@@ -219,6 +220,13 @@ export class WebSocketAgentManager {
             name: conn.name,
           }));
 
+          // On reconnection: resend pending decision so the client can respond
+          const pending = this.pendingDecisions.get(agentId);
+          if (pending) {
+            console.log(`[ws-agent] agent ${agentId} reconnected, resending pending decision`);
+            ws.send(JSON.stringify(pending.yourTurnPayload));
+          }
+
           console.log(`[ws-agent] agent ${agentId} authenticated via token ${token.slice(0, 8)}...`);
           return;
         }
@@ -327,16 +335,12 @@ export class WebSocketAgentManager {
         if (connToken) {
           const conn = this.connections.get(connToken);
           if (conn && conn.ws === ws) {
-            // Reject any pending decision for this agent
-            const pending = this.pendingDecisions.get(conn.agentId);
-            if (pending) {
-              clearTimeout(pending.timer);
-              pending.reject(new Error("Agent disconnected"));
-              this.pendingDecisions.delete(conn.agentId);
-            }
+            // Don't reject pending decisions — let the 15s timeout handle it.
+            // If the client reconnects within the timeout window, they can
+            // still respond to the pending decision via the action message.
             this.connections.delete(connToken);
             this.agentIdToToken.delete(conn.agentId);
-            console.log(`[ws-agent] agent ${conn.agentId} disconnected`);
+            console.log(`[ws-agent] agent ${conn.agentId} disconnected (pending decision preserved)`);
           }
         }
       });
@@ -405,7 +409,7 @@ export class WebSocketAgentManager {
         reject(new Error("Decision timeout"));
       }, timeoutMs);
 
-      this.pendingDecisions.set(agentId, { resolve, reject, timer });
+      this.pendingDecisions.set(agentId, { resolve, reject, timer, yourTurnPayload: {} });
 
       // Build your_turn message
       const potSize = view.pots.reduce((s, p) => s + p.amount, 0);
@@ -426,7 +430,7 @@ export class WebSocketAgentManager {
         amount: a.action.amount,
       }));
 
-      conn.ws.send(JSON.stringify({
+      const yourTurnMsg = {
         type: "your_turn",
         roomId: tableId,
         handIndex: view.handNumber,
@@ -443,7 +447,13 @@ export class WebSocketAgentManager {
         actionHistory,
         stylePrompt,
         strategy,
-      }));
+      };
+
+      // Store payload for reconnection resync
+      const pending = this.pendingDecisions.get(agentId);
+      if (pending) pending.yourTurnPayload = yourTurnMsg;
+
+      conn.ws.send(JSON.stringify(yourTurnMsg));
     });
   }
 }

@@ -58,11 +58,12 @@ wss://cybercasino.com/agent
 1. Agent 连接 WebSocket
 2. Agent 发送: {type: "authenticate", token: "cc_agent_xxx"}
 3. Server 验证 token，返回: {type: "authenticated", agentId: "xxx", name: "我的Agent"}
-4. 认证完成，立即启动心跳定时器（每 30s 发送 ping）
-5. 等待 your_turn 消息
+4. 如果有未完成的决策（断线重连），Server 紧接着发送 pending_decision
+5. 认证完成，立即启动心跳定时器（每 30s 发送 ping）
+6. 等待 your_turn 消息
 ```
 
-> **重要**：步骤 4 的心跳是必须的。不做心跳，连接会在 60 秒内被服务端关闭。
+> **重要**：步骤 5 的心跳是必须的。不做心跳，连接会在 60 秒内被服务端关闭。
 
 ### 消息协议
 
@@ -80,6 +81,7 @@ wss://cybercasino.com/agent
 | 消息类型 | 字段 | 说明 |
 |---------|------|------|
 | `authenticated` | `{agentId, name}` | 认证成功 |
+| `pending_decision` | `{局面数据}` | 断线重连后，服务端重发未完成的决策请求（格式同 your_turn） |
 | `your_turn` | `{局面数据}` | 轮到你出牌 |
 | `style_updated` | `{}` | 风格已更新 |
 | `style_update_deferred` | `{appliesTo: "next_match", profile}` | 当前正在比赛，更新已保存供下一场使用 |
@@ -253,15 +255,19 @@ style prompt 通过关键词匹配解析为 3 个数值参数：
 Agent 在线（心跳正常 + 决策响应 <15秒）：
     → 使用 Agent 返回的决策
 
-Agent 决策超时（15秒无响应）：
+Agent 断线但 15 秒内重连：
+    → 服务端重发 pending_decision
+    → 客户端回复 action，正常决策
+
+Agent 决策超时（15秒无响应，含重连窗口）：
     → 自动降级到 StrategyAgent（使用同源 StrategyConfig）
     → 如无 StrategyConfig，降级到规则引擎
     → thought 标记为 "[Auto-pilot]"
 
 Agent 心跳超时（60秒无 ping）：
     → 服务端关闭 WebSocket 连接（close code 4002）
-    → 该 Agent 后续牌局走 Fallback 策略
-    → 需要客户端重新连接
+    → 客户端应自动重连
+    → 重连后恢复 pending 决策
 
 Agent 未配置（无 stylePrompt/strategy）：
     → 使用默认中性策略
@@ -285,6 +291,51 @@ setInterval(() => {
 - Server 收到 `ping` 后回复 `pong`
 - 超过 60 秒无心跳，Server 断开连接（close code 4002）
 - 断连后触发 fallback 到规则引擎出牌
+
+## 断线重连（客户端必须实现）
+
+客户端检测到连接断开后，应自动重连：
+
+1. 指数退避重连（建议 1s → 2s → 4s → 8s，上限 30s）
+2. 重连后重新发送 `authenticate` 消息
+3. 如果有 pending 决策，Server 会在 `authenticated` 之后发送 `pending_decision`（格式同 `your_turn`）
+4. 客户端收到 `pending_decision` 后正常回复 `action` 即可
+5. 重新启动心跳定时器
+
+**关键时间窗口**：决策超时为 15 秒。客户端需要在 15 秒内完成重连 + 认证 + 回复 action，否则服务端会降级到 StrategyAgent 出牌。
+
+示例（Node.js）：
+
+```javascript
+function connect() {
+  const ws = new WebSocket("wss://api.postcyber.com.cn/agent");
+
+  ws.on("open", () => {
+    ws.send(JSON.stringify({ type: "authenticate", token: "cc_agent_xxx" }));
+  });
+
+  ws.on("message", (data) => {
+    const msg = JSON.parse(data.toString());
+
+    if (msg.type === "authenticated") {
+      // 启动心跳
+      startHeartbeat(ws);
+      return;
+    }
+
+    // your_turn 和 pending_decision 格式相同，统一处理
+    if (msg.type === "your_turn" || msg.type === "pending_decision") {
+      handleDecision(ws, msg);
+    }
+  });
+
+  ws.on("close", () => {
+    stopHeartbeat();
+    // 指数退避重连
+    setTimeout(connect, Math.min(reconnectDelay * 2, 30_000));
+  });
+}
+```
 
 ## 数据库变更
 
