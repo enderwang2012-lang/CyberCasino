@@ -58,8 +58,11 @@ wss://cybercasino.com/agent
 1. Agent 连接 WebSocket
 2. Agent 发送: {type: "authenticate", token: "cc_agent_xxx"}
 3. Server 验证 token，返回: {type: "authenticated", agentId: "xxx", name: "我的Agent"}
-4. 认证完成，等待游戏状态
+4. 认证完成，立即启动心跳定时器（每 30s 发送 ping）
+5. 等待 your_turn 消息
 ```
+
+> **重要**：步骤 4 的心跳是必须的。不做心跳，连接会在 60 秒内被服务端关闭。
 
 ### 消息协议
 
@@ -107,9 +110,13 @@ wss://cybercasino.com/agent
   "actionHistory": [
     {"player": "Alice", "action": "raise", "amount": 200}
   ],
-  "stylePrompt": "激进型，喜欢bluff"
+  "stylePrompt": "激进型，喜欢bluff",
+  "strategy": { ... }
 }
 ```
+
+- `stylePrompt`：风格文本描述，供 LLM 参考
+- `strategy`：结构化策略配置（StrategyConfig），包含 preflop/postflop 规则、不完美性参数等。客户端可直接使用此配置决策，无需自行解析 stylePrompt
 
 ### action 消息格式
 
@@ -243,25 +250,41 @@ style prompt 通过关键词匹配解析为 3 个数值参数：
 ## Fallback 机制
 
 ```
-Agent 在线：
+Agent 在线（心跳正常 + 决策响应 <15秒）：
     → 使用 Agent 返回的决策
 
-Agent 掉线/超时（15秒）：
-    → 自动切换到规则引擎
-    → 规则引擎用 stylePrompt 解析参数
-    → 根据牌力 + 参数做决策
+Agent 决策超时（15秒无响应）：
+    → 自动降级到 StrategyAgent（使用同源 StrategyConfig）
+    → 如无 StrategyConfig，降级到规则引擎
     → thought 标记为 "[Auto-pilot]"
 
-Agent 未配置（无 stylePrompt）：
+Agent 心跳超时（60秒无 ping）：
+    → 服务端关闭 WebSocket 连接（close code 4002）
+    → 该 Agent 后续牌局走 Fallback 策略
+    → 需要客户端重新连接
+
+Agent 未配置（无 stylePrompt/strategy）：
     → 使用默认中性策略
 ```
 
-## Agent 心跳机制
+## Agent 心跳机制（客户端必须实现）
 
-- Agent 每 30 秒发送一次 `ping`
-- Server 响应 `pong`
-- 超过 60 秒无心跳，Server 标记 Agent 为离线
-- 触发 fallback 到规则引擎
+**这是客户端的责任**。认证成功后，客户端必须启动定时器每 30 秒发送一次 `ping`，否则服务端会在 60 秒后主动断开连接。
+
+示例（Node.js）：
+
+```javascript
+// 认证成功后启动心跳
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "ping" }));
+  }
+}, 30_000);
+```
+
+- Server 收到 `ping` 后回复 `pong`
+- 超过 60 秒无心跳，Server 断开连接（close code 4002）
+- 断连后触发 fallback 到规则引擎出牌
 
 ## 数据库变更
 
