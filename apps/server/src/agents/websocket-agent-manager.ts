@@ -185,7 +185,6 @@ export class WebSocketAgentManager {
 
           const authenticatedAgent = this.resolveToken?.(token);
           if (!authenticatedAgent) {
-            console.warn(`[ws-agent] auth failed for token ${token.slice(0, 12)}... (resolveToken returned undefined)`);
             ws.send(JSON.stringify({ type: "error", message: "Invalid agent token" }));
             ws.close(4003, "Authentication failed");
             return;
@@ -221,7 +220,6 @@ export class WebSocketAgentManager {
             agentId,
             name: conn.name,
           }));
-          console.log(`[ws-agent] sent authenticated to ${agentId}, ws.readyState=${ws.readyState}`);
 
           // On reconnection: resend pending decision with a fresh timeout
           const pending = this.pendingDecisions.get(agentId);
@@ -339,7 +337,7 @@ export class WebSocketAgentManager {
         }
       });
 
-      ws.on("close", (code, reason) => {
+      ws.on("close", () => {
         if (connToken) {
           const conn = this.connections.get(connToken);
           if (conn && conn.ws === ws) {
@@ -348,13 +346,13 @@ export class WebSocketAgentManager {
             // still respond to the pending decision via the action message.
             this.connections.delete(connToken);
             this.agentIdToToken.delete(conn.agentId);
-            console.log(`[ws-agent] agent ${conn.agentId} disconnected code=${code} reason="${reason}" (pending decision preserved)`);
+            console.log(`[ws-agent] agent ${conn.agentId} disconnected (pending decision preserved)`);
           }
         }
       });
 
       ws.on("error", (err) => {
-        console.error(`[ws-agent] WebSocket error:`, err.message, err.stack);
+        console.error(`[ws-agent] WebSocket error:`, err.message);
       });
     });
 
