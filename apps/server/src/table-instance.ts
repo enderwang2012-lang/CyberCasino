@@ -416,6 +416,7 @@ export class TableInstance {
     // them separately in audit records.
     if (wsAgentManager.isConnected(seat.id)) {
       const conn = wsAgentManager.getConnection(seat.id);
+      const strategy = v2Config?.strategy ?? builtinStrategies.get(seat.id);
       return new WebSocketAgent(
         seat.id,
         conn?.name ?? seat.name,
@@ -423,6 +424,7 @@ export class TableInstance {
         wsAgentManager.getStylePrompt(seat.id),
         this.id,
         wsAgentManager.getStyleProfile(seat.id),
+        strategy,
       );
     }
 
@@ -434,6 +436,7 @@ export class TableInstance {
         v2Config.stylePrompt ?? "",
         this.id,
         wsAgentManager.getStyleProfile(v2Config.id),
+        v2Config.strategy,
       );
     }
 

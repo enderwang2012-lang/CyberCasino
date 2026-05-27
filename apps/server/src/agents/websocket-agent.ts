@@ -4,9 +4,11 @@ import type {
   ActionType,
   ActionRecord,
   StyleProfile,
+  StrategyConfig,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { wsAgentManager } from "./websocket-agent-manager";
+import { StrategyAgent } from "./strategy-agent";
 import { parseStyleToPersonality } from "./style-parser";
 import { ruleDecide, ruleFallback } from "./rule-engine";
 
@@ -17,7 +19,7 @@ const DECISION_TIMEOUT_MS = 15_000;
  *
  * When decide() is called, it pushes a your_turn message to the connected agent
  * and waits for an action response. If the agent is disconnected or times out,
- * falls back to the rule engine using the stored stylePrompt.
+ * falls back to StrategyAgent using the stored strategy config.
  */
 export class WebSocketAgent implements IPokerAgent {
   readonly id: string;
@@ -27,6 +29,7 @@ export class WebSocketAgent implements IPokerAgent {
 
   private readonly stylePrompt: string;
   private readonly styleProfile?: StyleProfile;
+  private readonly strategy?: StrategyConfig;
   private readonly tableId: string;
 
   constructor(
@@ -36,6 +39,7 @@ export class WebSocketAgent implements IPokerAgent {
     stylePrompt = "",
     tableId = "",
     styleProfile?: StyleProfile,
+    strategy?: StrategyConfig,
   ) {
     this.id = id;
     this.name = name;
@@ -43,6 +47,7 @@ export class WebSocketAgent implements IPokerAgent {
     this.stylePrompt = stylePrompt;
     this.tableId = tableId;
     this.styleProfile = styleProfile;
+    this.strategy = strategy;
   }
 
   async decide(
@@ -64,16 +69,17 @@ export class WebSocketAgent implements IPokerAgent {
           this.stylePrompt,
           this.tableId,
           DECISION_TIMEOUT_MS,
+          this.strategy,
         );
         return decision;
       } catch (err) {
         console.warn(
-          `[WebSocketAgent:${this.id}] WebSocket decision failed: ${(err as Error).message}, falling back to rules`
+          `[WebSocketAgent:${this.id}] WebSocket decision failed: ${(err as Error).message}, falling back to StrategyAgent`
         );
       }
     }
 
-    // Fallback to rule engine
+    // Fallback to StrategyAgent (same strategy the remote AI would have used)
     return this.fallbackDecide(view, validActions, callAmount, minRaise, language);
   }
 
@@ -85,13 +91,46 @@ export class WebSocketAgent implements IPokerAgent {
     // No internal state to clear for external agents
   }
 
-  private fallbackDecide(
+  private async fallbackDecide(
     view: AgentGameView,
     validActions: ActionType[],
     callAmount: number,
     minRaise: number,
     language: "zh" | "en" = "zh",
-  ): AgentDecision {
+  ): Promise<AgentDecision> {
+    // If we have a StrategyConfig, delegate to StrategyAgent
+    if (this.strategy) {
+      try {
+        const agent = new StrategyAgent(
+          {
+            id: this.id,
+            userId: "external",
+            name: this.name,
+            avatar: this.avatar,
+            strategy: this.strategy,
+            executionMode: "remote_agent",
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          "external",
+          "ranked",
+        );
+        const decision = await agent.decide(view, validActions, callAmount, minRaise, language);
+        return {
+          ...decision,
+          thought: {
+            ...decision.thought,
+            message: `[Auto-pilot] ${decision.thought.message}`,
+          },
+        };
+      } catch (err) {
+        console.warn(
+          `[WebSocketAgent:${this.id}] StrategyAgent fallback failed: ${(err as Error).message}, falling back to rule engine`
+        );
+      }
+    }
+
+    // Final fallback: rule engine
     const personality = parseStyleToPersonality(
       this.id,
       this.name,

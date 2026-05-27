@@ -7,6 +7,7 @@ import type {
   ActionRecord,
   StyleProfile,
   HighLevelStyle,
+  StrategyConfig,
 } from "@cybercasino/shared";
 import type { IPokerAgent } from "./agent-interface";
 import { parseStyleToPersonality, parseStyleInput } from "./style-parser";
@@ -391,6 +392,7 @@ export class WebSocketAgentManager {
     stylePrompt: string,
     tableId = "",
     timeoutMs = 15_000,
+    strategy?: StrategyConfig,
   ): Promise<AgentDecision> {
     const conn = this.connections.get(this.agentIdToToken.get(agentId) ?? "");
     if (!conn || conn.ws.readyState !== WebSocket.OPEN) {
@@ -440,6 +442,7 @@ export class WebSocketAgentManager {
         players,
         actionHistory,
         stylePrompt,
+        strategy,
       }));
     });
   }
