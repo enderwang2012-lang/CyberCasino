@@ -25,7 +25,7 @@ import { decidePostflop, classifyHand } from "./strategy";
 import { calculateDifficulty, estimateHandStrength } from "./imperfection/decision-difficulty";
 import { buildDecisionDistribution, sampleFromDistribution } from "./imperfection/decision-distribution";
 import { createInitialState, updateAfterHand, describeState } from "./imperfection/psychological-state";
-import { generateThought, classifyPreflopHand } from "./thought/thought-generator";
+import { generateThought, generateLLMThought, classifyPreflopHand } from "./thought/thought-generator";
 import { packageForAgent, seedToRandom } from "./strategy-package";
 
 // ---------------------------------------------------------------------------
@@ -226,15 +226,18 @@ export class StrategyAgent implements IPokerAgent {
     }
 
     // ---------- Thought generation ----------
-    let thought = this.generateThoughtForAction(
-      view,
-      finalAction,
-      expression,
-      isIP,
-      potSize,
-      callAmount,
-      preflopAdjustments,
-    );
+    // Try LLM thought first, fall back to template-based
+    const lang: "zh" | "en" = expression.thoughtLanguage === "en" ? "en" : "zh";
+    let thought = await generateLLMThought(view, finalAction, strategicAmount, lang, this.psychState)
+      ?? this.generateThoughtForAction(
+        view,
+        finalAction,
+        expression,
+        isIP,
+        potSize,
+        callAmount,
+        preflopAdjustments,
+      );
 
     // If it was a mistake, annotate the thought
     if (sampled.isMistake) {

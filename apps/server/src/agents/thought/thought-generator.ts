@@ -5,9 +5,12 @@ import type {
   PostflopCondition,
   ActionType,
   AgentThought,
+  Card,
+  AgentGameView,
 } from "@cybercasino/shared";
 import type { PsychologicalState } from "../imperfection/psychological-state";
 import { describeState } from "../imperfection/psychological-state";
+import { getClient, getModel } from "../llm-client";
 
 // ---------------------------------------------------------------------------
 // Hand condition → natural-language descriptions
@@ -237,4 +240,110 @@ export function generateThought(
     psychologicalState,
     thinkingSource: "strategy",
   };
+}
+
+// ---------------------------------------------------------------------------
+// LLM-based thought generation (with timeout fallback)
+// ---------------------------------------------------------------------------
+
+const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
+const RANK_NAMES: Record<number, string> = {
+  2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8",
+  9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A",
+};
+function cardStr(c: Card): string {
+  return `${RANK_NAMES[c.rank]}${SUIT_SYMBOLS[c.suit]}`;
+}
+
+function buildThoughtPrompt(
+  view: AgentGameView,
+  action: ActionType,
+  amount: number | undefined,
+  language: "zh" | "en",
+): string {
+  const myCards = view.myCards.map(cardStr).join(" ");
+  const community = view.communityCards.length > 0
+    ? view.communityCards.map(cardStr).join(" ")
+    : "(无)";
+  const potSize = view.pots.reduce((s, p) => s + p.amount, 0);
+  const opponents = view.players
+    .filter((p) => p.id !== view.myId && !p.folded)
+    .map((p) => `  ${p.name}: ${p.chips}筹码, 下注${p.bet}${p.allIn ? " [ALL-IN]" : ""}`)
+    .join("\n");
+
+  const actionDesc = action === "raise" ? `加注到 ${amount ?? "?"}` : { fold: "弃牌", check: "过牌", call: "跟注" }[action];
+
+  if (language === "en") {
+    return `POKER THOUGHT — write 1 sentence of inner monologue (like a real player muttering to themselves).
+
+Hand: ${myCards} | Board: ${community} | Phase: ${view.phase}
+Pot: ${potSize} | Your chips: ${view.myChips} | Your action: ${actionDesc}
+Opponents:
+${opponents || "  (none)"}
+
+Rules: reference your actual cards by name, be natural and brief, no JSON.`;
+  }
+
+  return `扑克内心独白 — 用 1 句话写出此刻的真实想法（像牌手在心里嘀咕）。
+
+手牌: ${myCards} | 公共牌: ${community} | 阶段: ${view.phase}
+底池: ${potSize} | 你的筹码: ${view.myChips} | 你的动作: ${actionDesc}
+对手:
+${opponents || "  (无)"}
+
+要求：提到你的真实手牌牌面，自然简短，像人一样说话，不要 JSON。`;
+}
+
+/**
+ * Generate thought via LLM. Returns null on failure/timeout (caller should
+ * fall back to template-based generation).
+ */
+export async function generateLLMThought(
+  view: AgentGameView,
+  action: ActionType,
+  amount: number | undefined,
+  language: "zh" | "en",
+  state: PsychologicalState,
+): Promise<AgentThought | null> {
+  try {
+    const prompt = buildThoughtPrompt(view, action, amount, language);
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("LLM thought timeout")), 5000)
+    );
+
+    const response = await Promise.race([
+      getClient().chat.completions.create({
+        model: getModel(),
+        max_tokens: 80,
+        temperature: 0.9,
+        messages: [
+          {
+            role: "system",
+            content: language === "en"
+              ? "You are a poker player's inner voice. Output ONLY the thought text, nothing else."
+              : "你是一个扑克玩家的内心独白。只输出想法文字，不要任何其他内容。",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+      timeoutPromise,
+    ]);
+
+    const text = response.choices[0]?.message?.content?.trim();
+    if (!text || text.length < 2) return null;
+
+    const rawConf = 0.5 + state.confidence * 0.3 - state.fear * 0.2 - state.tilt * 0.1;
+    const confidence = Math.max(0.1, Math.min(0.95, rawConf));
+    const isBluffing = action === "raise" && view.myCards.length === 2;
+
+    return {
+      message: text,
+      confidence: Math.round(confidence * 100) / 100,
+      isBluffing,
+      thinkingSource: "llm",
+    };
+  } catch {
+    return null;
+  }
 }
