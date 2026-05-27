@@ -822,6 +822,7 @@ export class TableInstance {
       list.push(a);
       phaseActions.set(a.phase, list);
     }
+    console.log(`[commentary] actionHistory=${actionHistory.length}, phases=${[...phaseActions.keys()].join(",")}, reasons=${reasons.join(",")}, showdown=${showdownResults?.length ?? 0}, winners=${winnerIds.join(",")}`);
 
     for (const phase of phaseOrder) {
       const actions = phaseActions.get(phase);
