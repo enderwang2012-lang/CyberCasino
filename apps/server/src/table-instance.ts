@@ -804,68 +804,65 @@ export class TableInstance {
     const cardStr = (c: Card) => `${RANK_NAMES[c.rank]}${SUIT_SYMBOLS[c.suit]}`;
     const nameOf = (id: string) => this.agents.find((a) => a.id === id)?.name ?? id;
     const isZh = this.language === "zh";
-    const parts: string[] = [];
-
-    // --- Action narrative per phase ---
-    const phaseOrder: ActionRecord["phase"][] = ["preflop", "flop", "turn", "river"];
-    const phaseLabel: Record<string, string> = isZh
-      ? { preflop: "翻牌前", flop: "翻牌圈", turn: "转牌圈", river: "河牌圈" }
-      : { preflop: "Pre-flop", flop: "Flop", turn: "Turn", river: "River" };
-    const actionVerb = isZh
-      ? { raise: "加注到", call: "跟注", check: "过牌", fold: "弃牌" }
-      : { raise: "raises to", call: "calls", check: "checks", fold: "folds" };
 
     // Group actions by phase
+    const phaseOrder: ActionRecord["phase"][] = ["preflop", "flop", "turn", "river"];
     const phaseActions = new Map<string, ActionRecord[]>();
     for (const a of actionHistory) {
       const list = phaseActions.get(a.phase) ?? [];
       list.push(a);
       phaseActions.set(a.phase, list);
     }
-    console.log(`[commentary] actionHistory=${actionHistory.length}, phases=${[...phaseActions.keys()].join(",")}, reasons=${reasons.join(",")}, showdown=${showdownResults?.length ?? 0}, winners=${winnerIds.join(",")}`);
 
+    const narrative: string[] = [];
+
+    // Build action description for each phase
     for (const phase of phaseOrder) {
       const actions = phaseActions.get(phase);
       if (!actions || actions.length === 0) continue;
 
-      // Describe community cards at this phase
+      // Community cards at this phase
       if (phase === "flop" && communityCards.length >= 3) {
         const cards = communityCards.slice(0, 3).map(cardStr).join(" ");
-        parts.push(isZh ? `${phaseLabel[phase]} ${cards}` : `${phaseLabel[phase]}: ${cards}`);
+        narrative.push(isZh ? `翻牌 ${cards}` : `Flop ${cards}`);
       } else if (phase === "turn" && communityCards.length >= 4) {
-        parts.push(isZh ? `转牌 ${cardStr(communityCards[3])}` : `Turn: ${cardStr(communityCards[3])}`);
+        narrative.push(isZh ? `转牌 ${cardStr(communityCards[3])}` : `Turn ${cardStr(communityCards[3])}`);
       } else if (phase === "river" && communityCards.length >= 5) {
-        parts.push(isZh ? `河牌 ${cardStr(communityCards[4])}` : `River: ${cardStr(communityCards[4])}`);
+        narrative.push(isZh ? `河牌 ${cardStr(communityCards[4])}` : `River ${cardStr(communityCards[4])}`);
       }
 
-      // Summarize key actions (skip pure checks unless all checked)
-      const raises = actions.filter((a) => a.action.type === "raise");
-      const folds = actions.filter((a) => a.action.type === "fold");
-      const calls = actions.filter((a) => a.action.type === "call");
-      const checks = actions.filter((a) => a.action.type === "check");
-
-      if (raises.length > 0) {
-        // Describe raises in sequence
-        const raiseDescs = raises.map((a) => {
+      // Describe each significant action in order
+      for (const a of actions) {
+        const who = nameOf(a.playerId);
+        const t = a.action.type;
+        if (t === "raise") {
           const amt = a.action.amount ?? 0;
-          return `${nameOf(a.playerId)} ${actionVerb[a.action.type]} ${amt}`;
-        });
-        parts.push(raiseDescs.join(isZh ? "，" : ", "));
-      } else if (calls.length > 0 && checks.length === 0) {
-        // Only calls, no raises
-        const callerNames = calls.map((a) => nameOf(a.playerId)).join(isZh ? "、" : " and ");
-        parts.push(isZh ? `${callerNames} 跟注` : `${callerNames} calls`);
-      } else if (checks.length > 0 && raises.length === 0 && folds.length === 0) {
-        // Everyone checked — skip unless interesting
+          narrative.push(isZh ? `${who} 加注到 ${amt}` : `${who} raises to ${amt}`);
+        } else if (t === "call") {
+          narrative.push(isZh ? `${who} 跟注` : `${who} calls`);
+        } else if (t === "fold" && actions.length <= 3) {
+          // Only mention folds in short actions (not multi-way folds)
+          narrative.push(isZh ? `${who} 弃牌` : `${who} folds`);
+        }
+        // Skip checks — not interesting for narrative
       }
 
-      if (folds.length > 0 && phase !== "preflop") {
-        const foldNames = folds.map((a) => nameOf(a.playerId)).join(isZh ? "、" : " and ");
-        parts.push(isZh ? `${foldNames} 弃牌` : `${foldNames} fold${folds.length > 1 ? "" : "s"}`);
+      // If many folds in this phase, summarize
+      const foldCount = actions.filter((a) => a.action.type === "fold").length;
+      if (foldCount >= 3) {
+        narrative.push(isZh ? `多人弃牌` : `Multiple folds`);
       }
     }
 
-    // --- Showdown / result ---
+    // Compose final commentary
+    const parts: string[] = [];
+
+    // 1. Action narrative (main body)
+    if (narrative.length > 0) {
+      parts.push(narrative.join(isZh ? "，" : ", "));
+    }
+
+    // 2. Showdown / result
     if (showdownResults && showdownResults.length >= 2) {
       const resultLines = showdownResults.map((r) => {
         const cards = r.holeCards.map(cardStr).join(" ");
@@ -889,7 +886,7 @@ export class TableInstance {
       }
     }
 
-    // --- Highlight reason commentary ---
+    // 3. Highlight reason commentary (emotional color)
     const bbMultiple = Math.round(potTotal / bigBlind);
     if (reasons.includes("big-pot")) {
       parts.push(isZh
