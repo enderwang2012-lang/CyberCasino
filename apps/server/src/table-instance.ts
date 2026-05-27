@@ -29,6 +29,7 @@ import { createStrategyPackage } from "./agents/strategy-package";
 import { auditDecision } from "./agents/action-audit";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
+import { generateCommentary, type CommentaryContext } from "./highlight-commentary";
 
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
@@ -698,7 +699,33 @@ export class TableInstance {
         ...winnerIds,
         ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
       ])];
-      const commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
+
+      // Try LLM commentary with timeout, fall back to rule-based
+      const playerNames = new Map(this.agents.map((a) => [a.id, a.name]));
+      const commentaryCtx: CommentaryContext = {
+        handNumber: this.handNumber,
+        reasons,
+        actionHistory,
+        holeCards,
+        communityCards: currentPhaseCards,
+        showdownResults: capturedShowdownResults,
+        potTotal,
+        bigBlind: this.currentBigBlind,
+        playerNames,
+        winnerIds,
+      };
+      let commentary: string;
+      try {
+        commentary = await Promise.race([
+          generateCommentary(commentaryCtx),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("LLM timeout")), 15000)
+          ),
+        ]);
+      } catch {
+        commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
+      }
+
       this.emit({
         type: "hand-highlight",
         handNumber: highlightHandNumber,
