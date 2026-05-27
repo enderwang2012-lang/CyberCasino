@@ -87,7 +87,6 @@ ${stylePrompt || "均衡型选手，根据牌面情况灵活调整"}
     tightness: hl.tightness ?? 0.5,
     aggression: hl.aggression ?? 0.5,
     bluffFrequency: hl.bluffFrequency ?? 0.3,
-    claudeThreshold: 0.35,
     systemPrompt,
   };
 }

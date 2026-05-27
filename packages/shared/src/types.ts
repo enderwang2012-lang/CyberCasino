@@ -586,7 +586,6 @@ export interface AgentPersonality {
   tightness: number;      // 0 (loose) to 1 (tight) — starting hand range
   aggression: number;      // 0 (passive) to 1 (aggressive) — bet/raise frequency
   bluffFrequency: number;  // 0 to 1
-  claudeThreshold: number; // 0 to 1 — how uncertain before calling Claude
   systemPrompt: string;
 }
 
@@ -925,34 +924,6 @@ export const DEFAULT_BET_SIZINGS: BetSizingModel = {
 };
 
 // --- Poker agent config (full) ---
-
-export interface PokerAgentConfig {
-  version: string;
-  game: {
-    format: "NLHE_6MAX";
-    mode: "cash" | "tournament";
-    startingStackBb: number;
-    blindScheduleId?: string;
-  };
-  style: StyleConfig;
-  strategy: {
-    baselineVersion: string;
-    randomnessSeedPolicy: "per_hand" | "per_match";
-    styleShiftLimit: number;
-    exploitShiftLimit: number;
-    opponentModelEnabled: boolean;
-  };
-  fairness: {
-    hiddenInformationIsolation: true;
-    noBotCollusion: true;
-    opponentIdentityBlind: boolean;
-    auditLogging: boolean;
-  };
-  explanation: {
-    publicReasoningEnabled: boolean;
-    storeFullDecisionTrace: boolean;
-  };
-}
 
 // --- Equity estimation helpers ---
 

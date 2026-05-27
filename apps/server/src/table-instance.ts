@@ -16,11 +16,12 @@ import type {
   ReplayHand,
   ReplayHandAction,
   HighlightReason,
+  StrategyConfig,
+  AgentPersonality,
 } from "@cybercasino/shared";
 import { gameLoop } from "@cybercasino/engine";
 import type { GamePlayer } from "@cybercasino/engine";
 import type { IPokerAgent } from "./agents/agent-interface";
-import { PokerAgent } from "./agents/agent";
 import { StrategyAgent } from "./agents/strategy-agent";
 import { WebSocketAgent } from "./agents/websocket-agent";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
@@ -440,29 +441,98 @@ export class TableInstance {
     // identifiable as non-ranked fillers/benchmarks.
     if (seat.type === "builtin") {
       const personality = PERSONALITIES.find((p) => p.id === seat.id);
-      const strategy = builtinStrategies.get(seat.id);
+      const strategy = builtinStrategies.get(seat.id)
+        ?? this.defaultStrategy(personality);
 
-      if (strategy) {
-        return new StrategyAgent({
-          id: seat.id,
-          userId: "platform",
-          name: personality?.name ?? seat.name,
-          avatar: personality?.avatar ?? seat.avatar,
-          strategy,
-          strategyPackage: createStrategyPackage(strategy, {
-            agentId: seat.id,
-            packageId: `house-${seat.id}`,
-            createdBy: "platform_builtin",
-          }),
-          executionMode: "verified_package",
-          createdAt: 0,
-          updatedAt: 0,
-        }, "builtin", this.config.mode);
-      }
-      return new PokerAgent(seat.id);
+      return new StrategyAgent({
+        id: seat.id,
+        userId: "platform",
+        name: personality?.name ?? seat.name,
+        avatar: personality?.avatar ?? seat.avatar,
+        strategy,
+        strategyPackage: createStrategyPackage(strategy, {
+          agentId: seat.id,
+          packageId: `house-${seat.id}`,
+          createdBy: "platform_builtin",
+        }),
+        executionMode: "verified_package",
+        createdAt: 0,
+        updatedAt: 0,
+      }, "builtin", this.config.mode);
     }
 
-    return new PokerAgent(PERSONALITIES[0].id);
+    // Fallback: use first personality with default strategy
+    const fallback = PERSONALITIES[0];
+    const fallbackStrategy = builtinStrategies.get(fallback.id)
+      ?? this.defaultStrategy(fallback);
+    return new StrategyAgent({
+      id: fallback.id,
+      userId: "platform",
+      name: fallback.name,
+      avatar: fallback.avatar,
+      strategy: fallbackStrategy,
+      strategyPackage: createStrategyPackage(fallbackStrategy, {
+        agentId: fallback.id,
+        packageId: `house-${fallback.id}`,
+        createdBy: "platform_builtin",
+      }),
+      executionMode: "verified_package",
+      createdAt: 0,
+      updatedAt: 0,
+    }, "builtin", this.config.mode);
+  }
+
+  private defaultStrategy(personality?: AgentPersonality): StrategyConfig {
+    const tight = personality?.tightness ?? 0.5;
+    const agg = personality?.aggression ?? 0.5;
+    // Scale ranges by tightness: tighter = fewer hands
+    const premiumRaise = ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AQs", "AKo"];
+    const goodRaise = tight < 0.5
+      ? ["99", "88", "77", "AJs", "ATs", "KQs", "AQo", "AJo"]
+      : ["99", "88", "AJs", "KQs", "AQo"];
+    const callHands = tight < 0.5
+      ? ["66", "55", "A9s", "KTs", "QJs", "JTs", "T9s", "KQo"]
+      : ["77", "ATs", "KJs", "QJs", "AJo"];
+    const betAction = agg > 0.6 ? "value-bet-large" : agg > 0.3 ? "value-bet-medium" : "value-bet-small";
+    return {
+      preflop: {
+        ranges: {
+          UTG: { raise: premiumRaise, call: [], fold: [] },
+          MP: { raise: [...premiumRaise, ...goodRaise.slice(0, 3)], call: callHands.slice(0, 3), fold: [] },
+          CO: { raise: [...premiumRaise, ...goodRaise], call: callHands, fold: [] },
+          BTN: { raise: [...premiumRaise, ...goodRaise, "77"], call: [...callHands, "66"], fold: [] },
+          SB: { raise: [...premiumRaise, ...goodRaise.slice(0, 4)], call: callHands.slice(0, 4), fold: [] },
+          BB: { raise: premiumRaise.slice(0, 4), call: [...goodRaise, ...callHands], fold: [] },
+        },
+        sizing: { openRaise: "2.5", threeBet: "3.5", fourBet: "2.5" },
+      },
+      postflop: [
+        { when: "monster", action: "value-bet-large", streets: ["flop", "turn", "river"], priority: 1 },
+        { when: "overpair", action: betAction, streets: ["flop", "turn"], priority: 2 },
+        { when: "top-pair-top-kicker", action: "value-bet-small", streets: ["flop"], priority: 4 },
+        { when: "top-pair-good-kicker", action: "check-call", streets: ["flop", "turn", "river"], priority: 6 },
+        { when: "flush-draw", action: agg > 0.5 ? "semi-bluff-medium" : "check-call", streets: ["flop"], priority: 8 },
+        { when: "straight-draw", action: agg > 0.5 ? "semi-bluff-medium" : "check-call", streets: ["flop"], priority: 8 },
+        { when: "nothing", action: "check-fold", streets: ["flop", "turn", "river"], priority: 10 },
+      ],
+      expression: {
+        tone: {
+          warmth: 0.5,
+          sass: agg > 0.6 ? 0.7 : 0.3,
+          intensity: agg,
+          humor: 0.4,
+        },
+        thoughtLanguage: "zh",
+        thoughtTemplates: {
+          confident: ["{handDesc}，{actionDesc}", "有牌有位置，干了"],
+          worried: ["有点悬...", "{handDesc}，谨慎行事"],
+          bluffing: ["演一下...", "来了来了"],
+          frustrated: ["又来？", "算了..."],
+        },
+        catchphrases: [],
+        verbalTics: [],
+      },
+    };
   }
 
   private async playHand(activePlayers: IPokerAgent[]): Promise<void> {
