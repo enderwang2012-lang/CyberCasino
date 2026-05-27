@@ -698,7 +698,7 @@ export class TableInstance {
         ...winnerIds,
         ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
       ])];
-      const commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards);
+      const commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
       this.emit({
         type: "hand-highlight",
         handNumber: highlightHandNumber,
@@ -793,6 +793,8 @@ export class TableInstance {
     winnerIds: string[],
     potTotal: number,
     holeCards: Map<string, Card[]>,
+    communityCards: Card[],
+    bigBlind: number,
   ): string {
     const RANK_NAMES: Record<number, string> = {
       2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8",
@@ -800,29 +802,85 @@ export class TableInstance {
     };
     const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
     const cardStr = (c: Card) => `${RANK_NAMES[c.rank]}${SUIT_SYMBOLS[c.suit]}`;
-
+    const nameOf = (id: string) => this.agents.find((a) => a.id === id)?.name ?? id;
     const isZh = this.language === "zh";
     const parts: string[] = [];
 
-    // Describe showdown results
+    // --- Action narrative per phase ---
+    const phaseOrder: ActionRecord["phase"][] = ["preflop", "flop", "turn", "river"];
+    const phaseLabel: Record<string, string> = isZh
+      ? { preflop: "翻牌前", flop: "翻牌圈", turn: "转牌圈", river: "河牌圈" }
+      : { preflop: "Pre-flop", flop: "Flop", turn: "Turn", river: "River" };
+    const actionVerb = isZh
+      ? { raise: "加注到", call: "跟注", check: "过牌", fold: "弃牌" }
+      : { raise: "raises to", call: "calls", check: "checks", fold: "folds" };
+
+    // Group actions by phase
+    const phaseActions = new Map<string, ActionRecord[]>();
+    for (const a of actionHistory) {
+      const list = phaseActions.get(a.phase) ?? [];
+      list.push(a);
+      phaseActions.set(a.phase, list);
+    }
+
+    for (const phase of phaseOrder) {
+      const actions = phaseActions.get(phase);
+      if (!actions || actions.length === 0) continue;
+
+      // Describe community cards at this phase
+      if (phase === "flop" && communityCards.length >= 3) {
+        const cards = communityCards.slice(0, 3).map(cardStr).join(" ");
+        parts.push(isZh ? `${phaseLabel[phase]} ${cards}` : `${phaseLabel[phase]}: ${cards}`);
+      } else if (phase === "turn" && communityCards.length >= 4) {
+        parts.push(isZh ? `转牌 ${cardStr(communityCards[3])}` : `Turn: ${cardStr(communityCards[3])}`);
+      } else if (phase === "river" && communityCards.length >= 5) {
+        parts.push(isZh ? `河牌 ${cardStr(communityCards[4])}` : `River: ${cardStr(communityCards[4])}`);
+      }
+
+      // Summarize key actions (skip pure checks unless all checked)
+      const raises = actions.filter((a) => a.action.type === "raise");
+      const folds = actions.filter((a) => a.action.type === "fold");
+      const calls = actions.filter((a) => a.action.type === "call");
+      const checks = actions.filter((a) => a.action.type === "check");
+
+      if (raises.length > 0) {
+        // Describe raises in sequence
+        const raiseDescs = raises.map((a) => {
+          const amt = a.action.amount ?? 0;
+          return `${nameOf(a.playerId)} ${actionVerb[a.action.type]} ${amt}`;
+        });
+        parts.push(raiseDescs.join(isZh ? "，" : ", "));
+      } else if (calls.length > 0 && checks.length === 0) {
+        // Only calls, no raises
+        const callerNames = calls.map((a) => nameOf(a.playerId)).join(isZh ? "、" : " and ");
+        parts.push(isZh ? `${callerNames} 跟注` : `${callerNames} calls`);
+      } else if (checks.length > 0 && raises.length === 0 && folds.length === 0) {
+        // Everyone checked — skip unless interesting
+      }
+
+      if (folds.length > 0 && phase !== "preflop") {
+        const foldNames = folds.map((a) => nameOf(a.playerId)).join(isZh ? "、" : " and ");
+        parts.push(isZh ? `${foldNames} 弃牌` : `${foldNames} fold${folds.length > 1 ? "" : "s"}`);
+      }
+    }
+
+    // --- Showdown / result ---
     if (showdownResults && showdownResults.length >= 2) {
-      for (const r of showdownResults) {
-        const name = this.agents.find((a) => a.id === r.playerId)?.name ?? r.playerId;
+      const resultLines = showdownResults.map((r) => {
         const cards = r.holeCards.map(cardStr).join(" ");
         const won = winnerIds.includes(r.playerId);
-        parts.push(isZh
-          ? `${name} 展示 ${cards}（${r.handName}）${won ? "赢下底池" : ""}`
-          : `${name} shows ${cards} (${r.handName})${won ? " and wins" : ""}`);
-      }
+        return isZh
+          ? `${nameOf(r.playerId)} 展示 ${cards}（${r.handName}）${won ? "赢下底池" : ""}`
+          : `${nameOf(r.playerId)} shows ${cards} (${r.handName})${won ? " and wins" : ""}`;
+      });
+      parts.push(resultLines.join(isZh ? "，" : ". "));
     } else if (winnerIds.length > 0) {
-      // No showdown — everyone folded
-      const winnerNames = winnerIds.map((id) => this.agents.find((a) => a.id === id)?.name ?? id).join(", ");
+      const winnerNames = winnerIds.map((id) => nameOf(id)).join(", ");
       const bluffer = actionHistory.find((a) => a.thought?.isBluffing);
       if (bluffer) {
-        const blufferName = this.agents.find((a) => a.id === bluffer.playerId)?.name ?? bluffer.playerId;
         parts.push(isZh
-          ? `${blufferName} 一手精彩诈唬，对手全部弃牌！`
-          : `${blufferName} pulls off a bluff — everyone folds!`);
+          ? `${nameOf(bluffer.playerId)} 一手精彩诈唬，对手全部弃牌！`
+          : `${nameOf(bluffer.playerId)} pulls off a bluff — everyone folds!`);
       } else {
         parts.push(isZh
           ? `${winnerNames} 收下底池`
@@ -830,9 +888,12 @@ export class TableInstance {
       }
     }
 
-    // Add reason context
+    // --- Highlight reason commentary ---
+    const bbMultiple = Math.round(potTotal / bigBlind);
     if (reasons.includes("big-pot")) {
-      parts.push(isZh ? `底池 ${potTotal.toLocaleString()}，超过 8 倍大盲！` : `Pot ${potTotal.toLocaleString()} — over 8x big blind!`);
+      parts.push(isZh
+        ? `底池 ${potTotal.toLocaleString()}，超过 ${bbMultiple} 倍大盲！`
+        : `Pot ${potTotal.toLocaleString()} — over ${bbMultiple}x big blind!`);
     }
     if (reasons.includes("bad-beat")) {
       parts.push(isZh ? "有人带着强牌倒下了，河牌杀！" : "Strong hand goes down — river card kills!");
