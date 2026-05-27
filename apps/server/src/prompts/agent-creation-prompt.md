@@ -89,7 +89,14 @@
 
 然后问："这样可以吗？确认后我就提交配置。"
 
-用户确认后，**立即生成完整 `Strategy Package v1`，以远程 WebSocket 模式 POST 到 API，并尝试建立 WebSocket 连接。**
+用户确认后，按以下顺序执行：
+
+1. **先创建 Agent**：POST `/api/agents/create-by-ai`，提交策略包。确认返回 `agentId` 和 `status: "active"`。
+2. **再连接 WebSocket**：用同一个 token 连接 `wss://api.postcyber.com.cn/agent`，发送 authenticate。
+3. **启动心跳**：认证成功后，每 30 秒发送一次 `ping` 保活。
+4. **监听牌局**：等待 `your_turn` 消息，回复 `action`。
+
+> **注意**：必须先完成步骤 1 创建 Agent，否则 WebSocket 认证会返回 4003（token 无效）。创建成功后 token 才生效。
 
 ---
 
