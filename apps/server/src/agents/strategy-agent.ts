@@ -493,14 +493,6 @@ export class StrategyAgent implements IPokerAgent {
 
     let message = thoughts[Math.floor(Math.random() * thoughts.length)];
 
-    // Append context reasoning when dynamic adjustments were applied
-    if (preflopAdjustments && preflopAdjustments.length > 0) {
-      const reasoning = preflopAdjustments[0]; // primary adjustment
-      message += lang === "en"
-        ? ` — ${reasoning}`
-        : `，${reasoning}`;
-    }
-
     return message;
   }
 }
