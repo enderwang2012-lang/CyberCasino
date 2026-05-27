@@ -32,6 +32,7 @@ interface PendingDecision {
   resolve: (decision: AgentDecision) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  timeoutMs: number;
   yourTurnPayload: Record<string, unknown>;
 }
 
@@ -220,10 +221,15 @@ export class WebSocketAgentManager {
             name: conn.name,
           }));
 
-          // On reconnection: resend pending decision so the client can respond
+          // On reconnection: resend pending decision with a fresh timeout
           const pending = this.pendingDecisions.get(agentId);
           if (pending) {
-            console.log(`[ws-agent] agent ${agentId} reconnected, resending pending decision`);
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(() => {
+              this.pendingDecisions.delete(agentId);
+              pending.reject(new Error("Decision timeout"));
+            }, pending.timeoutMs);
+            console.log(`[ws-agent] agent ${agentId} reconnected, resending pending decision (timeout reset ${pending.timeoutMs}ms)`);
             ws.send(JSON.stringify(pending.yourTurnPayload));
           }
 
@@ -409,7 +415,7 @@ export class WebSocketAgentManager {
         reject(new Error("Decision timeout"));
       }, timeoutMs);
 
-      this.pendingDecisions.set(agentId, { resolve, reject, timer, yourTurnPayload: {} });
+      this.pendingDecisions.set(agentId, { resolve, reject, timer, timeoutMs, yourTurnPayload: {} });
 
       // Build your_turn message
       const potSize = view.pots.reduce((s, p) => s + p.amount, 0);
