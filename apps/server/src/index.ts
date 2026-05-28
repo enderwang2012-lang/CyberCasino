@@ -15,6 +15,14 @@ import { verifyJwt } from "./auth";
 const PORT = parseInt(process.env.PORT ?? "3001");
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
 
+// Global exception handlers — log but don't crash
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaughtException:", err.stack ?? err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] unhandledRejection:", reason);
+});
+
 function authenticatedUser(req: { headers: { cookie?: string | string[] } }, handshakeAuth?: { token?: string }) {
   const cookie = Array.isArray(req.headers.cookie) ? req.headers.cookie.join(";") : req.headers.cookie;
   const token = handshakeAuth?.token || cookie?.match(/(?:^|;\s*)cybercasino-token=([^;]*)/)?.[1];
@@ -531,9 +539,29 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
 });
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN ?? "http://localhost:3000", credentials: true },
+  // Prevent Engine.IO from destroying WebSocket upgrade sockets on non-/socket.io/ paths.
+  // Our ws library (at /agent) handles its own upgrades; Engine.IO's 1s destroyUpgrade
+  // timeout could race with the ws handshake.
+  destroyUpgrade: false,
 });
 
 // Attach WebSocket server for external agents
+// Diagnostic: track ALL upgrade events on the HTTP server
+httpServer.on("upgrade", (req, socket, head) => {
+  console.log(`[http-upgrade] url=${req.url} socket.writable=${socket.writable} socket.bytesWritten=${socket.bytesWritten} headLen=${head?.length ?? 0}`);
+  // Track socket state changes
+  const origEnd = socket.end.bind(socket);
+  socket.end = function(...args: any[]) {
+    console.log(`[http-upgrade] socket.end() called! url=${req.url}`);
+    return origEnd(...args);
+  } as any;
+  socket.on("close", () => {
+    console.log(`[http-upgrade] socket closed url=${req.url} bytesWritten=${socket.bytesWritten}`);
+  });
+  socket.on("error", (err: Error) => {
+    console.error(`[http-upgrade] socket error url=${req.url}:`, err.message);
+  });
+});
 wsAgentManager.attach(httpServer);
 wsAgentManager.setStyleUpdateCallback((agentId, style, profile, status) => {
   agentStore.updateStylePrompt(agentId, style, profile, status);

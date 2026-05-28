@@ -172,6 +172,7 @@ export class WebSocketAgentManager {
 
         // --- authenticate ---
         if (msg.type === "authenticate") {
+          console.log(`[ws-agent] AUTH_START token=${(msg.token ?? "").slice(0, 12)} readyState=${ws.readyState}`);
           if (authenticated) {
             ws.send(JSON.stringify({ type: "error", message: "Already authenticated" }));
             return;
@@ -183,12 +184,15 @@ export class WebSocketAgentManager {
             return;
           }
 
+          console.log(`[ws-agent] AUTH resolving token...`);
           const authenticatedAgent = this.resolveToken?.(token);
           if (!authenticatedAgent) {
+            console.log(`[ws-agent] AUTH FAILED — token not found`);
             ws.send(JSON.stringify({ type: "error", message: "Invalid agent token" }));
             ws.close(4003, "Authentication failed");
             return;
           }
+          console.log(`[ws-agent] AUTH OK agentId=${authenticatedAgent.id} name=${authenticatedAgent.name}`);
 
           connToken = token;
           authenticated = true;
@@ -199,6 +203,7 @@ export class WebSocketAgentManager {
           // Close existing connection for this token if any
           const existing = this.connections.get(token);
           if (existing && existing.ws.readyState === WebSocket.OPEN) {
+            console.log(`[ws-agent] AUTH closing existing connection for same token`);
             existing.ws.close(4001, "Replaced by new connection");
           }
 
@@ -214,12 +219,19 @@ export class WebSocketAgentManager {
           };
           this.connections.set(token, conn);
           this.agentIdToToken.set(agentId, token);
+          console.log(`[ws-agent] AUTH conn stored, readyState=${ws.readyState}`);
 
-          ws.send(JSON.stringify({
-            type: "authenticated",
-            agentId,
-            name: conn.name,
-          }));
+          try {
+            ws.send(JSON.stringify({
+              type: "authenticated",
+              agentId,
+              name: conn.name,
+            }));
+            console.log(`[ws-agent] AUTH sent 'authenticated' response, readyState=${ws.readyState}`);
+          } catch (sendErr) {
+            console.error(`[ws-agent] AUTH send failed:`, sendErr);
+            return;
+          }
 
           // On reconnection: resend pending decision with a fresh timeout
           const pending = this.pendingDecisions.get(agentId);
@@ -233,7 +245,7 @@ export class WebSocketAgentManager {
             ws.send(JSON.stringify(pending.yourTurnPayload));
           }
 
-          console.log(`[ws-agent] agent ${agentId} authenticated via token ${token.slice(0, 8)}...`);
+          console.log(`[ws-agent] AUTH complete agentId=${agentId} readyState=${ws.readyState}`);
           return;
         }
 
@@ -337,22 +349,23 @@ export class WebSocketAgentManager {
         }
       });
 
-      ws.on("close", () => {
+      ws.on("close", (code: number, reason: Buffer) => {
+        const reasonStr = reason?.toString() ?? "";
+        console.log(`[ws-agent] CLOSE code=${code} reason="${reasonStr}" authenticated=${authenticated} connToken=${connToken.slice(0, 12)}`);
         if (connToken) {
           const conn = this.connections.get(connToken);
           if (conn && conn.ws === ws) {
-            // Don't reject pending decisions — let the 15s timeout handle it.
-            // If the client reconnects within the timeout window, they can
-            // still respond to the pending decision via the action message.
             this.connections.delete(connToken);
             this.agentIdToToken.delete(conn.agentId);
             console.log(`[ws-agent] agent ${conn.agentId} disconnected (pending decision preserved)`);
+          } else {
+            console.log(`[ws-agent] CLOSE conn not found or ws mismatch`);
           }
         }
       });
 
       ws.on("error", (err) => {
-        console.error(`[ws-agent] WebSocket error:`, err.message);
+        console.error(`[ws-agent] WS_ERROR readyState=${ws.readyState}:`, err.message);
       });
     });
 
