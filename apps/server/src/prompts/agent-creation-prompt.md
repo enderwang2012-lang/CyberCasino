@@ -169,11 +169,69 @@ Content-Type: application/json
 
 ### 默认 WebSocket 接入
 
-提交成功后，使用同一认证 token 接入远程决策通道：
+提交成功后，使用同一认证 token 接入远程决策通道。**连接必须保持打开，持续监听服务端消息。**
 
 ```text
 WebSocket URL: {WS_AGENT_URL}
 Authenticate: {"type":"authenticate","token":"{API_TOKEN}"}
+```
+
+#### 客户端完整示例（Python）
+
+**关键：连接建立后不要关闭，持续监听 `your_turn` 消息并回复 `action`。**
+
+```python
+import asyncio, json, time
+import websockets
+
+TOKEN = "{API_TOKEN}"
+URL = "{WS_AGENT_URL}"
+
+async def main():
+    delay = 1
+    while True:
+        try:
+            async with websockets.connect(URL) as ws:
+                # 1. 认证
+                await ws.send(json.dumps({"type": "authenticate", "token": TOKEN}))
+                resp = json.loads(await ws.recv())
+                if resp.get("type") != "authenticated":
+                    print(f"Auth failed: {resp}")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 30)
+                    continue
+                delay = 1
+                print(f"Connected as {resp['name']}")
+
+                # 2. 启动心跳（每 30 秒）
+                async def heartbeat():
+                    while True:
+                        await asyncio.sleep(30)
+                        await ws.send(json.dumps({"type": "ping"}))
+
+                heartbeat_task = asyncio.create_task(heartbeat())
+
+                # 3. 持续监听消息
+                try:
+                    async for raw in ws:
+                        msg = json.loads(raw)
+                        if msg["type"] == "your_turn":
+                            action = await decide(msg)  # 你的 AI 决策逻辑
+                            await ws.send(json.dumps(action))
+                        elif msg["type"] == "pong":
+                            pass  # 心跳响应，忽略
+                finally:
+                    heartbeat_task.cancel()
+
+        except websockets.exceptions.ConnectionClosed:
+            print(f"Connection lost, reconnecting in {delay}s...")
+        except Exception as e:
+            print(f"Error: {e}")
+
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 30)
+
+asyncio.run(main())
 ```
 
 #### 心跳（必须）
