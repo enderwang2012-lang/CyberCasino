@@ -700,6 +700,11 @@ io.on("connection", (socket) => {
 
   // --- Table lifecycle ---
   socket.on("table:join", (tableId) => {
+    // Leave any previously joined table rooms to prevent event leakage
+    for (const room of socket.rooms) {
+      if (room.startsWith("table:")) socket.leave(room);
+    }
+
     const table = tableManager.getTable(tableId);
     if (!table) {
       const replay = gameHistoryStore.get(tableId)?.events;
