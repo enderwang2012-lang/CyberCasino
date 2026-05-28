@@ -69,13 +69,22 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
 
   function handleJoinTable(tableId: string) {
     const table = tables.find((t) => t.id === tableId);
-    if (!table) return;
+    if (table) {
+      if (table.status === "waiting") {
+        setActiveTableId(tableId);
+        joinTable(tableId);
+        setView("table-waiting");
+      } else {
+        joinTable(tableId);
+        setActiveTableId(tableId);
+        setView("table-live");
+      }
+      return;
+    }
 
-    if (table.status === "waiting") {
-      setActiveTableId(tableId);
-      joinTable(tableId);
-      setView("table-waiting");
-    } else {
+    // Historical table — not in active tables, join directly for replay
+    const hist = historyTables.find((t) => t.id === tableId);
+    if (hist) {
       joinTable(tableId);
       setActiveTableId(tableId);
       setView("table-live");
