@@ -108,6 +108,7 @@ export class TableManager {
     if (this.finishedTables.length > 50) {
       this.finishedTables.pop();
     }
+    this.tables.delete(tableId);
     return true;
   }
 

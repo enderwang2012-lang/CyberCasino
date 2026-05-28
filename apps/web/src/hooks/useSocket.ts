@@ -67,6 +67,7 @@ export function useSocket(
         setConnected(true);
         socket!.emit("user:register", oauthUserId, oauthUserInfo as any);
         socket!.emit("lobby:join");
+        socket!.emit("table:history");
       });
 
       socket.on("disconnect", () => setConnected(false));
