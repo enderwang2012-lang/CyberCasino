@@ -156,7 +156,8 @@ export class WebSocketAgentManager {
     this.wss.on("connection", (ws, req) => {
       const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim()
         ?? req.socket.remoteAddress ?? "unknown";
-      console.log(`[ws-agent] new connection from ${ip}`);
+      const ua = req.headers["user-agent"] ?? "unknown";
+      console.log(`[ws-agent] new connection from ${ip} ua=${ua}`);
 
       let authenticated = false;
       let connToken = "";
@@ -183,12 +184,15 @@ export class WebSocketAgentManager {
             return;
           }
 
+          console.log(`[ws-agent] authenticate token=${token.slice(0, 20)}...`);
           const authenticatedAgent = this.resolveToken?.(token);
           if (!authenticatedAgent) {
+            console.warn(`[ws-agent] auth FAILED for token ${token.slice(0, 20)}...`);
             ws.send(JSON.stringify({ type: "error", message: "Invalid agent token" }));
             ws.close(4003, "Authentication failed");
             return;
           }
+          console.log(`[ws-agent] auth OK → agentId=${authenticatedAgent.id}`);
 
           connToken = token;
           authenticated = true;
@@ -337,7 +341,8 @@ export class WebSocketAgentManager {
         }
       });
 
-      ws.on("close", () => {
+      ws.on("close", (code, reason) => {
+        console.log(`[ws-agent] ws.on(close) code=${code} reason="${reason}" connToken=${connToken.slice(0, 12)}...`);
         if (connToken) {
           const conn = this.connections.get(connToken);
           if (conn && conn.ws === ws) {
@@ -347,12 +352,14 @@ export class WebSocketAgentManager {
             this.connections.delete(connToken);
             this.agentIdToToken.delete(conn.agentId);
             console.log(`[ws-agent] agent ${conn.agentId} disconnected (pending decision preserved)`);
+          } else {
+            console.log(`[ws-agent] close handler: conn not found or ws mismatch`);
           }
         }
       });
 
       ws.on("error", (err) => {
-        console.error(`[ws-agent] WebSocket error:`, err.message);
+        console.error(`[ws-agent] ws.on(error):`, err.message);
       });
     });
 
