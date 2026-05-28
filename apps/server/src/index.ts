@@ -546,22 +546,6 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 });
 
 // Attach WebSocket server for external agents
-// Diagnostic: track ALL upgrade events on the HTTP server
-httpServer.on("upgrade", (req, socket, head) => {
-  console.log(`[http-upgrade] url=${req.url} socket.writable=${socket.writable} socket.bytesWritten=${socket.bytesWritten} headLen=${head?.length ?? 0}`);
-  // Track socket state changes
-  const origEnd = socket.end.bind(socket);
-  socket.end = function(...args: any[]) {
-    console.log(`[http-upgrade] socket.end() called! url=${req.url}`);
-    return origEnd(...args);
-  } as any;
-  socket.on("close", () => {
-    console.log(`[http-upgrade] socket closed url=${req.url} bytesWritten=${socket.bytesWritten}`);
-  });
-  socket.on("error", (err: Error) => {
-    console.error(`[http-upgrade] socket error url=${req.url}:`, err.message);
-  });
-});
 wsAgentManager.attach(httpServer);
 wsAgentManager.setStyleUpdateCallback((agentId, style, profile, status) => {
   agentStore.updateStylePrompt(agentId, style, profile, status);
