@@ -700,6 +700,9 @@ io.on("connection", (socket) => {
 
   // --- Table lifecycle ---
   socket.on("table:join", (tableId) => {
+    const prevRooms = [...socket.rooms].filter(r => r.startsWith("table:"));
+    console.log(`[table:join] ${socket.id} joining ${tableId}, prev rooms: ${prevRooms.join(",") || "none"}`);
+
     // Leave any previously joined table rooms to prevent event leakage
     for (const room of socket.rooms) {
       if (room.startsWith("table:")) socket.leave(room);
@@ -708,25 +711,32 @@ io.on("connection", (socket) => {
     const table = tableManager.getTable(tableId);
     if (!table) {
       const replay = gameHistoryStore.get(tableId)?.events;
+      const eventCount = replay?.timeline?.length ?? 0;
+      console.log(`[table:join] ${tableId} not in memory, sending ${eventCount} history events`);
       for (const event of replay?.timeline ?? []) {
         socket.emit("game:event", event);
       }
       return;
     }
+    console.log(`[table:join] ${tableId} found in memory, status=${table.getStatus()}`);
     socket.join(`table:${tableId}`);
     if (table.getStatus() === "playing") {
-      for (const event of table.getLiveEventHistory()) {
+      const events = table.getLiveEventHistory();
+      console.log(`[table:join] sending ${events.length} live events`);
+      for (const event of events) {
         socket.emit("game:event", event);
       }
     } else if (table.getStatus() === "finished") {
-      for (const event of table.getEventHistory()) {
+      const events = table.getEventHistory();
+      console.log(`[table:join] sending ${events.length} finished events`);
+      for (const event of events) {
         socket.emit("game:event", event);
       }
     }
-    console.log(`[${socket.id}] joined table ${tableId}`);
   });
 
   socket.on("table:leave", (tableId) => {
+    console.log(`[table:leave] ${socket.id} leaving ${tableId}, rooms: ${[...socket.rooms].join(",")}`);
     socket.leave(`table:${tableId}`);
     socket.emit("lobby:tables", tableManager.getHomepageTables());
   });

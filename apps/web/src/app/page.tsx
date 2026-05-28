@@ -68,6 +68,11 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   }, [view, refreshLobby]);
 
   function handleJoinTable(tableId: string) {
+    // Leave current table room first to prevent event leakage
+    if (activeTableId && activeTableId !== tableId) {
+      leaveTable(activeTableId);
+    }
+
     const table = tables.find((t) => t.id === tableId);
     if (table) {
       if (table.status === "waiting") {
