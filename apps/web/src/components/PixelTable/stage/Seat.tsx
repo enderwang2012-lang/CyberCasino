@@ -7,6 +7,7 @@ import { HoleCards } from "./HoleCards";
 import { ChipsLabel } from "./ChipsLabel";
 import { ThinkingHalo } from "../effects/ThinkingHalo";
 import { EmojiBubble } from "../effects/EmojiBubble";
+import { AllInFire } from "../effects/AllInFire";
 
 interface SeatProps {
   seat: SeatState;
@@ -25,6 +26,8 @@ export function Seat({ seat, x, y, bubble = null }: SeatProps) {
       <EmojiBubble emoji={bubble} x={0} y={-AVATAR_SIZE / 2 - 30} />
       {/* 下注金额标签 */}
       <BetIndicator amount={seat.currentBet} x={0} y={-AVATAR_SIZE / 2 - 16} />
+      {/* All-in 火焰粒子 */}
+      <AllInFire active={seat.status === "all-in"} radius={AVATAR_SIZE / 2} />
       {/* 思考者金色脉冲 */}
       <ThinkingHalo active={seat.status === "thinking"} radius={AVATAR_SIZE / 2} />
       {/* 头像 */}
