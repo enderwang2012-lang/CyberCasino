@@ -127,5 +127,10 @@
   "auth": {
     "logout": "退出登录",
     "notLoggedIn": "请先登录"
+  },
+  "turnCard": {
+    "current": "当前",
+    "history": "历史",
+    "waiting": "等待出牌..."
   }
 }

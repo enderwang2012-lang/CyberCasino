@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameEvent } from "@cybercasino/shared";
+import { TurnCard } from "../TurnCard";
 import { PixiStage } from "./stage/PixiStage";
 import { Table } from "./stage/Table";
 import { PotDisplay } from "./stage/PotDisplay";
@@ -108,6 +109,8 @@ export function PixelTableView({ events }: PixelTableViewProps) {
     return () => clearInterval(interval);
   }, [state.seats]);
 
+  const latestSeat = state.seats.find((s) => s.lastDecision) ?? null;
+
   const placedSeats = state.seats.map((seat) => ({
     seat,
     pos: seatPositions[seat.seatIndex] ?? seatPositions[0],
@@ -129,6 +132,15 @@ export function PixelTableView({ events }: PixelTableViewProps) {
           <Seat key={seat.playerId} seat={seat} x={pos.x} y={pos.y} bubble={bubble} />
         ))}
       </PixiStage>
+      <TurnCard
+        seat={latestSeat}
+        handIndex={0}
+        totalHands={1}
+        onPrev={() => {}}
+        onNext={() => {}}
+        canPrev={false}
+        canNext={false}
+      />
     </div>
   );
 }

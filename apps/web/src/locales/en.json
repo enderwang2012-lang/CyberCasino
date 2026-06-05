@@ -127,5 +127,10 @@
   "auth": {
     "logout": "Logout",
     "notLoggedIn": "Please login first"
+  },
+  "turnCard": {
+    "current": "Current",
+    "history": "History",
+    "waiting": "Waiting for action..."
   }
 }
