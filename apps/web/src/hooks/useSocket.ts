@@ -47,9 +47,6 @@ export function useSocket(
   const [historyTables, setHistoryTables] = useState<TableInfo[]>([]);
   const [deletedAgentId, setDeletedAgentId] = useState<string | null>(null);
 
-  // 事件锁：joinTable 后到收到 game:reset 之间丢弃所有 game:event
-  const eventGateRef = useRef(true); // true = 允许收事件
-
   useEffect(() => {
     if (!oauthUserId) return;
 
@@ -77,13 +74,9 @@ export function useSocket(
       socket.on("lobby:tables", (t) => setTables(t));
       socket.on("lobby:personalities", (list) => setPersonalities(list));
       socket.on("game:event", (event) => {
-        if (!eventGateRef.current) return; // 切换牌桌期间丢弃旧事件
         setEvents((prev) => [...prev, event]);
       });
-      socket.on("game:reset", () => {
-        eventGateRef.current = true; // 开门收事件
-        setEvents([]);
-      });
+      socket.on("game:reset", () => setEvents([]));
 
       socket.on("user:registered", (identity: UserIdentity) => {
         setUserId(identity.userId);
@@ -106,7 +99,6 @@ export function useSocket(
   }, []);
 
   const joinTable = useCallback((tableId: string) => {
-    eventGateRef.current = false; // 关门：丢弃旧桌残留事件
     setEvents([]);
     socketRef.current?.emit("table:join", tableId);
   }, []);
