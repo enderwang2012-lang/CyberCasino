@@ -8,17 +8,19 @@ import { ChipsLabel } from "./ChipsLabel";
 import { ThinkingHalo } from "../effects/ThinkingHalo";
 import { EmojiBubble } from "../effects/EmojiBubble";
 import { AllInFire } from "../effects/AllInFire";
+import { WinCelebration } from "../effects/WinCelebration";
 
 interface SeatProps {
   seat: SeatState;
   x: number;
   y: number;
   bubble?: string | null;
+  isWinner?: boolean;
 }
 
 const AVATAR_SIZE = 32;
 
-export function Seat({ seat, x, y, bubble = null }: SeatProps) {
+export function Seat({ seat, x, y, bubble = null, isWinner = false }: SeatProps) {
   const dim = seat.status === "folded" || seat.status === "out";
   return (
     <pixiContainer x={x} y={y}>
@@ -26,6 +28,8 @@ export function Seat({ seat, x, y, bubble = null }: SeatProps) {
       <EmojiBubble emoji={bubble} x={0} y={-AVATAR_SIZE / 2 - 30} />
       {/* 下注金额标签 */}
       <BetIndicator amount={seat.currentBet} x={0} y={-AVATAR_SIZE / 2 - 16} />
+      {/* 赢家庆祝 */}
+      <WinCelebration active={isWinner} radius={AVATAR_SIZE / 2} />
       {/* All-in 火焰粒子 */}
       <AllInFire active={seat.status === "all-in"} radius={AVATAR_SIZE / 2} />
       {/* 思考者金色脉冲 */}

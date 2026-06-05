@@ -116,10 +116,13 @@ export function PixelTableView({ events }: PixelTableViewProps) {
   useEffect(() => { setHandIndex(0); }, [events.length]);
   const currentSeat = history[handIndex] ?? null;
 
+  const winnerIds = new Set(state.winners.map((w) => w.playerId));
+
   const placedSeats = state.seats.map((seat) => ({
     seat,
     pos: seatPositions[seat.seatIndex] ?? seatPositions[0],
     bubble: bubbles[seat.playerId] ?? null,
+    isWinner: winnerIds.has(seat.playerId),
   }));
 
   return (
@@ -133,8 +136,8 @@ export function PixelTableView({ events }: PixelTableViewProps) {
           flash={isAllInFlashing(state.allInFlashAt)}
         />
         <CommunityCards cards={state.communityCards} cx={ellipse.cx} cy={ellipse.cy} />
-        {placedSeats.map(({ seat, pos, bubble }) => (
-          <Seat key={seat.playerId} seat={seat} x={pos.x} y={pos.y} bubble={bubble} />
+        {placedSeats.map(({ seat, pos, bubble, isWinner }) => (
+          <Seat key={seat.playerId} seat={seat} x={pos.x} y={pos.y} bubble={bubble} isWinner={isWinner} />
         ))}
       </PixiStage>
       <TurnCard
