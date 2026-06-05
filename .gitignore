@@ -10,3 +10,4 @@ dist/
 .design/
 *.tsbuildinfo
 apps/server/data/
+.superpowers/
