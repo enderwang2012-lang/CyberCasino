@@ -42,3 +42,62 @@ describe("eventsToTableState - basics", () => {
     expect(state.communityCards).toHaveLength(3);
   });
 });
+
+describe("eventsToTableState - decisions", () => {
+  const handStart = (): GameEvent => ({
+    type: "hand-start", handNumber: 1, players: [player("p1", 0), player("p2", 1)], dealerSeatIndex: 0,
+  });
+
+  it("sets currentThinkerId on action-required", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-required", playerId: "p1", validActions: ["fold", "call", "raise"], currentBet: 50, minRaise: 100, callAmount: 50 },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.currentThinkerId).toBe("p1");
+    expect(state.seats[0].status).toBe("thinking");
+  });
+
+  it("records lastDecision and updates bet/chips on action-taken (raise)", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-required", playerId: "p1", validActions: ["fold", "call", "raise"], currentBet: 0, minRaise: 100, callAmount: 0 },
+      { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 200 }, thought: { message: "go", confidence: 0.9, isBluffing: false, thinkingSource: "rule" } },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.currentThinkerId).toBe(null);
+    expect(state.seats[0].currentBet).toBe(200);
+    expect(state.seats[0].chips).toBe(800);
+    expect(state.seats[0].status).toBe("active");
+    expect(state.seats[0].lastDecision?.action).toBe("raise");
+    expect(state.seats[0].lastDecision?.amount).toBe(200);
+  });
+
+  it("marks seat folded on fold action", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-taken", playerId: "p1", action: { type: "fold" }, thought: { message: "no", confidence: 0.5, isBluffing: false, thinkingSource: "rule" } },
+    ];
+    expect(eventsToTableState(events).seats[0].status).toBe("folded");
+  });
+
+  it("marks seat all-in and triggers allInFlashAt", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 1000 }, thought: { message: "all", confidence: 0.6, isBluffing: false, thinkingSource: "rule" }, allIn: true },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.seats[0].status).toBe("all-in");
+    expect(state.seats[0].chips).toBe(0);
+    expect(state.allInFlashAt).not.toBe(null);
+  });
+
+  it("resets currentBet on phase-change", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 200 }, thought: { message: "x", confidence: 0.5, isBluffing: false, thinkingSource: "rule" } },
+      { type: "phase-change", phase: "flop", communityCards: [] },
+    ];
+    expect(eventsToTableState(events).seats[0].currentBet).toBe(0);
+  });
+});

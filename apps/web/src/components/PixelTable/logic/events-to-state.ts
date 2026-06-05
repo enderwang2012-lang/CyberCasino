@@ -37,7 +37,51 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
     case "pot-updated":
       return { ...next, potTotal: e.pots.reduce((sum, pot) => sum + pot.amount, 0) };
     case "phase-change":
-      return { ...next, phase: e.phase, communityCards: e.communityCards };
+      return {
+        ...next,
+        phase: e.phase,
+        communityCards: e.communityCards,
+        seats: next.seats.map((s) => ({ ...s, currentBet: 0 })),
+      };
+
+    case "action-required":
+      return {
+        ...next,
+        currentThinkerId: e.playerId,
+        seats: next.seats.map((s) =>
+          s.playerId === e.playerId && s.status === "active" ? { ...s, status: "thinking" } : s,
+        ),
+      };
+
+    case "action-taken": {
+      const isAllIn = e.allIn === true;
+      const seats = next.seats.map((s) => {
+        if (s.playerId !== e.playerId) return s;
+        const isFold = e.action.type === "fold";
+        const amount = e.action.amount ?? 0;
+        const delta = amount - s.currentBet;  // 加注差值
+        return {
+          ...s,
+          currentBet: isFold ? s.currentBet : Math.max(s.currentBet, amount),
+          chips: isFold ? s.chips : Math.max(0, s.chips - Math.max(0, delta)),
+          status: isFold ? "folded" : isAllIn ? "all-in" : "active",
+          lastDecision: {
+            action: e.action.type,
+            amount: e.action.amount,
+            thought: e.thought,
+            handNumber: state.handNumber,
+            timestamp: index,
+          },
+        } satisfies SeatState;
+      });
+      return {
+        ...next,
+        seats,
+        currentThinkerId: state.currentThinkerId === e.playerId ? null : state.currentThinkerId,
+        allInFlashAt: isAllIn ? Date.now() : state.allInFlashAt,
+      };
+    }
+
     default:
       return next;
   }
