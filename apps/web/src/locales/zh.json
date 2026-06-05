@@ -57,7 +57,9 @@
     "back": "‹ 返回",
     "matchRunning": "排名赛进行中",
     "replayAfterFinish": "为保证公平，比赛中不展示牌局信息。整场结束后将开放包含全部底牌的完整回放。",
-    "publicLiveOnly": "仅展示公开精彩评论；完整牌面与行动将在赛后回放开放。"
+    "publicLiveOnly": "仅展示公开精彩评论；完整牌面与行动将在赛后回放开放。",
+    "subLive": "实况",
+    "subText": "文字"
   },
   "chatFeed": {
     "handInfo": "第 {handNumber} 手 · {players} 人",

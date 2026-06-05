@@ -57,7 +57,9 @@
     "back": "‹ Back",
     "matchRunning": "Ranked match in progress",
     "replayAfterFinish": "For fairness, gameplay stays hidden during the match. A complete replay with all hole cards is available after it finishes.",
-    "publicLiveOnly": "Only public highlight commentary is shown live. Full cards and actions unlock in the post-match replay."
+    "publicLiveOnly": "Only public highlight commentary is shown live. Full cards and actions unlock in the post-match replay.",
+    "subLive": "Live",
+    "subText": "Text"
   },
   "chatFeed": {
     "handInfo": "Hand #{handNumber} · {players} players",

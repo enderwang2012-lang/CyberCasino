@@ -2,22 +2,21 @@
 
 import { useLanguage } from "@/contexts/LanguageContext";
 
-export type TabId = "live" | "highlights" | "leaderboard";
+export type TabId = "highlights" | "leaderboard";
 
 interface TabBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
-  hasNewHighlight: boolean;
+  hasNewHighlight?: boolean;
   showReplay?: boolean;
 }
 
-export function TabBar({ activeTab, onTabChange, hasNewHighlight, showReplay = true }: TabBarProps) {
+export function TabBar({ activeTab, onTabChange, hasNewHighlight }: TabBarProps) {
   const { t } = useLanguage();
 
   const TABS: { id: TabId; label: string }[] = [
-    ...(showReplay ? [{ id: "live" as const, label: t("tabBar.live") }] : []),
-    { id: "highlights", label: t("tabBar.highlights") },
-    { id: "leaderboard", label: t("tabBar.leaderboard") },
+    { id: "highlights", label: `⭐ ${t("tabBar.highlights")}` },
+    { id: "leaderboard", label: `🏆 ${t("tabBar.leaderboard")}` },
   ];
 
   return (
