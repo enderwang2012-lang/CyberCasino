@@ -5,6 +5,7 @@ import { Avatar } from "./Avatar";
 import { BetIndicator } from "./BetIndicator";
 import { HoleCards } from "./HoleCards";
 import { ChipsLabel } from "./ChipsLabel";
+import { ThinkingHalo } from "../effects/ThinkingHalo";
 
 interface SeatProps {
   seat: SeatState;
@@ -20,6 +21,8 @@ export function Seat({ seat, x, y }: SeatProps) {
     <pixiContainer x={x} y={y}>
       {/* 下注金额标签 */}
       <BetIndicator amount={seat.currentBet} x={0} y={-AVATAR_SIZE / 2 - 16} />
+      {/* 思考者金色脉冲 */}
+      <ThinkingHalo active={seat.status === "thinking"} radius={AVATAR_SIZE / 2} />
       {/* 头像 */}
       <Avatar emoji={seat.avatar || "🤖"} status={seat.status} x={0} y={0} size={AVATAR_SIZE} />
       {/* 手牌 */}
