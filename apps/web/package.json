@@ -11,9 +11,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cybercasino/shared": "workspace:*",
     "@cybercasino/engine": "workspace:*",
+    "@cybercasino/shared": "workspace:*",
+    "@pixi/react": "^8",
     "next": "^15",
+    "pixi.js": "^8",
     "react": "^19",
     "react-dom": "^19",
     "socket.io-client": "^4.8"
@@ -26,6 +28,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vitest/ui": "^4.1.8",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
