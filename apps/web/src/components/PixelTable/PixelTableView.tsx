@@ -12,6 +12,7 @@ import { eventsToTableState } from "./logic/events-to-state";
 import { computeSeatPositions, computeTableEllipse } from "./logic/seat-layout";
 import { createBubbleScheduler } from "./logic/animation-scheduler";
 import { pickEmoji, type EmojiKind } from "./logic/emoji-pool";
+import type { SeatState } from "./logic/types";
 
 interface PixelTableViewProps {
   events: GameEvent[];
@@ -109,7 +110,11 @@ export function PixelTableView({ events }: PixelTableViewProps) {
     return () => clearInterval(interval);
   }, [state.seats]);
 
-  const latestSeat = state.seats.find((s) => s.lastDecision) ?? null;
+  // 决策历史快照（最近 50 个，用于 TurnCard 回看）
+  const history = useMemo(() => extractDecisionHistory(events), [events]);
+  const [handIndex, setHandIndex] = useState(0);
+  useEffect(() => { setHandIndex(0); }, [events.length]);
+  const currentSeat = history[handIndex] ?? null;
 
   const placedSeats = state.seats.map((seat) => ({
     seat,
@@ -133,16 +138,38 @@ export function PixelTableView({ events }: PixelTableViewProps) {
         ))}
       </PixiStage>
       <TurnCard
-        seat={latestSeat}
-        handIndex={0}
-        totalHands={1}
-        onPrev={() => {}}
-        onNext={() => {}}
-        canPrev={false}
-        canNext={false}
+        seat={currentSeat}
+        handIndex={handIndex}
+        totalHands={Math.max(1, history.length)}
+        onPrev={() => setHandIndex((i) => Math.min(i + 1, history.length - 1))}
+        onNext={() => setHandIndex((i) => Math.max(0, i - 1))}
+        canPrev={handIndex < history.length - 1}
+        canNext={handIndex > 0}
       />
     </div>
   );
+}
+
+function extractDecisionHistory(events: GameEvent[]): SeatState[] {
+  const history: SeatState[] = [];
+  for (let i = events.length - 1; i >= 0 && history.length < 50; i--) {
+    const e = events[i];
+    if (e.type !== "action-taken" && e.type !== "hand-complete") continue;
+    if (e.type === "action-taken") {
+      const sub = events.slice(0, i + 1);
+      const s = eventsToTableState(sub);
+      const seat = s.seats.find((x) => x.playerId === e.playerId);
+      if (seat) history.push(seat);
+    } else if (e.type === "hand-complete") {
+      e.winners.forEach((w) => {
+        const sub = events.slice(0, i + 1);
+        const s = eventsToTableState(sub);
+        const seat = s.seats.find((x) => x.playerId === w.playerId);
+        if (seat) history.push(seat);
+      });
+    }
+  }
+  return history;  // index 0 = 最新决策
 }
 
 function isAllInFlashing(at: number | null): boolean {
