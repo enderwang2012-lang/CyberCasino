@@ -9,7 +9,7 @@ extend({ Container, Graphics, Sprite, Text });
 interface PixiStageProps {
   width: number;
   height: number;
-  children: ReactNode;
+  children?: ReactNode;
   background?: number;
 }
 
