@@ -278,7 +278,11 @@ export function ruleDecide(
   if (phase === "preflop") {
     if (isPremium(myCards)) {
       if (validActions.includes("raise")) {
-        const amount = Math.max(view.currentBet + minRaise, bigBlind * 3);
+        // 加注尺度：开池用 BB 倍数，3-bet+ 用对手押注倍数
+        const baseAmount = view.currentBet > bigBlind
+          ? Math.round(view.currentBet * 2.5)
+          : bigBlind * 3;
+        const amount = Math.max(view.currentBet + minRaise, baseAmount);
         return {
           confidence: 0.9,
           decision: {

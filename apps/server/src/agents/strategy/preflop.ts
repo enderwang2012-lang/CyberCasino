@@ -330,13 +330,20 @@ export function decidePreflop(
   const handKey = handToKey(hand);
 
   if (raiseSet.has(handKey)) {
-    const sizingStr = currentBet <= bigBlind ? config.sizing.openRaise : config.sizing.threeBet;
-    const sizingMultiplier = parseFloat(sizingStr) || 2.5;
     const minTotalBet = currentBet + minRaise;
     const isPushFold = adjustments.some((reason) => reason.includes("push/fold"));
-    const raiseAmount = isPushFold && view
-      ? view.myBet + view.myChips
-      : Math.max(minTotalBet, Math.round(bigBlind * sizingMultiplier));
+    let raiseAmount: number;
+    if (isPushFold && view) {
+      raiseAmount = view.myBet + view.myChips;
+    } else if (currentBet <= bigBlind) {
+      // 开池加注：BB 倍数（2.5-3x BB）
+      const multiplier = parseFloat(config.sizing.openRaise) || 2.5;
+      raiseAmount = Math.max(minTotalBet, Math.round(bigBlind * multiplier));
+    } else {
+      // 3-bet / 4-bet：前一个押注的倍数（2-3x）
+      const multiplier = parseFloat(config.sizing.threeBet) || 3.0;
+      raiseAmount = Math.max(minTotalBet, Math.round(currentBet * (1 + multiplier * 0.45)));
+    }
     return {
       action: "raise",
       amount: raiseAmount,
