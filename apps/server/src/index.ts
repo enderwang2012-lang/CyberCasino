@@ -638,9 +638,7 @@ function abortFailedTable(tableId: string, err: unknown): void {
   createNextRankedTable();
 }
 
-// Create initial preset table on startup
-const initialRankedTable = tableManager.ensurePresetTable();
-wireTableEvents(initialRankedTable.id);
+// Deferred to initStores below — must be after loadPersistedHistory
 
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
@@ -858,6 +856,9 @@ io.on("connection", (socket) => {
 initStores().then(() => {
   agentStore.activatePendingStylesAfterRestart();
   tableManager.loadPersistedHistory();
+  // 必须在 loadPersistedHistory 之后，避免 ID 和历史表碰撞
+  const initialTable = tableManager.ensurePresetTable();
+  wireTableEvents(initialTable.id);
   httpServer.listen(PORT, () => {
     console.log(`CyberCasino server running on port ${PORT}`);
   });

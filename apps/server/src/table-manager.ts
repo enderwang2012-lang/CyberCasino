@@ -36,10 +36,27 @@ export class TableManager {
     this.historyStore = store;
   }
 
+  /**
+   * 必须在 ensurePresetTable 之前调用，否则新表 ID 可能与归档历史表碰撞。
+   */
   loadPersistedHistory(): void {
     if (!this.historyStore) return;
     const entries = this.historyStore.getAll();
     this.finishedTables = entries.map((e) => e.info);
+
+    // 防止重启后 table ID 与归档历史表碰撞
+    let maxId = 0;
+    for (const entry of entries) {
+      const match = entry.info.id.match(/^table-(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxId) maxId = num;
+      }
+    }
+    if (maxId >= nextId) {
+      nextId = maxId + 1;
+      console.log(`[table-manager] nextId bumped to ${nextId} from persisted history`);
+    }
   }
 
   ensurePresetTable(): TableInstance {
@@ -49,7 +66,11 @@ export class TableManager {
         return existing;
       }
     }
-    const id = `table-${nextId++}`;
+    // 跳过已归档的 ID，防止重启后新表和旧历史表 ID 碰撞
+    let id: string;
+    do {
+      id = `table-${nextId++}`;
+    } while (this.finishedTables.some((t) => t.id === id));
     const config = { ...DEFAULT_CONFIG, name: randomCasinoName() };
     const table = new TableInstance(id, config);
     this.tables.set(id, table);
