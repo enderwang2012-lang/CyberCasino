@@ -82,6 +82,31 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
       };
     }
 
+    case "showdown":
+      return {
+        ...next,
+        seats: next.seats.map((s) => {
+          const r = e.results.find((x) => x.playerId === s.playerId);
+          return r ? { ...s, holeCards: r.holeCards } : s;
+        }),
+      };
+
+    case "hand-complete":
+      return {
+        ...next,
+        winners: e.winners.map((w) => ({ playerId: w.playerId, amount: w.amount })),
+        seats: next.seats.map((s) => {
+          const updated = e.players.find((p) => p.id === s.playerId);
+          return updated ? { ...s, chips: updated.chips } : s;
+        }),
+      };
+
+    case "player-eliminated":
+      return {
+        ...next,
+        seats: next.seats.map((s) => (s.playerId === e.playerId ? { ...s, status: "out" } : s)),
+      };
+
     default:
       return next;
   }

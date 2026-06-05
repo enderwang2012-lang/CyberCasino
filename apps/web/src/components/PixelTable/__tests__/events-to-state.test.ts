@@ -101,3 +101,37 @@ describe("eventsToTableState - decisions", () => {
     expect(eventsToTableState(events).seats[0].currentBet).toBe(0);
   });
 });
+
+describe("eventsToTableState - terminal", () => {
+  const handStart = (): GameEvent => ({
+    type: "hand-start", handNumber: 1, players: [player("p1", 0), player("p2", 1)], dealerSeatIndex: 0,
+  });
+
+  it("reveals hole cards on showdown", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "showdown", results: [
+        { playerId: "p1", holeCards: [{ rank: 14, suit: "s" }, { rank: 14, suit: "h" }], bestHand: [], handRank: "pair", handName: "Pair of Aces" },
+      ] },
+    ];
+    expect(eventsToTableState(events).seats[0].holeCards).toHaveLength(2);
+  });
+
+  it("sets winners and updates chips on hand-complete", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "hand-complete", winners: [{ playerId: "p1", amount: 300, potIndex: 0 }], players: [player("p1", 0, 1300), player("p2", 1, 700)] },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.winners).toEqual([{ playerId: "p1", amount: 300 }]);
+    expect(state.seats[0].chips).toBe(1300);
+  });
+
+  it("marks player out on player-eliminated", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "player-eliminated", playerId: "p2", finishPosition: 6, handNumber: 1 },
+    ];
+    expect(eventsToTableState(events).seats[1].status).toBe("out");
+  });
+});
