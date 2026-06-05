@@ -708,6 +708,9 @@ io.on("connection", (socket) => {
       if (room.startsWith("table:")) socket.leave(room);
     }
 
+    // 先 reset 清客户端 buffer，再推送新牌桌事件
+    socket.emit("game:reset");
+
     const table = tableManager.getTable(tableId);
     if (!table) {
       const replay = gameHistoryStore.get(tableId)?.events;
