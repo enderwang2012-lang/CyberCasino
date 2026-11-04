@@ -20,7 +20,7 @@ import { MatchmakingService } from "./matchmaking-service";
 import type { MatchEntry } from "./matchmaking-service";
 import { MatchmakingController } from "./matchmaking-controller";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
-import { publicReplayFor } from "./agents/match-result-message";
+import { publicReplayFor, publicTimelineFor } from "./agents/match-result-message";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
@@ -531,7 +531,7 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})
     const hands = allHistory
       .filter(h => !roomId || h.info.id === roomId)
       .filter(h => h.events.players.some((player) => player.id === agent.id))
-      .flatMap(h => h.events.hands.map((hand) => ({
+      .flatMap(h => publicReplayFor(h.events, agent.id).hands.map((hand) => ({
             ...hand,
             tableId: h.info.id,
             tableName: h.info.name,
@@ -637,30 +637,15 @@ const personalitiesInfo: BuiltinPersonalityInfo[] = PERSONALITIES.map((p) => ({
   style: p.style,
 }));
 
-function getClientIp(socket: { handshake: { headers: Record<string, string | string[] | undefined>; address: string } }): string {
-  const forwarded = socket.handshake.headers["x-forwarded-for"];
-  if (forwarded) {
-    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0];
-    return first.trim();
-  }
-  return socket.handshake.address;
-}
-
 function broadcastLobby() {
   io.to("lobby").emit("lobby:tables", tableManager.getHomepageTables());
 }
 
-function broadcastSeats(tableId: string) {
-  const table = tableManager.getTable(tableId);
-  if (table) {
-    io.to(`table:${tableId}`).emit("table:seats", { tableId, seats: table.getSeats() });
-    broadcastLobby();
-  }
-}
-
-function createNextRankedTable(): void {
-  const newTable = tableManager.ensurePresetTable();
-  wireTableEvents(newTable.id);
+function startShowcaseTable(): void {
+  const table = tableManager.ensureShowcaseTable();
+  if (table.getStatus() !== "waiting") return;
+  wireTableEvents(table.id);
+  table.start("zh").catch((err) => abortFailedTable(table.id, err));
   broadcastLobby();
 }
 
@@ -721,6 +706,13 @@ function wireTableEvents(tableId: string) {
   table.onEvent((event) => {
     if (event.type === "tournament-complete") {
       const replay = table.getReplayData();
+      // Seats are released as soon as the game ends; saving may retry for a while.
+      if (automaticTableIds.delete(tableId)) {
+        matchmakingController.completeTable(tableId);
+      } else {
+        startShowcaseTable();
+      }
+      broadcastLobby();
       void tableManager.archiveFinishedTable(tableId).then((archived) => {
         if (!archived) return;
         wsAgentManager.sendMatchResult(
@@ -741,25 +733,14 @@ function wireTableEvents(tableId: string) {
           },
         );
         io.to(`table:${tableId}`).emit("game:reset");
-        for (const completedEvent of table.getEventHistory()) {
+        for (const completedEvent of publicTimelineFor(table.getEventHistory())) {
           io.to(`table:${tableId}`).emit("game:event", completedEvent);
-        }
-        if (automaticTableIds.delete(tableId)) {
-          matchmakingController.completeTable(tableId);
-        } else {
-          createNextRankedTable();
         }
         broadcastLobby();
       }).catch((err) => {
         console.error(`[table:${tableId}] failed to persist completed match:`, err);
-        tableManager.removeTable(tableId);
-        io.to(`table:${tableId}`).emit("table:error", "比赛结果保存失败，本场暂未计入排名，请稍后重试。");
+        io.to(`table:${tableId}`).emit("table:error", "比赛结果多次保存失败，本场未计入排名。");
         io.to(`table:${tableId}`).emit("table:stopped", tableId);
-        if (automaticTableIds.delete(tableId)) {
-          matchmakingController.failTable(tableId);
-        } else {
-          createNextRankedTable();
-        }
         broadcastLobby();
       });
     }
@@ -795,7 +776,7 @@ function abortFailedTable(tableId: string, err: unknown): void {
   if (automaticTableIds.delete(tableId)) {
     matchmakingController.failTable(tableId);
   } else {
-    createNextRankedTable();
+    startShowcaseTable();
   }
   broadcastLobby();
 }
@@ -890,7 +871,7 @@ io.on("connection", (socket) => {
       const replay = gameHistoryStore.get(tableId)?.events;
       const eventCount = replay?.timeline?.length ?? 0;
       console.log(`[table:join] ${tableId} not in memory, sending ${eventCount} history events`);
-      for (const event of replay?.timeline ?? []) {
+      for (const event of publicTimelineFor(replay?.timeline ?? [])) {
         socket.emit("game:event", event);
       }
       return;
@@ -904,7 +885,7 @@ io.on("connection", (socket) => {
         socket.emit("game:event", event);
       }
     } else if (table.getStatus() === "finished") {
-      const events = table.getEventHistory();
+      const events = publicTimelineFor(table.getEventHistory());
       console.log(`[table:join] sending ${events.length} finished events`);
       for (const event of events) {
         socket.emit("game:event", event);
@@ -916,106 +897,6 @@ io.on("connection", (socket) => {
     console.log(`[table:leave] ${socket.id} leaving ${tableId}, rooms: ${[...socket.rooms].join(",")}`);
     socket.leave(`table:${tableId}`);
     socket.emit("lobby:tables", tableManager.getHomepageTables());
-  });
-
-  socket.on("table:sit", (tableId) => {
-    const userId = socketUserMap.get(socket.id);
-    if (!userId) { socket.emit("table:error", "Not registered"); return; }
-
-    const v2Config = agentStore.getV2ByUserId(userId);
-    if (!v2Config) { socket.emit("table:error", "No agent configured"); return; }
-
-    const table = tableManager.getTable(tableId);
-    if (!table) { socket.emit("table:error", "Table not found"); return; }
-
-    const myIp = getClientIp(socket);
-    const seats = table.getSeats();
-    for (const seat of seats) {
-      if (seat.agent?.userId && seat.agent.userId !== userId) {
-        const otherSocketId = userSocketMap.get(seat.agent.userId);
-        if (otherSocketId) {
-          const otherSocket = io.sockets.sockets.get(otherSocketId);
-          if (otherSocket && getClientIp(otherSocket) === myIp) {
-            socket.emit("table:error", "同一网络只能入座一个位置");
-            return;
-          }
-        }
-      }
-    }
-
-    // Build a seat-compatible config (identity fields only)
-    const executionMode = v2Config.executionMode === "verified_package" ? "verified_package" : "remote_agent";
-    if (!table.sit(v2Config, executionMode, v2Config.strategyVersion ?? v2Config.strategyPackage?.manifest.version)) {
-      socket.emit("table:error", "Cannot sit (table full or already seated)");
-      return;
-    }
-
-    tableManager.setAgentV2Config(tableId, userId, v2Config);
-    socket.join(`table:${tableId}`);
-    broadcastSeats(tableId);
-  });
-
-  socket.on("table:sit-builtin", (tableId, personalityId) => {
-    const userId = socketUserMap.get(socket.id);
-    const table = tableManager.getTable(tableId);
-    if (!table) { socket.emit("table:error", "Table not found"); return; }
-    if (!table.canManage(userId)) { socket.emit("table:error", "请先让自己的 Agent 入座后再配置牌桌"); return; }
-
-    if (!table.sitBuiltin(personalityId)) {
-      socket.emit("table:error", "Cannot place AI (already seated or table full)");
-      return;
-    }
-
-    socket.join(`table:${tableId}`);
-    broadcastSeats(tableId);
-  });
-
-  socket.on("table:remove-seat", (tableId, seatIndex) => {
-    const userId = socketUserMap.get(socket.id);
-    const table = tableManager.getTable(tableId);
-    if (!table) { socket.emit("table:error", "Table not found"); return; }
-
-    const seats = table.getSeats();
-    const seat = seats[seatIndex];
-    if (!seat || seat.status === "empty") return;
-
-    if (seat.agent?.type === "builtin" && table.canManage(userId)) {
-      table.removeSeat(seatIndex);
-      broadcastSeats(tableId);
-    } else if (seat.agent?.userId === userId) {
-      table.removeSeat(seatIndex);
-      broadcastSeats(tableId);
-    } else {
-      socket.emit("table:error", "只能移除自己的 AI");
-    }
-  });
-
-  socket.on("table:clear-seats", (tableId) => {
-    const userId = socketUserMap.get(socket.id);
-    const table = tableManager.getTable(tableId);
-    if (!table) return;
-    if (table.getStatus() !== "waiting") return;
-    if (!table.canManage(userId)) { socket.emit("table:error", "只有牌桌创建者可以清空座位"); return; }
-    table.clearAllSeats();
-    broadcastSeats(tableId);
-  });
-
-  socket.on("table:start", (tableId, language) => {
-    const userId = socketUserMap.get(socket.id);
-    const table = tableManager.getTable(tableId);
-    if (!table) { socket.emit("table:error", "Table not found"); return; }
-    if (!table.canManage(userId)) { socket.emit("table:error", "只有牌桌创建者可以开始排名赛"); return; }
-
-    if (!table.isFull()) {
-      socket.emit("table:error", "需要6位玩家才能开始");
-      return;
-    }
-
-    const v2Configs = tableManager.getAgentV2Configs(tableId);
-    const match = table.start(language ?? "zh", v2Configs);
-    io.to(`table:${tableId}`).emit("table:started", tableId);
-    broadcastLobby();
-    match.catch((err) => abortFailedTable(tableId, err));
   });
 
   socket.on("table:history", () => {
@@ -1035,8 +916,6 @@ io.on("connection", (socket) => {
 export const serverReady = initStores().then(async () => {
   agentStore.activatePendingStylesAfterRestart();
   tableManager.loadPersistedHistory();
-  const initialTable = tableManager.ensurePresetTable();
-  wireTableEvents(initialTable.id);
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(PORT, () => {
@@ -1044,6 +923,7 @@ export const serverReady = initStores().then(async () => {
       resolve();
     });
   });
+  startShowcaseTable();
 }).catch((err) => {
   console.error("[startup] Failed to initialize stores:", err);
   process.exit(1);

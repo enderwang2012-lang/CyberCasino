@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { TableInstance } from "./table-instance";
 import type { GameHistoryStore } from "./stores";
 import type { MatchEntry } from "./matchmaking-service";
+import { PERSONALITIES } from "./agents/personalities";
 
 const CASINO_NAMES = [
   "Bellagio", "Marina Bay Sands", "The Venetian", "Wynn Palace",
@@ -25,12 +26,19 @@ const DEFAULT_CONFIG: TableConfig = {
   maxPlayers: 6,
 };
 
+const DEFAULT_ARCHIVE_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+
 export class TableManager {
   private tables = new Map<string, TableInstance>();
   private agentV2ConfigsForTable = new Map<string, Map<string, AgentConfigV2>>();
   private finishedTables: TableInfo[] = [];
-  private presetTableId: string | null = null;
+  private showcaseTableId: string | null = null;
   private historyStore: GameHistoryStore | null = null;
+  private readonly archiveRetryDelaysMs: readonly number[];
+
+  constructor(options: { archiveRetryDelaysMs?: readonly number[] } = {}) {
+    this.archiveRetryDelaysMs = options.archiveRetryDelaysMs ?? DEFAULT_ARCHIVE_RETRY_DELAYS_MS;
+  }
 
   setHistoryStore(store: GameHistoryStore): void {
     this.historyStore = store;
@@ -42,19 +50,26 @@ export class TableManager {
     this.finishedTables = entries.map((e) => e.info);
   }
 
-  ensurePresetTable(): TableInstance {
-    if (this.presetTableId) {
-      const existing = this.tables.get(this.presetTableId);
-      if (existing && existing.getStatus() === "waiting") {
+  ensureShowcaseTable(): TableInstance {
+    if (this.showcaseTableId) {
+      const existing = this.tables.get(this.showcaseTableId);
+      if (existing && existing.getStatus() !== "finished") {
         return existing;
       }
     }
     const id = `table-${randomUUID()}`;
-    const config = { ...DEFAULT_CONFIG, name: randomCasinoName() };
+    const config: TableConfig = { ...DEFAULT_CONFIG, mode: "exhibition", name: randomCasinoName() };
     const table = new TableInstance(id, config);
+    for (const personality of PERSONALITIES.slice(0, config.maxPlayers)) {
+      table.sitBuiltin(personality.id);
+    }
     this.tables.set(id, table);
-    this.presetTableId = id;
+    this.showcaseTableId = id;
     return table;
+  }
+
+  isShowcaseTable(id: string): boolean {
+    return this.showcaseTableId === id;
   }
 
   createMatchedTable(
@@ -110,9 +125,8 @@ export class TableManager {
 
   getHomepageTables(): TableInfo[] {
     const activeTables = this.getActiveTableInfos();
-    const result = this.presetTableId
-      ? activeTables.sort((a, b) => (a.id === this.presetTableId ? -1 : b.id === this.presetTableId ? 1 : 0))
-      : activeTables;
+    const result = activeTables.sort((a, b) =>
+      Number(a.id === this.showcaseTableId) - Number(b.id === this.showcaseTableId));
 
     if (this.finishedTables.length > 0) {
       result.push(this.finishedTables[0]);
@@ -142,14 +156,25 @@ export class TableManager {
     const info = this.toTableInfo(table);
     info.finishedAt = Date.now();
 
-    try {
-      if (this.historyStore) {
-        const replayData = table.getReplayData();
-        await this.historyStore.saveCompletedMatch(info, replayData, table.getAuditRecords());
+    if (this.historyStore) {
+      const replayData = table.getReplayData();
+      const auditRecords = table.getAuditRecords();
+      // Retries rely on saveCompletedMatch being idempotent. The finished table
+      // stays viewable in memory meanwhile.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await this.historyStore.saveCompletedMatch(info, replayData, auditRecords);
+          break;
+        } catch (error) {
+          const delayMs = this.archiveRetryDelaysMs[attempt];
+          if (delayMs === undefined || this.tables.get(tableId) !== table) {
+            this.removeTable(tableId);
+            throw error;
+          }
+          console.warn(`[table:${tableId}] archive attempt ${attempt + 1} failed, retrying in ${delayMs}ms:`, error);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       }
-    } catch (error) {
-      this.removeTable(tableId);
-      throw error;
     }
 
     table.stop();
@@ -172,15 +197,6 @@ export class TableManager {
       status: table.getStatus(),
       seats: table.getSeats(),
     };
-  }
-
-  setAgentV2Config(tableId: string, userId: string, config: AgentConfigV2): void {
-    let configs = this.agentV2ConfigsForTable.get(tableId);
-    if (!configs) {
-      configs = new Map();
-      this.agentV2ConfigsForTable.set(tableId, configs);
-    }
-    configs.set(userId, config);
   }
 
   getAgentV2Configs(tableId: string): Map<string, AgentConfigV2> | undefined {

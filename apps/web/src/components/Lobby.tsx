@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   TableInfo,
   AgentConfigV2,
@@ -17,7 +17,6 @@ interface LobbyProps {
   onJoin: (tableId: string) => void;
   onAgentSetup: () => void;
   onHistory: () => void;
-  onClearSeats: (tableId: string) => void;
   connected: boolean;
   agentV2?: AgentConfigV2 | null;
   matchmakingState?: MatchmakingState;
@@ -36,7 +35,6 @@ export function Lobby({
   onJoin,
   onAgentSetup,
   onHistory,
-  onClearSeats,
   connected,
   agentV2,
   matchmakingState,
@@ -50,7 +48,6 @@ export function Lobby({
   onOpenReplay = onJoin,
 }: LobbyProps) {
   const { t } = useLanguage();
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [standings, setStandings] = useState<RankedStanding[]>([]);
 
   useEffect(() => {
@@ -77,24 +74,6 @@ export function Lobby({
   const consoleSummary = agentSummary === undefined
     ? { agent: agentV2 ?? null, currentMatch: queueState, recentMatches: [] }
     : agentSummary;
-
-  const handleTouchStart = useCallback((tableId: string, status: string) => {
-    if (status !== "waiting") return;
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-      onClearSeats(tableId);
-      longPressTimer.current = null;
-    }, 30000);
-  }, [onClearSeats]);
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
-
-  useEffect(() => handleTouchEnd, [handleTouchEnd]);
 
   return (
     <main className="min-h-[100dvh] tracking-normal flex flex-col items-center px-5 pt-[max(4rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] bg-surface-elevated">
@@ -144,43 +123,42 @@ export function Lobby({
         <h2 className="text-text-primary text-[20px] font-semibold mb-4">{t("agentConsole.publicArena")}</h2>
 
         <div className="space-y-2">
-          {tables.map((table) => (
-            <button
-              key={table.id}
-              onClick={() => onJoin(table.id)}
-              onTouchStart={() => handleTouchStart(table.id, table.status)}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchEnd}
-              onMouseDown={() => handleTouchStart(table.id, table.status)}
-              onMouseUp={handleTouchEnd}
-              onMouseLeave={handleTouchEnd}
-              className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
-            >
-              <div className="flex flex-wrap justify-between items-center gap-2">
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <span className="text-text-primary text-[15px] font-medium break-all">{table.name}</span>
-                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#BF5AF2]/10 text-[#BF5AF2]">
-                    {t("lobby.ranked")}
+          {tables.map((table) => {
+            const exhibition = table.config.mode === "exhibition";
+            return (
+              <button
+                key={table.id}
+                onClick={() => onJoin(table.id)}
+                className="w-full text-left bg-white hover:bg-white/80 rounded-2xl p-4 transition-colors shadow-sm"
+              >
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <span className="text-text-primary text-[15px] font-medium break-all">{table.name}</span>
+                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                      exhibition ? "bg-surface-elevated text-text-secondary" : "bg-[#BF5AF2]/10 text-[#BF5AF2]"
+                    }`}>
+                      {t(exhibition ? "lobby.exhibition" : "lobby.ranked")}
+                    </span>
+                  </div>
+                  <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
+                    table.status === "playing" ? "bg-success/15 text-success" : "bg-surface-elevated text-text-secondary"
+                  }`}>
+                    {t(table.status === "playing" ? "lobby.playing" : table.status === "finished" ? "common.finished" : "lobby.waiting")}
                   </span>
                 </div>
-                <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
-                  table.status === "playing" ? "bg-success/15 text-success" : "bg-surface-elevated text-text-secondary"
-                }`}>
-                  {t(table.status === "playing" ? "lobby.playing" : table.status === "finished" ? "common.finished" : "lobby.waiting")}
-                </span>
-              </div>
-              <div className="text-text-secondary text-[13px] mt-1.5">
-                {t("lobby.blinds")} {table.config.smallBlind}/{table.config.bigBlind} ·{" "}
-                {table.status === "waiting"
-                  ? `${table.seats.filter((s) => s.status === "occupied").length}/${table.seats.length} ${t("lobby.seated")}`
-                  : `${table.playerCount} ${t("lobby.players")} · ${t("lobby.hand", { number: table.handNumber })}`
-                }
-              </div>
-              <div className="text-text-tertiary text-[12px] mt-1">
-                {t("lobby.rankedHint")}
-              </div>
-            </button>
-          ))}
+                <div className="text-text-secondary text-[13px] mt-1.5">
+                  {t("lobby.blinds")} {table.config.smallBlind}/{table.config.bigBlind} ·{" "}
+                  {table.status === "waiting"
+                    ? `${table.seats.filter((s) => s.status === "occupied").length}/${table.seats.length} ${t("lobby.seated")}`
+                    : `${table.playerCount} ${t("lobby.players")} · ${t("lobby.hand", { number: table.handNumber })}`
+                  }
+                </div>
+                <div className="text-text-tertiary text-[12px] mt-1">
+                  {t(exhibition ? "lobby.exhibitionHint" : "lobby.rankedHint")}
+                </div>
+              </button>
+            );
+          })}
 
           {tables.length === 0 && (
             <div className="text-text-secondary py-6 border-y border-separator">

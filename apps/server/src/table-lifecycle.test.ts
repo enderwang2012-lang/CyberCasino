@@ -25,8 +25,7 @@ afterEach(() => {
   }
 });
 
-function finishedTable() {
-  const manager = new TableManager();
+function finishedTable(manager = new TableManager()) {
   managers.push(manager);
   const table = manager.createMatchedTable(presetEntries(), {
     handLimit: 1, actionDelayMs: 0, interHandDelayMs: 0, commentaryMode: "rule",
@@ -78,8 +77,30 @@ describe("table lifecycle", () => {
     }
   });
 
-  it("discards a finished table and frozen configs when persistence rejects", async () => {
-    const { manager, table } = finishedTable();
+  it("keeps the finished table viewable and retries a failed save", async () => {
+    const { manager, table } = finishedTable(new TableManager({ archiveRetryDelaysMs: [5, 5] }));
+    let attempts = 0;
+    manager.setHistoryStore({
+      saveCompletedMatch: async () => {
+        attempts++;
+        if (attempts < 3) throw new Error("Disk unavailable");
+      },
+    } as unknown as GameHistoryStore);
+    try {
+      const archived = manager.archiveFinishedTable(table.id);
+      await Bun.sleep(2);
+      expect(manager.getTable(table.id)?.getStatus()).toBe("finished");
+      expect(await archived).toBe(true);
+      expect(attempts).toBe(3);
+      expect(manager.getTable(table.id)).toBeUndefined();
+      expect(manager.getHistoryTables().map((info) => info.id)).toEqual([table.id]);
+    } finally {
+      manager.removeTable(table.id);
+    }
+  });
+
+  it("discards a finished table and frozen configs when every save attempt rejects", async () => {
+    const { manager, table } = finishedTable(new TableManager({ archiveRetryDelaysMs: [] }));
     manager.setHistoryStore({
       saveCompletedMatch: async () => { throw new Error("Disk unavailable"); },
     } as unknown as GameHistoryStore);
@@ -112,22 +133,14 @@ describe("table lifecycle", () => {
     }
   });
 
-  it("removes orphaned frozen configs even if the table is already absent", () => {
-    const manager = new TableManager();
-    const entry = presetEntries()[0];
-    manager.setAgentV2Config("already-removed", entry.userId, entry.agent);
-    manager.removeTable("already-removed");
-    expect(manager.getAgentV2Configs("already-removed")).toBeUndefined();
-  });
-
-  it("uses UUID table IDs for public and matched tables", () => {
+  it("uses UUID table IDs for showcase and matched tables", () => {
     const first = new TableManager();
     const second = new TableManager();
     managers.push(first, second);
     const ids = [
-      first.ensurePresetTable().id,
+      first.ensureShowcaseTable().id,
       first.createMatchedTable(presetEntries()).id,
-      second.ensurePresetTable().id,
+      second.ensureShowcaseTable().id,
       second.createMatchedTable(presetEntries()).id,
     ];
     expect(new Set(ids).size).toBe(4);
@@ -152,7 +165,7 @@ describe("table lifecycle", () => {
     } as unknown as GameHistoryStore);
 
     restored.loadPersistedHistory();
-    const publicTable = restored.ensurePresetTable();
+    const publicTable = restored.ensureShowcaseTable();
     const matchedTable = restored.createMatchedTable(presetEntries());
 
     expect(restored.getHistoryTables()).toEqual(history.map((entry) => entry.info));

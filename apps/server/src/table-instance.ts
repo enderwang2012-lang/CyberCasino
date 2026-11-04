@@ -71,7 +71,6 @@ export class TableInstance {
   private blindSchedule: BlindSchedule;
   private autoStart: boolean;
   private language: "zh" | "en" = "zh";
-  private controllerUserId?: string;
   private lockedStyleAgentIds = new Set<string>();
   private snapshotSeq = 0;
   private snapshotStatus: AgentSnapshotState["status"] = "waiting";
@@ -137,7 +136,6 @@ export class TableInstance {
       executionMode,
       strategyVersion,
     };
-    this.controllerUserId ??= agentConfig.userId;
     return true;
   }
 
@@ -161,70 +159,6 @@ export class TableInstance {
       strategyVersion,
     };
     return true;
-  }
-
-  removeSeat(seatIndex: number): SeatAgent | null {
-    if (this.running) return null;
-    const seat = this.seats[seatIndex];
-    if (!seat || seat.status === "empty") return null;
-    const agent = seat.agent ?? null;
-    seat.status = "empty";
-    seat.agent = undefined;
-    if (agent?.userId && agent.userId === this.controllerUserId) {
-      this.controllerUserId = this.seats.find((entry) => entry.agent?.type === "custom")?.agent?.userId;
-    }
-    return agent;
-  }
-
-  clearAllSeats(): void {
-    if (this.running) return;
-    for (const seat of this.seats) {
-      seat.status = "empty";
-      seat.agent = undefined;
-    }
-    this.controllerUserId = undefined;
-  }
-
-  isFull(): boolean {
-    return this.seats.every((s) => s.status === "occupied");
-  }
-
-  leaveSeat(userId: string): boolean {
-    if (this.running) return false;
-    const seat = this.seats.find((s) => s.agent?.userId === userId);
-    if (!seat) return false;
-    seat.status = "empty";
-    seat.agent = undefined;
-    return true;
-  }
-
-  canManage(userId: string | undefined): boolean {
-    return !!userId && this.controllerUserId === userId;
-  }
-
-  fillWithAI(): void {
-    if (this.running) return;
-    let personalityIdx = 0;
-    const usedIds = new Set(this.seats.filter((s) => s.agent).map((s) => s.agent!.id));
-
-    for (const seat of this.seats) {
-      if (seat.status === "empty") {
-        while (personalityIdx < PERSONALITIES.length && usedIds.has(PERSONALITIES[personalityIdx].id)) {
-          personalityIdx++;
-        }
-        if (personalityIdx >= PERSONALITIES.length) break;
-
-        const p = PERSONALITIES[personalityIdx++];
-        seat.status = "occupied";
-        seat.agent = {
-          id: p.id,
-          name: p.name,
-          avatar: p.avatar,
-          type: "builtin",
-          executionMode: "house_bot",
-        };
-      }
-    }
   }
 
   getSeats(): TableSeat[] {

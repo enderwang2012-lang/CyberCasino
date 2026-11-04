@@ -194,7 +194,7 @@ function EventLine({ event, ctx, isAutoRun, tableId }: { event: GameEvent; ctx: 
               </div>
             )}
           </div>
-          {thought.message && thought.message !== "..." && (
+          {thought?.message && thought.message !== "..." && (
             <div className="text-[13px] text-text-secondary mt-1.5 italic">
               &ldquo;{thought.message}&rdquo;
               {thought.isBluffing && <span className="text-danger ml-1 not-italic">{t("chatFeed.bluff")}</span>}

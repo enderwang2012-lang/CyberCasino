@@ -39,6 +39,29 @@ describe("leaderboard", () => {
       activeStrategyVersion: 2,
     });
   });
+
+  it("ignores exhibition matches", () => {
+    const replay: ReplayData = {
+      tableId: "showcase",
+      tableName: "Showcase",
+      config: {} as ReplayData["config"],
+      players: [
+        { id: "preset-1", name: "Preset A", avatar: "♠", type: "builtin" },
+        { id: "preset-2", name: "Preset B", avatar: "♥", type: "builtin" },
+      ],
+      hands: [],
+      rankings: [
+        { playerId: "preset-1", position: 1 },
+        { playerId: "preset-2", position: 2 },
+      ],
+      totalHands: 1,
+    };
+
+    expect(calculateLeaderboard([{
+      info: { id: "showcase", finishedAt: 1, config: { mode: "exhibition" } } as TableInfo,
+      events: replay,
+    }])).toEqual([]);
+  });
 });
 
 it("restores file-backed users by userId when the persisted format is an array", async () => {

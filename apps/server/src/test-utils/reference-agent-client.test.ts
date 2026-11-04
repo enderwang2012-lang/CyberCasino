@@ -127,8 +127,12 @@ describe("ReferenceAgentClient", () => {
 
     await client.reconnect();
     const result = await client.next<ExternalAgentMatchResult>("match_result");
+    const expected = matchResult();
+    delete expected.replay.hands[0].holeCards["test-agent-2"];
+    delete expected.replay.hands[0].actions[0].thought;
+    delete (expected.replay.timeline![0] as { thought?: unknown }).thought;
     expect(result).toEqual({
-      ...matchResult(),
+      ...expected,
       type: "match_result",
       protocol_version: 1,
     });

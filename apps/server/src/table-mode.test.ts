@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentConfigV2, TableConfig } from "@cybercasino/shared";
 import { TableInstance } from "./table-instance";
 import { TableManager } from "./table-manager";
+import { PERSONALITIES } from "./agents/personalities";
 
 function config(mode: TableConfig["mode"]): TableConfig {
   return {
@@ -156,20 +157,34 @@ describe("open ranked competition", () => {
     expect((table.getEventHistory()[0] as any).audit).toBeUndefined();
   });
 
-  it("lets only the first seated custom agent manage ranked seating", () => {
-    const table = new TableInstance("ranked", config("ranked"));
-    expect(table.sit(agent("owner"), "verified_package")).toBe(true);
-    expect(table.canManage("user-owner")).toBe(true);
-    expect(table.canManage("user-other")).toBe(false);
+  it("seats six preset Agents at a single unranked exhibition table", () => {
+    const manager = new TableManager();
+    const table = manager.ensureShowcaseTable();
+    try {
+      expect(table.config.mode).toBe("exhibition");
+      expect(table.getSeats().map((seat) => seat.agent?.type)).toEqual(Array(6).fill("builtin"));
+      expect(manager.ensureShowcaseTable()).toBe(table);
+      expect(manager.isShowcaseTable(table.id)).toBe(true);
+    } finally {
+      manager.removeTable(table.id);
+    }
   });
 
   it("detects an actively competing agent so strategy updates can be blocked", () => {
     const manager = new TableManager();
-    const table = manager.ensurePresetTable();
-    expect(table.sit(agent("active"), "verified_package")).toBe(true);
+    const entries = PERSONALITIES.slice(0, 5).map((preset) => ({
+      userId: `builtin:${preset.id}`,
+      agent: { ...agent(preset.id), userId: `builtin:${preset.id}` } as AgentConfigV2,
+      enteredAt: 0,
+      autoRequeue: false,
+    }));
+    entries.push({ userId: "user-active", agent: agent("active") as AgentConfigV2, enteredAt: 0, autoRequeue: false });
+    const table = manager.createMatchedTable(entries);
     expect(manager.isAgentPlaying("active")).toBe(false);
 
     (table as any).running = true;
     expect(manager.isAgentPlaying("active")).toBe(true);
+    (table as any).running = false;
+    manager.removeTable(table.id);
   });
 });

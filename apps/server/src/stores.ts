@@ -67,6 +67,12 @@ let userMap = new Map<string, UserIdentity>();
 let agentsV2Map = new Map<string, AgentConfigV2[]>();
 let agentV2Counter = 0;
 let historyMap = new Map<string, { info: TableInfo; events: ReplayData }>();
+// Saves replace historyMap; only the initial load mutates it in place.
+let leaderboardCache: {
+  source: typeof historyMap;
+  size: number;
+  standings: RankedStanding[];
+} | null = null;
 let auditMap = new Map<string, AgentActionAudit[]>();
 
 export async function initStores() {
@@ -331,7 +337,14 @@ export class GameHistoryStore {
   }
 
   getLeaderboard(): RankedStanding[] {
-    return calculateLeaderboard(Array.from(historyMap.values()));
+    if (leaderboardCache?.source !== historyMap || leaderboardCache.size !== historyMap.size) {
+      leaderboardCache = {
+        source: historyMap,
+        size: historyMap.size,
+        standings: calculateLeaderboard(Array.from(historyMap.values())),
+      };
+    }
+    return leaderboardCache.standings;
   }
 
   getRecentMatchesForAgent(agentId: string, limit = 20) {
@@ -344,7 +357,8 @@ export function calculateLeaderboard(
 ): RankedStanding[] {
     const minimumRatedGames = 3;
     const matches = values
-      .filter((entry) => entry.events && Array.isArray(entry.events.rankings))
+      .filter((entry) => entry.events && Array.isArray(entry.events.rankings)
+        && entry.info.config?.mode !== "exhibition")
       .sort((a, b) => (a.info.finishedAt ?? 0) - (b.info.finishedAt ?? 0));
     const ratings = new Map<string, number>();
     const stats = new Map<string, {

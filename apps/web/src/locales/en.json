@@ -31,6 +31,8 @@
     "provisionalRank": "Provisional {games}/3 rated matches",
     "ranked": "Ranked",
     "rankedHint": "Open agent competition · identity and matches audited",
+    "exhibition": "Exhibition",
+    "exhibitionHint": "Always-on preset Agent match · spectate only, not ranked",
     "joinMatch": "Join Matchmaking",
     "leaveMatch": "Leave Queue",
     "matchmaking": "Waiting for an automatic table",
@@ -101,17 +103,6 @@
     "copied": "Copied",
     "copy": "Copy"
   },
-  "tableWaiting": {
-    "title": "Waiting Room",
-    "seated": "{occupied}/{total} Seated",
-    "emptySeat": "Empty",
-    "ai": "Preset Agent",
-    "custom": "Custom",
-    "startGame": "Start Game",
-    "confirmRemove": "Confirm Remove",
-    "removeConfirm": "Remove {name} from seat?",
-    "remove": "Remove"
-  },
   "tableView": {
     "back": "‹ Back",
     "matchRunning": "Ranked match in progress",
@@ -162,15 +153,6 @@
     "live": "Replay",
     "highlights": "Highlights",
     "leaderboard": "Leaderboard"
-  },
-  "seatSelect": {
-    "title": "Select Seat",
-    "customAgent": "Custom Agent",
-    "alreadySeated": "Seated",
-    "createNew": "Create New Agent",
-    "createDesc": "Configure to join",
-    "builtinAi": "Preset Agent",
-    "ownerManagesBots": "Preset Agents are formal participants in the ranked arena"
   },
   "history": {
     "title": "Game History",

@@ -160,6 +160,39 @@ describe("MatchmakingController", () => {
     expect(service.getQueueSnapshot()).toHaveLength(0);
   });
 
+  it("reuses preset Agents that are already playing so concurrent users are not starved", () => {
+    const service = new MatchmakingService();
+    const users = [agent(1), agent(2)];
+    const playing = new Set<string>();
+    const created: Array<{ id: string; entries: MatchEntry[] }> = [];
+    const controller = new MatchmakingController({
+      service,
+      getAgent: (userId) => users.find((config) => config.userId === userId),
+      isAgentPlaying: (agentId) => playing.has(agentId),
+      getFillEntries: () => builtinEntries(),
+      createTable: (entries) => {
+        const table = { id: `concurrent-table-${created.length + 1}`, entries };
+        created.push(table);
+        for (const entry of entries) playing.add(entry.agent.id);
+        return table;
+      },
+      removeTable: () => {},
+      startTable: () => {},
+      emitState: () => {},
+      emitMatched: () => {},
+      emitError: (userId, error) => { throw new Error(`${userId}:${error.code}`); },
+    });
+
+    for (const config of users) controller.join(config.userId);
+
+    expect(created).toHaveLength(2);
+    for (const [index, table] of created.entries()) {
+      expect(table.entries.map((entry) => entry.userId)).toContain(users[index].userId);
+      expect(table.entries.filter((entry) => entry.userId.startsWith("builtin:"))).toHaveLength(5);
+      expect(service.getState(users[index].userId)).toMatchObject({ status: "playing", tableId: table.id });
+    }
+  });
+
   it("fills a real Agent with five formal built-in Agents without requeueing the built-ins", () => {
     const service = new MatchmakingService();
     const realAgent = agent(1);
@@ -384,11 +417,14 @@ describe("MatchmakingController", () => {
       expect(tables.size).toBe(1);
       expect(started).toHaveLength(1);
       expect(started[0].map((entry) => entry.userId).sort()).toEqual([...participants].sort());
-      for (const userId of participants) {
-        expect(service.getState(userId)).toMatchObject({
+      for (const config of realAgents) {
+        expect(service.getState(config.userId)).toMatchObject({
           status: "playing",
           tableId: "failure-table-2",
         });
+      }
+      for (const entry of presets) {
+        expect(service.getState(entry.userId).status).toBe("idle");
       }
       expect(events.filter((event) => event.type === "error")).toHaveLength(2);
     } finally {

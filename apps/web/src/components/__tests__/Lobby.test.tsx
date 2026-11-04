@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { AgentConfigV2, MatchmakingState } from "@cybercasino/shared";
+import type { AgentConfigV2, MatchmakingState, TableInfo } from "@cybercasino/shared";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { Lobby } from "@/components/Lobby";
 
@@ -34,11 +34,10 @@ function renderLobby(matchmakingState: MatchmakingState, overrides: Record<strin
   return render(
     <LanguageProvider>
       <Lobby
-        tables={[]}
+        tables={(overrides.tables as TableInfo[] | undefined) ?? []}
         onJoin={vi.fn()}
         onAgentSetup={vi.fn()}
         onHistory={vi.fn()}
-        onClearSeats={vi.fn()}
         connected
         agentV2={agent()}
         matchmakingState={matchmakingState}
@@ -107,5 +106,22 @@ describe("Lobby matchmaking controls", () => {
 
     expect(screen.getByText(/比赛进行中/)).toBeInTheDocument();
     expect(screen.getByText(/table-9/)).toBeInTheDocument();
+  });
+
+  it("labels the always-on preset table as an unranked exhibition", () => {
+    const table = (id: string, mode: TableInfo["config"]["mode"]): TableInfo => ({
+      id,
+      name: id,
+      config: { name: id, mode, smallBlind: 50, bigBlind: 100, startingChips: 5000, maxPlayers: 6 },
+      playerCount: 6,
+      handNumber: 3,
+      status: "playing",
+      seats: [],
+    });
+    renderLobby(state(), { tables: [table("Matched", "ranked"), table("Showcase", "exhibition")] });
+
+    expect(screen.getByText("排名赛")).toBeInTheDocument();
+    expect(screen.getByText("表演赛")).toBeInTheDocument();
+    expect(screen.getByText(/仅供观赛，不计入排名/)).toBeInTheDocument();
   });
 });

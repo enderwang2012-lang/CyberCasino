@@ -491,9 +491,10 @@ export interface StrategyConfig {
 // Future code/WASM runtimes can be added without changing the match contract.
 export type StrategyRuntime = "declarative_v1";
 export type ArenaExecutionMode = "verified_package" | "remote_agent";
-// The current product exposes formal ranked competition only.
-// Execution mode remains an internal capability/audit property.
-export type ArenaTableMode = "ranked";
+// Users only enter ranked matches; execution mode remains an internal
+// capability/audit property.
+/** Exhibition tables are spectator-only bot matches and never affect ratings. */
+export type ArenaTableMode = "ranked" | "exhibition";
 
 export interface StrategyPackageManifest {
   packageId: string;
@@ -634,7 +635,8 @@ export type GameEvent =
   | { type: "cards-dealt"; hands: Record<string, Card[]> }
   | { type: "phase-change"; phase: GamePhase; communityCards: Card[] }
   | { type: "action-required"; playerId: string; validActions: ActionType[]; currentBet: number; minRaise: number; callAmount: number }
-  | { type: "action-taken"; playerId: string; action: Action; thought: AgentThought; audit?: AgentActionAudit; allIn?: boolean }
+  /** `thought` is live-only; published replays omit it. */
+  | { type: "action-taken"; playerId: string; action: Action; thought?: AgentThought; audit?: AgentActionAudit; allIn?: boolean }
   | { type: "pot-updated"; pots: Pot[] }
   | { type: "showdown"; results: ShowdownResult[] }
   | { type: "hand-complete"; winners: Winner[]; players: PlayerState[] }
@@ -656,7 +658,6 @@ export interface ServerToClientEvents {
   "lobby:tables": (tables: TableInfo[]) => void;
   "lobby:personalities": (list: BuiltinPersonalityInfo[]) => void;
   "user:registered": (identity: UserIdentity) => void;
-  "table:seats": (data: { tableId: string; seats: TableSeat[] }) => void;
   "table:started": (tableId: string) => void;
   "table:stopped": (tableId: string) => void;
   "table:error": (error: string) => void;
@@ -675,11 +676,6 @@ export interface ClientToServerEvents {
   "table:leave": (tableId: string) => void;
   "user:register": (userId: string, userInfo?: { name: string; avatar: string; provider: AuthProvider }) => void;
   "agent:delete": (agentId: string) => void;
-  "table:sit": (tableId: string) => void;
-  "table:sit-builtin": (tableId: string, personalityId: string) => void;
-  "table:remove-seat": (tableId: string, seatIndex: number) => void;
-  "table:clear-seats": (tableId: string) => void;
-  "table:start": (tableId: string, language?: "zh" | "en") => void;
   "table:history": () => void;
   "agent:create-by-ai": (data: { config: StrategyConfig; preview: AgentPreview }) => void;
   "matchmaking:join": (agentId?: string) => void;

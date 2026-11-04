@@ -31,6 +31,8 @@
     "provisionalRank": "暂定 {games}/3 场有效比赛",
     "ranked": "排名赛",
     "rankedHint": "开放 Agent 竞技 · 身份与对局可审计",
+    "exhibition": "表演赛",
+    "exhibitionHint": "预置 Agent 常驻对局 · 仅供观赛，不计入排名",
     "joinMatch": "进入匹配",
     "leaveMatch": "退出匹配",
     "matchmaking": "等待自动组桌",
@@ -101,17 +103,6 @@
     "copied": "已复制",
     "copy": "复制"
   },
-  "tableWaiting": {
-    "title": "等待室",
-    "seated": "{occupied}/{total} 已入座",
-    "emptySeat": "空位",
-    "ai": "预置 Agent",
-    "custom": "自研",
-    "startGame": "开始牌局",
-    "confirmRemove": "确认移除",
-    "removeConfirm": "将 {name} 从座位上移除？",
-    "remove": "移除"
-  },
   "tableView": {
     "back": "‹ 返回",
     "matchRunning": "排名赛进行中",
@@ -162,15 +153,6 @@
     "live": "回放",
     "highlights": "精彩",
     "leaderboard": "排行"
-  },
-  "seatSelect": {
-    "title": "选择入座",
-    "customAgent": "自研 Agent",
-    "alreadySeated": "已入座",
-    "createNew": "新建自己的 Agent",
-    "createDesc": "配置后即可参赛",
-    "builtinAi": "预置 Agent",
-    "ownerManagesBots": "预置 Agent 与用户 Agent 一样正式参赛并进入排行榜"
   },
   "history": {
     "title": "历史牌局",

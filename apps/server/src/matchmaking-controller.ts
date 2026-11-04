@@ -171,7 +171,7 @@ export class MatchmakingController {
 
     for (const entry of getFillEntries()) {
       if (this.deps.service.getQueueSnapshot().length >= requiredPlayers) break;
-      if (queuedAgentIds.has(entry.agent.id) || this.deps.isAgentPlaying(entry.agent.id)) continue;
+      if (queuedAgentIds.has(entry.agent.id)) continue;
 
       const result = this.deps.service.join({
         ...entry,

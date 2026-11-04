@@ -11,7 +11,7 @@ import type {
   ExternalAgentMatchResult,
   ProtocolActionAck,
 } from "@cybercasino/shared";
-import { parseStyleInput } from "./style-parser";
+import { parseStyleInput, parseStyleUpdate } from "./style-parser";
 import {
   actionAckFor,
   actionRejectedFor,
@@ -75,12 +75,14 @@ interface PendingStyleUpdate {
 }
 
 const MATCH_RESULT_CLOSE_GRACE_MS = 5_000;
+const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // WebSocket Agent Manager
 // ---------------------------------------------------------------------------
 
 export class WebSocketAgentManager {
+  private readonly authTimeoutMs: number;
   private wss: WebSocketServer | null = null;
   private connections = new Map<string, WsAgentConnection>(); // token → connection
   private agentIdToToken = new Map<string, string>(); // agentId → token
@@ -96,6 +98,10 @@ export class WebSocketAgentManager {
     agentId: string;
     results: Map<string, ExternalAgentMatchResult>;
   }>();
+
+  constructor(options: { authTimeoutMs?: number } = {}) {
+    this.authTimeoutMs = options.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS;
+  }
 
   // Callback to persist style prompt to DB
   private onStyleUpdate?: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void;
@@ -206,6 +212,10 @@ export class WebSocketAgentManager {
 
       let authenticated = false;
       let connToken = "";
+      const authTimer = setTimeout(() => {
+        if (!authenticated) ws.close(4004, "Authentication timeout");
+      }, this.authTimeoutMs);
+      authTimer.unref();
 
       ws.on("message", (raw) => {
         let msg: any;
@@ -239,6 +249,7 @@ export class WebSocketAgentManager {
 
           connToken = token;
           authenticated = true;
+          clearTimeout(authTimer);
 
           // Identity is resolved exclusively from the server-held token.
           const agentId = authenticatedAgent.id;
@@ -476,45 +487,29 @@ export class WebSocketAgentManager {
           const conn = this.connections.get(connToken);
           if (!conn) return;
 
-          let styleText = "";
-          let styleProfile: StyleProfile | undefined;
-
-          if (typeof msg.style === "string") {
-            // Format A: plain text (backward compatible)
-            styleText = msg.style;
-            styleProfile = parseStyleInput({ text: styleText });
-          } else if (msg.highLevel || msg.profile || msg.override) {
-            // Format B/C/D: structured data
-            if (msg.profile) {
-              // Format B: full profile
-              styleProfile = parseStyleInput({ profile: msg.profile });
-            } else {
-              // Format C: highLevel + optional override
-              styleProfile = parseStyleInput({
-                highLevel: msg.highLevel,
-                override: msg.override,
-              });
-            }
-            styleText = msg.highLevel
-              ? JSON.stringify(msg.highLevel)
-              : msg.profile
-                ? JSON.stringify(msg.profile)
-                : "";
+          const styleInput = parseStyleUpdate(msg);
+          if (!styleInput) {
+            ws.send(JSON.stringify({ type: "error", message: "Invalid style update" }));
+            return;
           }
 
-          if (styleProfile) {
-            const updateStatus = this.updateStyle(conn.agentId, styleText, styleProfile);
-            const responsePayload = updateStatus === "deferred"
-              ? {
-                  type: "style_update_deferred" as const,
-                  appliesTo: "next_match" as const,
-                  profile: { ...styleProfile },
-                }
-              : { type: "style_updated" as const, profile: { ...styleProfile } };
-            const jsonStr = JSON.stringify(responsePayload);
-            console.log(`[ws-agent] sending ${responsePayload.type} response:`, jsonStr);
-            ws.send(jsonStr);
-          }
+          // Text, full profile, or highLevel + optional override.
+          const styleProfile = parseStyleInput(styleInput);
+          const styleText = styleInput.text
+            ?? (styleInput.highLevel ? JSON.stringify(styleInput.highLevel)
+              : styleInput.profile ? JSON.stringify(styleInput.profile) : "");
+
+          const updateStatus = this.updateStyle(conn.agentId, styleText, styleProfile);
+          const responsePayload = updateStatus === "deferred"
+            ? {
+                type: "style_update_deferred" as const,
+                appliesTo: "next_match" as const,
+                profile: { ...styleProfile },
+              }
+            : { type: "style_updated" as const, profile: { ...styleProfile } };
+          const jsonStr = JSON.stringify(responsePayload);
+          console.log(`[ws-agent] sending ${responsePayload.type} response:`, jsonStr);
+          ws.send(jsonStr);
           return;
         }
 
@@ -528,6 +523,7 @@ export class WebSocketAgentManager {
       });
 
       ws.on("close", (code: number, reason: Buffer) => {
+        clearTimeout(authTimer);
         this.requeueMatchResultsForConnection(ws);
         if (connToken) {
           const conn = this.connections.get(connToken);
@@ -598,9 +594,9 @@ export class WebSocketAgentManager {
     agentIds: string[],
     result: Omit<ExternalAgentMatchResult, "type" | "protocol_version">,
   ): void {
-    const message: ExternalAgentMatchResult = matchResultMessageFor(result);
-
-    this.pendingMatchResults.enqueue(agentIds, message);
+    for (const agentId of new Set(agentIds)) {
+      this.pendingMatchResults.enqueue([agentId], matchResultMessageFor(result, agentId));
+    }
     for (const agentId of new Set(agentIds)) {
       const connection = this.getConnection(agentId);
       if (!connection || connection.ws.readyState !== WebSocket.OPEN) continue;

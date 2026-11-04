@@ -107,10 +107,26 @@ describe("Agent console socket refresh", () => {
     expect(transport.emit).toHaveBeenCalledWith("matchmaking:leave");
     transport.emit.mockClear();
     receive("game:event", { type: "tournament-complete", rankings: [] });
-    expect(transport.emit).toHaveBeenCalledWith("lobby:join");
+    await waitFor(() => expect(transport.emit).toHaveBeenCalledWith("lobby:join"));
     expect(transport.emit).toHaveBeenCalledWith("table:history");
     expect(transport.emit).toHaveBeenCalledWith("matchmaking:status");
     await waitFor(() => expect(result.current.agentSummaryLoading).toBe(false));
+  });
+
+  it("coalesces a burst of lobby broadcasts into one round of refreshes", async () => {
+    const { result } = renderHook(() => useSocket("github:test"));
+    await waitFor(() => expect(result.current.agentSummaryLoading).toBe(false));
+    await waitFor(() => expect(transport.handlers.has("lobby:tables")).toBe(true));
+    vi.mocked(fetch).mockClear();
+    transport.emit.mockClear();
+    for (let i = 0; i < 5; i++) receive("lobby:tables", []);
+    receive("game:event", { type: "tournament-complete", rankings: [] });
+    await waitFor(() => expect(transport.emit).toHaveBeenCalledWith("matchmaking:status"));
+    await waitFor(() => expect(result.current.agentSummaryLoading).toBe(false));
+    const emitted = transport.emit.mock.calls.map(([name]) => name);
+    expect(emitted.filter((name) => name === "table:history")).toHaveLength(1);
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/api/agents/summary")))
+      .toHaveLength(1);
   });
 
   it("preserves error followed by the same state, then clears it on a successful match", async () => {

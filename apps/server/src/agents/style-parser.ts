@@ -1,4 +1,5 @@
 import type { AgentPersonality, HighLevelStyle, StyleProfile } from "@cybercasino/shared";
+import { STYLE_DEFAULTS } from "@cybercasino/shared";
 import { expandHighLevel, resolveStyle } from "./style-resolver";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,46 @@ export interface StyleInput {
   text?: string;
   // Option D: mixed (highLevel + override)
   override?: Partial<StyleProfile>;
+}
+
+const HIGH_LEVEL_KEYS = new Set<string>(["tightness", "aggression", "bluffFrequency", "valueOrientation", "adaptability"]);
+const PROFILE_KEYS = new Set<string>(Object.keys(STYLE_DEFAULTS));
+const MAX_STYLE_TEXT_LENGTH = 2000;
+
+/**
+ * Validates an untrusted `update_style` payload. Returns undefined when any
+ * provided field is malformed, so bad values never reach a persisted profile.
+ */
+export function parseStyleUpdate(message: Record<string, unknown>): StyleInput | undefined {
+  if (message.style !== undefined) {
+    return typeof message.style === "string" && message.style.trim()
+      && message.style.length <= MAX_STYLE_TEXT_LENGTH
+      ? { text: message.style }
+      : undefined;
+  }
+
+  const fields = [
+    ["highLevel", HIGH_LEVEL_KEYS],
+    ["profile", PROFILE_KEYS],
+    ["override", PROFILE_KEYS],
+  ] as const;
+  if (!fields.some(([field]) => message[field] !== undefined)) return undefined;
+
+  const input: StyleInput = {};
+  for (const [field, keys] of fields) {
+    const value = message[field];
+    if (value === undefined) continue;
+    if (!isStyleNumbers(value, keys)) return undefined;
+    (input as Record<string, unknown>)[field] = value;
+  }
+  return input;
+}
+
+function isStyleNumbers(value: unknown, keys: Set<string>): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length > 0 && entries.every(([key, entry]) =>
+    keys.has(key) && typeof entry === "number" && Number.isFinite(entry));
 }
 
 /**

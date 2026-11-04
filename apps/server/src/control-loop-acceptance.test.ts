@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { io, type Socket } from "socket.io-client";
 import type { AgentArenaSummary, ExternalAgentMatchResult } from "@cybercasino/shared";
 import { signJwt } from "./auth";
+import { publicReplayFor } from "./agents/match-result-message";
 import { AgentClient, actionFor, type WireMessage } from "./test-utils/ws-agent-client";
 import { ReferenceAgentClient, type ReferenceTurn } from "./test-utils/reference-agent-client";
 import { WebSocket } from "ws";
@@ -177,7 +178,8 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
     expect(firstResult.replay.timeline!.length).toBeGreaterThan(0);
     expect(JSON.stringify(firstResult)).not.toContain('"audit":');
     expect(JSON.stringify(firstResult)).not.toContain("turn_token");
-    expect(await (await fetch(`${base}/api/replay/${firstTableId}`)).json()).toEqual(firstResult.replay);
+    expect(await (await fetch(`${base}/api/replay/${firstTableId}`)).json())
+      .toEqual(publicReplayFor(firstResult.replay));
     const afterFirst = await summary();
     expect(afterFirst).toMatchObject({
       currentMatch: { status: "idle" },
@@ -205,14 +207,10 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
     control.send(actionFor(heldTurns.get(secondTableId)!, { action: "fold" }));
     await serverMessages.next("archive_pending", (event) => event.tableId === secondTableId);
     await control.disconnect();
-    socketMessages.discard("matchmaking:state");
-    child.send({ type: "release_archive", tableId: secondTableId });
+    // The seat is released when the game ends, before the archive is saved.
     await socketMessages.next("matchmaking:state", (event) => event.payload.status === "idle");
-    const afterSecond = await summary();
-    expect(afterSecond.currentMatch.status).toBe("idle");
-    expect(afterSecond.recentMatches.map((match) => match.tableId)).toEqual([secondTableId, firstTableId]);
-    expect(afterSecond.recentMatches.map((match) => match.strategyVersion)).toEqual([2, 1]);
-    expect(afterSecond.standing?.gamesPlayed).toBe(2);
+    expect((await summary()).recentMatches.map((match) => match.tableId)).toEqual([firstTableId]);
+    child.send({ type: "release_archive", tableId: secondTableId });
 
     reconnected = await ReferenceAgentClient.connect(wsUrl, token);
     let secondResult = await reconnected.next<ExternalAgentMatchResult>("match_result", 10_000);
@@ -222,8 +220,14 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
       secondResult = await reconnected.next<ExternalAgentMatchResult>("match_result", 10_000);
     }
     expect(secondResult.table_id).toBe(secondTableId);
+    const afterSecond = await summary();
+    expect(afterSecond.currentMatch.status).toBe("idle");
+    expect(afterSecond.recentMatches.map((match) => match.tableId)).toEqual([secondTableId, firstTableId]);
+    expect(afterSecond.recentMatches.map((match) => match.strategyVersion)).toEqual([2, 1]);
+    expect(afterSecond.standing?.gamesPlayed).toBe(2);
     expect(secondResult.players.find((player) => player.id === agentId)?.strategyVersion).toBe(2);
-    expect(await (await fetch(`${base}/api/replay/${secondTableId}`)).json()).toEqual(secondResult.replay);
+    expect(await (await fetch(`${base}/api/replay/${secondTableId}`)).json())
+      .toEqual(publicReplayFor(secondResult.replay));
     expect(reconnected.results.get(secondTableId)).toEqual(secondResult);
     const { standings } = await (await fetch(`${base}/api/leaderboard`)).json() as {
       standings: Array<{ agentId: string; gamesPlayed: number }>;
@@ -237,7 +241,8 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
     socketMessages.discard("lobby:tables");
     socket.emit("lobby:join");
     const lobby = await socketMessages.next("lobby:tables");
-    expect(lobby.payload.filter((table: { status: string }) => table.status === "playing")).toHaveLength(0);
+    const playing = lobby.payload.filter((table: { status: string }) => table.status === "playing");
+    expect(playing.map((table: { config: { mode: string } }) => table.config.mode)).toEqual(["exhibition"]);
   } catch (error) {
     failure = error;
   } finally {

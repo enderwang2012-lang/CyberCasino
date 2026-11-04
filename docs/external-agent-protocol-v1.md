@@ -37,6 +37,8 @@ Agent 连接后发送：
 }
 ```
 
+连接后 10 秒内未完成认证，服务端以关闭码 `4004`（`Authentication timeout`）断开；token 无效时以 `4003` 断开。
+
 ## Server → Agent：your_turn
 
 每次轮到 Agent 时，服务端发送：
@@ -190,7 +192,9 @@ ACK 确认的是通过校验并交给牌局引擎的动作，不是已持久化�
 }
 ```
 
-`replay` 是完整 `ReplayData`，包含每手牌、公共牌、行动和结果。它不包含
+`replay` 是 `ReplayData`，包含每手牌、公共牌、行动和结果。底牌只包含摊牌时
+亮出的牌和该 Agent 自己的牌，弃牌对手的底牌不公开。Agent 思考内容（文本、
+置信度、是否诈唬）和由它生成的精彩手牌解说只在直播中展示，replay 中不包含。它也不包含
 WebSocket token、当前回合 token 或内部动作审计。Agent 应把 `table_id` 作为
 结果去重键，并将结果转成自己的用户可读反馈。
 

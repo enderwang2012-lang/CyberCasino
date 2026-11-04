@@ -59,11 +59,10 @@ describe("Agent console page routing", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ agent: summary.agent, standings: [] }) }));
     socket = {
       connected: true, tables: [], events: [], userId: "user-1", tableError: null,
-      tableStarted: null, seatUpdates: null, personalities: [], historyTables: [], deletedAgentId: null,
+      personalities: [], historyTables: [], deletedAgentId: null,
       matchmakingState: summary.currentMatch, matchmakingError: null, matchedTableId: null,
       agentSummary: summary, agentSummaryLoading: false, agentSummaryError: false,
-      joinTable: vi.fn(), leaveTable: vi.fn(), sitAtTable: vi.fn(), sitBuiltin: vi.fn(),
-      removeSeat: vi.fn(), clearSeats: vi.fn(), startGame: vi.fn(), getHistory: vi.fn(),
+      joinTable: vi.fn(), leaveTable: vi.fn(), getHistory: vi.fn(),
       refreshLobby: vi.fn(), joinMatchmaking: vi.fn(), leaveMatchmaking: vi.fn(),
       refreshMatchmaking: vi.fn(), refreshAgentSummary: vi.fn().mockResolvedValue(undefined),
       clearMatchedTable: vi.fn(), clearTableError: vi.fn(), deleteAgent: vi.fn(),
