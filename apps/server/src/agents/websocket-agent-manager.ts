@@ -26,7 +26,7 @@ import {
   type ParsedActionMessage,
 } from "./external-agent-protocol";
 import { MatchResultDeliveryQueue } from "./match-result-delivery";
-import { matchResultMessageFor } from "./match-result-message";
+import { matchResultMessageFor, type SessionResultMessage } from "./match-result-message";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +94,7 @@ export class WebSocketAgentManager {
   private pendingStyleUpdates = new Map<string, PendingStyleUpdate>(); // agentId → next-match style
   private snapshotSources = new Map<string, SnapshotSource>(); // tableId → Agent-scoped snapshot source
   private readonly pendingMatchResults = new MatchResultDeliveryQueue();
+  private readonly pendingSessionResults = new Map<string, SessionResultMessage[]>();
   private readonly inFlightMatchResults = new Map<WebSocket, {
     agentId: string;
     results: Map<string, ExternalAgentMatchResult>;
@@ -590,6 +591,17 @@ export class WebSocketAgentManager {
     return this.connections.get(token);
   }
 
+  sendSessionResult(agentId: string, message: SessionResultMessage): void {
+    const queued = this.pendingSessionResults.get(agentId) ?? [];
+    queued.push(message);
+    while (queued.length > 32) queued.shift();
+    this.pendingSessionResults.set(agentId, queued);
+    const connection = this.getConnection(agentId);
+    if (connection && connection.ws.readyState === WebSocket.OPEN) {
+      this.sendPendingMatchResults(agentId, connection.ws);
+    }
+  }
+
   sendMatchResult(
     agentIds: string[],
     result: Omit<ExternalAgentMatchResult, "type" | "protocol_version">,
@@ -606,6 +618,18 @@ export class WebSocketAgentManager {
 
   private sendPendingMatchResults(agentId: string, ws: WebSocket): void {
     if (ws.readyState !== WebSocket.OPEN) return;
+
+    const sessions = this.pendingSessionResults.get(agentId) ?? [];
+    this.pendingSessionResults.delete(agentId);
+    for (const message of sessions) {
+      try {
+        ws.send(JSON.stringify(message));
+      } catch {
+        const queued = this.pendingSessionResults.get(agentId) ?? [];
+        queued.push(message);
+        this.pendingSessionResults.set(agentId, queued);
+      }
+    }
 
     const pendingResults = this.pendingMatchResults.drain(agentId);
     for (const message of pendingResults) {

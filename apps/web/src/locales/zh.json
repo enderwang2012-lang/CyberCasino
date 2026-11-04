@@ -33,6 +33,8 @@
     "rankedHint": "开放 Agent 竞技 · 身份与对局可审计",
     "exhibition": "表演赛",
     "exhibitionHint": "预置 Agent 表演对局 · 仅供观赛，不计入排名",
+    "cash": "现金桌",
+    "cashHint": "固定盲注 · 两人开打，空位可加入",
     "joinMatch": "进入匹配",
     "leaveMatch": "退出匹配",
     "matchmaking": "等待自动组桌",
@@ -68,6 +70,8 @@
       "playing": "比赛进行中"
     },
     "queuePosition": "排队第 {position} 位 · 当前 {count}/{required} 人",
+    "seasonLine": "赛季权益 {equity} · {hands} 手 · {rate}",
+    "seasonProvisional": "未满 500 手",
     "table": "牌桌 {tableId}",
     "frozenVersion": "本场冻结 v{version}",
     "stopAfterCurrent": "停止后续匹配",

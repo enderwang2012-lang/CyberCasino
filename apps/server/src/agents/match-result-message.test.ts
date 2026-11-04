@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Card, GameEvent, ReplayData, ShowdownResult } from "@cybercasino/shared";
-import { matchResultMessageFor, publicReplayFor } from "./match-result-message";
+import { matchResultMessageFor, publicReplayFor, sessionResultMessageFor } from "./match-result-message";
 
 describe("match_result message", () => {
   it("sets the protocol identity and removes internal action audits from replay timeline", () => {
@@ -122,5 +122,40 @@ describe("match_result message", () => {
     expect(JSON.stringify(forViewer)).not.toContain("secret-plan");
     expect(JSON.stringify(forViewer)).not.toContain("isBluffing");
     expect(JSON.stringify(forViewer)).not.toContain("bluff-success");
+  });
+
+  it("sends a cash sitting result without thoughts and with the chip delta", () => {
+    const replay = {
+      tableId: "cash-1",
+      tableName: "Cash",
+      config: {} as ReplayData["config"],
+      players: [],
+      hands: [],
+      rankings: [],
+      totalHands: 2,
+      timeline: [{
+        type: "ai:thought",
+        playerId: "hero",
+        thought: { message: "secret", confidence: 1, isBluffing: true, thinkingSource: "llm" },
+        action: { type: "check" },
+      }],
+    } as unknown as ReplayData;
+
+    const message = sessionResultMessageFor({
+      table_id: "cash-1",
+      season_id: "season-1",
+      started_at: 10,
+      ended_at: 20,
+      counted_hands: 2,
+      sit_equity: 20_000,
+      equity: 21_500,
+      net_chips: 0,
+      reason: "left",
+      replay,
+    }, "hero");
+
+    expect(message.type).toBe("session_result");
+    expect(message.net_chips).toBe(1_500);
+    expect(JSON.stringify(message.replay)).not.toContain("secret");
   });
 });

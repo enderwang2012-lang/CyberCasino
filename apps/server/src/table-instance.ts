@@ -30,6 +30,7 @@ import { loadBuiltinStrategies } from "./agents/strategy-loader";
 import { createStrategyPackage } from "./agents/strategy-package";
 import { auditDecision } from "./agents/action-audit";
 import { PERSONALITIES } from "./agents/personalities";
+import { buyIn, cashOut, settleHandStacks, skim, type SeasonEntry } from "./season-ledger";
 import { detectHighlights } from "./highlight-detector";
 import { generateCommentary, type CommentaryContext } from "./highlight-commentary";
 import type { AgentSnapshotAction, AgentSnapshotState } from "./agents/external-agent-protocol";
@@ -49,6 +50,17 @@ const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
 };
 
 const builtinStrategies = loadBuiltinStrategies();
+
+export interface CashSettlement {
+  handNumber: number;
+  status: "playing";
+  seatedIds: string[];
+  chips: Record<string, number>;
+  seasons: SeasonEntry[];
+  dealerSeatIndex: number;
+  smallBlind: number;
+  bigBlind: number;
+}
 
 export class TableInstance {
   readonly id: string;
@@ -89,6 +101,23 @@ export class TableInstance {
   private snapshotValidActions: ActionType[] = [];
   private snapshotActionHistory: AgentSnapshotAction[] = [];
   private snapshotHoleCards = new Map<string, Card[]>();
+  private readonly scriptedAgents = new Map<string, IPokerAgent>();
+  private readonly fundedStacks = new Map<string, number>();
+  private readonly seasonEntries = new Map<string, SeasonEntry>();
+  private readonly stayingAgents = new Set<string>();
+  private spectatorTable = false;
+  private stopNewHands = false;
+  private closingReason: "left" | "season_broke" | "table_closed" | "season_ended" = "table_closed";
+  private readonly departureReasons = new Map<string, "left" | "season_broke" | "table_closed" | "season_ended">();
+  private readonly vacatedAgents = new Set<string>();
+  private acceptingSeatChanges = false;
+  private readonly leavingAgents = new Set<string>();
+  private readonly deferredSeatChanges: Array<() => void> = [];
+  private onBetweenHands?: () => void;
+  private onSeatVacated?: (agentId: string) => void;
+  private seasonRecorder?: (entries: SeasonEntry[], handNumber: number) => void;
+  private readonly sittings = new Map<string, { equity: number; at: number; hands: number }>();
+  readonly cashSettlements: CashSettlement[] = [];
 
   constructor(id: string, config: TableConfig, creatorUserId?: string, autoStart = false) {
     if (config.handLimit !== undefined && (!Number.isSafeInteger(config.handLimit) || config.handLimit < 1)) {
@@ -120,7 +149,7 @@ export class TableInstance {
     executionMode: "verified_package" | "remote_agent" = "remote_agent",
     strategyVersion?: number,
   ): boolean {
-    if (this.running) return false;
+    if (!this.canChangeSeats()) return false;
     if (this.seats.some((s) => s.agent?.userId === agentConfig.userId)) return false;
 
     const empty = this.seats.find((s) => s.status === "empty");
@@ -140,7 +169,7 @@ export class TableInstance {
   }
 
   sitBuiltin(personalityId: string, strategyVersion?: number): boolean {
-    if (this.running) return false;
+    if (!this.canChangeSeats()) return false;
     if (this.seats.some((s) => s.agent?.id === personalityId)) return false;
 
     const empty = this.seats.find((s) => s.status === "empty");
@@ -249,7 +278,9 @@ export class TableInstance {
           id: seat.agent!.id,
           name: seat.agent!.name,
           avatar: seat.agent!.avatar,
-          chips: this.config.startingChips,
+          chips: this.config.mode === "cash"
+            ? (this.playerStates.get(seat.agent!.id)?.chips ?? 0)
+            : this.config.startingChips,
           bet: 0,
           folded: false,
           allIn: false,
@@ -341,7 +372,9 @@ export class TableInstance {
             id: agent.id,
             name: agent.name,
             avatar: agent.avatar,
-            chips: this.config.startingChips,
+            chips: this.config.mode === "cash"
+            ? (this.playerStates.get(agent.id)?.chips ?? 0)
+            : this.config.startingChips,
             bet: 0,
             folded: false,
             allIn: false,
@@ -492,6 +525,108 @@ export class TableInstance {
 
   // --- Game control ---
 
+  useScriptedAgent(agent: IPokerAgent): void {
+    this.scriptedAgents.set(agent.id, agent);
+  }
+
+  fund(agentId: string, chips: number): void {
+    this.fundedStacks.set(agentId, chips);
+    this.playerStates.set(agentId, { chips });
+  }
+
+  attachSeason(entry: SeasonEntry): void {
+    if (!this.sittings.has(entry.agentId)) {
+      this.sittings.set(entry.agentId, {
+        equity: entry.bankroll + entry.tableStack,
+        at: Date.now(),
+        hands: entry.countedHands,
+      });
+    }
+    this.seasonEntries.set(entry.agentId, { ...entry });
+  }
+
+  getSitting(agentId: string): { equity: number; at: number; hands: number } | undefined {
+    const sitting = this.sittings.get(agentId);
+    return sitting ? { ...sitting } : undefined;
+  }
+
+  setSeasonRecorder(recorder: (entries: SeasonEntry[], handNumber: number) => void): void {
+    this.seasonRecorder = recorder;
+  }
+
+  getSeasonEntry(agentId: string): SeasonEntry | undefined {
+    const entry = this.seasonEntries.get(agentId);
+    return entry ? { ...entry } : undefined;
+  }
+
+  getPlayerChips(agentId: string): number | undefined {
+    return this.playerStates.get(agentId)?.chips;
+  }
+
+  getDealerSeatIndex(): number {
+    return this.dealerSeatIndex;
+  }
+
+  markSpectator(spectator: boolean): void {
+    this.spectatorTable = spectator;
+  }
+
+  isSpectator(): boolean {
+    return this.spectatorTable;
+  }
+
+  standUp(agentId: string): boolean {
+    if (!this.canChangeSeats()) return false;
+    const seat = this.seats.find((item) => item.agent?.id === agentId);
+    if (!seat) return false;
+    seat.status = "empty";
+    seat.agent = undefined;
+    this.playerStates.delete(agentId);
+    this.fundedStacks.delete(agentId);
+    this.agents = this.agents.filter((agent) => agent.id !== agentId);
+    return true;
+  }
+
+  setSeatVacatedHandler(handler: (agentId: string) => void): void {
+    this.onSeatVacated = handler;
+  }
+
+  setBetweenHandsHandler(handler: () => void): void {
+    this.onBetweenHands = handler;
+  }
+
+  requestSeasonWindDown(): void {
+    this.stopNewHands = true;
+    this.closingReason = "season_ended";
+  }
+
+  getDepartureReason(agentId: string): "left" | "season_broke" | "table_closed" | "season_ended" {
+    return this.departureReasons.get(agentId) ?? this.closingReason;
+  }
+
+  requestCashLeave(agentId: string): boolean {
+    this.leavingAgents.add(agentId);
+    this.departureReasons.set(agentId, "left");
+    this.stayingAgents.delete(agentId);
+    if (this.running && !this.acceptingSeatChanges) return false;
+    const left = this.standUp(agentId);
+    if (left) {
+      this.leavingAgents.delete(agentId);
+      this.notifyVacated(agentId);
+    }
+    return left;
+  }
+
+  private canChangeSeats(): boolean {
+    return !this.running || this.acceptingSeatChanges;
+  }
+
+  applyBetweenHands(): void {
+    if (this.config.mode !== "cash") return;
+    this.ensureCashAgents();
+    this.settleCashBetweenHands();
+  }
+
   async start(
     language: "zh" | "en" = "zh",
     v2Configs?: Map<string, AgentConfigV2>,
@@ -527,16 +662,27 @@ export class TableInstance {
     this.emit({ type: "agent-roster", agents: roster });
 
     for (const agent of this.agents) {
-      this.playerStates.set(agent.id, { chips: this.config.startingChips });
+      const chips = this.config.mode === "cash"
+        ? (this.fundedStacks.get(agent.id) ?? 0)
+        : this.config.startingChips;
+      this.playerStates.set(agent.id, { chips });
     }
 
     let consecutiveErrors = 0;
 
     try {
       while (this.running) {
+        if (this.config.mode === "cash" && this.stopNewHands) {
+          this.closeCashTable();
+          break;
+        }
+
         if (this.config.handLimit !== undefined && this.handNumber >= this.config.handLimit) {
-          this.running = false;
-          this.emitTournamentComplete();
+          if (this.config.mode === "cash") this.closeCashTable();
+          else {
+            this.running = false;
+            this.emitTournamentComplete();
+          }
           break;
         }
 
@@ -544,22 +690,32 @@ export class TableInstance {
           (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
         );
         if (activePlayers.length < 2) {
-          this.running = false;
-          this.emitTournamentComplete();
+          if (this.config.mode === "cash") this.closeCashTable();
+          else {
+            this.running = false;
+            this.emitTournamentComplete();
+          }
           break;
         }
 
         this.handNumber++;
-        this.checkBlindLevel();
+        if (this.config.mode !== "cash") this.checkBlindLevel();
+        if (this.config.mode === "cash") this.ensureCashDealer();
 
         // Ensure dealer is an active player
-        const dealerAgent = this.agents[this.dealerSeatIndex];
+        const dealerAgent = this.config.mode === "cash"
+          ? this.agents.find((agent) => this.seatIndexFor(agent.id) === this.dealerSeatIndex)
+          : this.agents[this.dealerSeatIndex];
         if (!dealerAgent || (this.playerStates.get(dealerAgent.id)?.chips ?? 0) <= 0) {
-          for (let i = 0; i < this.agents.length; i++) {
-            const idx = (this.dealerSeatIndex + i) % this.agents.length;
-            if ((this.playerStates.get(this.agents[idx]?.id)?.chips ?? 0) > 0) {
-              this.dealerSeatIndex = idx;
-              break;
+          if (this.config.mode === "cash") {
+            this.ensureCashDealer();
+          } else {
+            for (let i = 0; i < this.agents.length; i++) {
+              const idx = (this.dealerSeatIndex + i) % this.agents.length;
+              if ((this.playerStates.get(this.agents[idx]?.id)?.chips ?? 0) > 0) {
+                this.dealerSeatIndex = idx;
+                break;
+              }
             }
           }
         }
@@ -572,30 +728,43 @@ export class TableInstance {
           consecutiveErrors++;
           console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
           if (consecutiveErrors >= 5) {
+            if (this.config.mode === "cash") {
+              this.closeCashTable();
+              break;
+            }
             this.running = false;
             throw new Error(`Tournament aborted after ${consecutiveErrors} consecutive hand errors: ${String(err)}`);
           }
           await new Promise((r) => setTimeout(r, 2000));
           continue;
         }
-        this.checkEliminations();
+        if (this.config.mode === "cash") {
+          this.settleCashBetweenHands();
+          const solvent = this.agents.filter((agent) => (this.playerStates.get(agent.id)?.chips ?? 0) > 0);
+          if (solvent.length < 2) {
+            this.closeCashTable();
+            break;
+          }
+        } else {
+          this.checkEliminations();
 
-        const remaining = this.agents.filter(
-          (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
-        );
-        if (remaining.length < 2) {
-          this.running = false;
-          this.emitTournamentComplete();
-          break;
-        }
+          const remaining = this.agents.filter(
+            (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
+          );
+          if (remaining.length < 2) {
+            this.running = false;
+            this.emitTournamentComplete();
+            break;
+          }
 
-        // Advance dealer to next active player
-        let nextDealer = this.dealerSeatIndex;
-        for (let i = 0; i < this.agents.length; i++) {
-          nextDealer = (nextDealer + 1) % this.agents.length;
-          if ((this.playerStates.get(this.agents[nextDealer]?.id)?.chips ?? 0) > 0) break;
+          // Advance dealer to next active player
+          let nextDealer = this.dealerSeatIndex;
+          for (let i = 0; i < this.agents.length; i++) {
+            nextDealer = (nextDealer + 1) % this.agents.length;
+            if ((this.playerStates.get(this.agents[nextDealer]?.id)?.chips ?? 0) > 0) break;
+          }
+          this.dealerSeatIndex = nextDealer;
         }
-        this.dealerSeatIndex = nextDealer;
         const interHandDelayMs = this.config.interHandDelayMs ?? 3000;
         if (interHandDelayMs > 0) {
           await new Promise((r) => setTimeout(r, interHandDelayMs));
@@ -615,10 +784,163 @@ export class TableInstance {
     wsAgentManager.unregisterSnapshotSource(this.id);
   }
 
+  private seatIndexFor(agentId: string): number {
+    return this.seats.find((seat) => seat.agent?.id === agentId)?.seatIndex ?? 0;
+  }
+
+  private occupiedCashSeats(): number[] {
+    return this.seats
+      .filter((seat) => seat.status === "occupied" && seat.agent && (this.playerStates.get(seat.agent.id)?.chips ?? 0) > 0)
+      .map((seat) => seat.seatIndex);
+  }
+
+  private ensureCashDealer(): void {
+    const seats = this.occupiedCashSeats();
+    if (seats.length === 0) return;
+    if (!seats.includes(this.dealerSeatIndex)) {
+      this.dealerSeatIndex = seats.find((seat) => seat > this.dealerSeatIndex) ?? seats[0];
+    }
+  }
+
+  private advanceCashDealer(): void {
+    const seats = this.occupiedCashSeats();
+    if (seats.length === 0) return;
+    this.dealerSeatIndex = seats.find((seat) => seat > this.dealerSeatIndex) ?? seats[0];
+  }
+
+  private ensureCashAgents(): void {
+    if (this.agents.length > 0) return;
+    this.agents = this.seats
+      .filter((seat) => seat.status === "occupied" && seat.agent)
+      .map((seat) => this.createAgent(seat.agent!));
+    for (const agent of this.agents) {
+      if (!this.playerStates.has(agent.id)) {
+        this.playerStates.set(agent.id, { chips: this.fundedStacks.get(agent.id) ?? 0 });
+      }
+    }
+  }
+
+  private vacateAgent(agentId: string): void {
+    const seat = this.seats.find((item) => item.agent?.id === agentId);
+    if (seat) {
+      seat.status = "empty";
+      seat.agent = undefined;
+    }
+    this.agents = this.agents.filter((agent) => agent.id !== agentId);
+    this.playerStates.delete(agentId);
+  }
+
+  private settleCashBetweenHands(): void {
+    for (const agent of [...this.agents]) {
+      const chips = this.playerStates.get(agent.id)?.chips ?? 0;
+      const entry = this.seasonEntries.get(agent.id);
+      if (!entry) continue;
+      const settled = skim(settleHandStacks(entry, chips));
+      this.seasonEntries.set(agent.id, settled);
+      this.playerStates.set(agent.id, { chips: settled.tableStack });
+    }
+
+    for (const agent of [...this.agents]) {
+      if (!this.leavingAgents.has(agent.id)) continue;
+      const entry = this.seasonEntries.get(agent.id);
+      if (entry) {
+        this.seasonEntries.set(agent.id, cashOut({
+          ...entry,
+          tableStack: this.playerStates.get(agent.id)?.chips ?? entry.tableStack,
+        }));
+      }
+      this.leavingAgents.delete(agent.id);
+      this.vacateAgent(agent.id);
+      this.notifyVacated(agent.id);
+    }
+
+    for (const agent of [...this.agents]) {
+      const chips = this.playerStates.get(agent.id)?.chips ?? 0;
+      if (chips > 0) continue;
+      const entry = this.seasonEntries.get(agent.id);
+      const cashed = entry ? cashOut(entry) : undefined;
+      const seatIndex = this.seatIndexFor(agent.id);
+      this.vacateAgent(agent.id);
+      if (!cashed || !this.stayingAgents.has(agent.id)) {
+        if (cashed) this.seasonEntries.set(agent.id, cashed);
+        this.departureReasons.set(agent.id, cashed && cashed.bankroll < 5_000 ? "season_broke" : "left");
+        this.notifyVacated(agent.id);
+        continue;
+      }
+      const rebought = buyIn(cashed);
+      if (!rebought.ok) {
+        this.seasonEntries.set(agent.id, rebought.entry);
+        continue;
+      }
+      const seat = this.seats.find((item) => item.seatIndex === seatIndex && item.status === "empty");
+      if (!seat) {
+        this.seasonEntries.set(agent.id, cashOut(rebought.entry));
+        continue;
+      }
+      seat.status = "occupied";
+      seat.agent = {
+        id: agent.id,
+        name: agent.name,
+        avatar: agent.avatar,
+        type: agent.agentType === "builtin" ? "builtin" : "custom",
+      };
+      this.agents.push(agent);
+      this.playerStates.set(agent.id, { chips: rebought.entry.tableStack });
+      this.seasonEntries.set(agent.id, rebought.entry);
+      this.fundedStacks.set(agent.id, rebought.entry.tableStack);
+    }
+
+    this.acceptingSeatChanges = true;
+    try {
+      this.onBetweenHands?.();
+    } finally {
+      this.acceptingSeatChanges = false;
+    }
+    if (!this.spectatorTable) {
+      this.seasonRecorder?.([...this.seasonEntries.values()].map((entry) => ({ ...entry })), this.handNumber);
+    }
+    this.advanceCashDealer();
+    if (!this.running) return;
+    const chips: Record<string, number> = {};
+    for (const agent of this.agents) chips[agent.id] = this.playerStates.get(agent.id)?.chips ?? 0;
+    this.cashSettlements.push({
+      handNumber: this.handNumber,
+      status: "playing",
+      seatedIds: this.seats.filter((seat) => seat.agent).map((seat) => seat.agent!.id),
+      chips,
+      seasons: [...this.seasonEntries.values()].map((entry) => ({ ...entry })),
+      dealerSeatIndex: this.dealerSeatIndex,
+      smallBlind: this.currentSmallBlind,
+      bigBlind: this.currentBigBlind,
+    });
+  }
+
+  private notifyVacated(agentId: string): void {
+    if (this.vacatedAgents.has(agentId)) return;
+    this.vacatedAgents.add(agentId);
+    this.onSeatVacated?.(agentId);
+  }
+
+  private closeCashTable(): void {
+    for (const agent of [...this.agents]) {
+      const entry = this.seasonEntries.get(agent.id);
+      if (entry) this.seasonEntries.set(agent.id, cashOut({
+        ...entry,
+        tableStack: this.playerStates.get(agent.id)?.chips ?? entry.tableStack,
+      }));
+      this.playerStates.set(agent.id, { chips: 0 });
+      if (!this.departureReasons.has(agent.id)) this.departureReasons.set(agent.id, this.closingReason);
+    }
+    this.running = false;
+    for (const agent of [...this.agents]) this.notifyVacated(agent.id);
+  }
+
   private createAgent(
     seat: SeatAgent,
     v2Configs?: Map<string, AgentConfigV2>,
   ): IPokerAgent {
+    const scripted = this.scriptedAgents.get(seat.id);
+    if (scripted) return scripted;
     const v2Config = seat.userId ? v2Configs?.get(seat.userId) : undefined;
     const isRemoteRuntime = v2Config?.executionMode !== "verified_package";
 
@@ -761,7 +1083,7 @@ export class TableInstance {
       name: agent.name,
       avatar: agent.avatar,
       chips: this.playerStates.get(agent.id)?.chips ?? 0,
-      seatIndex: this.agents.indexOf(agent),
+      seatIndex: this.config.mode === "cash" ? this.seatIndexFor(agent.id) : this.agents.indexOf(agent),
     }));
 
     let currentPhaseCards: Card[] = [];

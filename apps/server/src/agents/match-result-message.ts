@@ -9,6 +9,34 @@ import type {
 
 type MatchResultPayload = Omit<ExternalAgentMatchResult, "type" | "protocol_version">;
 
+export interface SessionResultMessage {
+  type: "session_result";
+  protocol_version: 1;
+  table_id: string;
+  season_id: string;
+  started_at: number;
+  ended_at: number;
+  counted_hands: number;
+  sit_equity: number;
+  equity: number;
+  net_chips: number;
+  reason: "left" | "season_broke" | "table_closed" | "season_ended";
+  replay: ReplayData;
+}
+
+export function sessionResultMessageFor(
+  message: Omit<SessionResultMessage, "type" | "protocol_version" | "replay"> & { replay: ReplayData },
+  viewerId?: string,
+): SessionResultMessage {
+  return {
+    type: "session_result",
+    protocol_version: 1,
+    ...message,
+    net_chips: message.equity - message.sit_equity,
+    replay: publicReplayFor(message.replay, viewerId),
+  };
+}
+
 export function matchResultMessageFor(
   payload: MatchResultPayload,
   viewerId?: string,

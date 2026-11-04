@@ -162,7 +162,8 @@ describe("open ranked competition", () => {
     const table = manager.ensureShowcaseTable();
     if (!table) throw new Error("expected available presets to form an exhibition");
     try {
-      expect(table.config.mode).toBe("exhibition");
+      expect(table.config.mode).toBe("cash");
+      expect(table.isSpectator()).toBe(true);
       expect(table.getSeats().map((seat) => seat.agent?.type)).toEqual(Array(6).fill("builtin"));
       expect(manager.ensureShowcaseTable()).toBe(table);
       expect(manager.isShowcaseTable(table.id)).toBe(true);
