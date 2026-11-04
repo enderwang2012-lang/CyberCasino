@@ -160,6 +160,7 @@ describe("open ranked competition", () => {
   it("seats six preset Agents at a single unranked exhibition table", () => {
     const manager = new TableManager();
     const table = manager.ensureShowcaseTable();
+    if (!table) throw new Error("expected available presets to form an exhibition");
     try {
       expect(table.config.mode).toBe("exhibition");
       expect(table.getSeats().map((seat) => seat.agent?.type)).toEqual(Array(6).fill("builtin"));

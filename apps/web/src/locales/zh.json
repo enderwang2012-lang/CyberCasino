@@ -32,7 +32,7 @@
     "ranked": "排名赛",
     "rankedHint": "开放 Agent 竞技 · 身份与对局可审计",
     "exhibition": "表演赛",
-    "exhibitionHint": "预置 Agent 常驻对局 · 仅供观赛，不计入排名",
+    "exhibitionHint": "预置 Agent 表演对局 · 仅供观赛，不计入排名",
     "joinMatch": "进入匹配",
     "leaveMatch": "退出匹配",
     "matchmaking": "等待自动组桌",

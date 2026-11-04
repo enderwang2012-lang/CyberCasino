@@ -302,11 +302,6 @@ export class GameHistoryStore {
 
   async saveCompletedMatch(info: TableInfo, events: ReplayData, audits: AgentActionAudit[]): Promise<void> {
     const recordedAt = info.finishedAt ?? Date.now();
-    const nextHistory = new Map(historyMap);
-    const nextAudits = new Map(auditMap);
-    nextHistory.set(info.id, { info, events });
-    nextAudits.set(info.id, audits);
-
     const db = sql;
     if (db) {
       await db.begin(async (tx) => {
@@ -322,7 +317,15 @@ export class GameHistoryStore {
               action_audits = EXCLUDED.action_audits,
               created_at = EXCLUDED.created_at`;
       });
-    } else {
+    }
+
+    // Merge into the latest maps after the transaction; other saves may have
+    // committed while it was awaiting I/O. Publish both maps without yielding.
+    const nextHistory = new Map(historyMap);
+    const nextAudits = new Map(auditMap);
+    nextHistory.set(info.id, { info, events });
+    nextAudits.set(info.id, audits);
+    if (!db) {
       // Write audit first so a failed file write never publishes a result without audit.
       saveJson(AUDITS_FILE, Object.fromEntries(nextAudits));
       saveJson(HISTORY_FILE, Array.from(nextHistory.values()));

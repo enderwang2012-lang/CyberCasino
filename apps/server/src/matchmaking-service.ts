@@ -70,11 +70,10 @@ export class MatchmakingService {
       };
     }
 
-    // Preset Agents are stateless fillers and may sit at several tables at once.
-    if (!isPresetEntry(entry) && ([...this.activeByUser.values()].some((active) =>
+    if ([...this.activeByUser.values()].some((active) =>
       active.userId === entry.userId || active.agent.id === entry.agent.id)
       || [...this.pendingBatches.values()].some((batch) =>
-        batch.some((item) => item.userId === entry.userId || item.agent.id === entry.agent.id)))) {
+        batch.some((item) => item.userId === entry.userId || item.agent.id === entry.agent.id))) {
       return {
         accepted: false,
         code: "already_playing",
@@ -150,7 +149,7 @@ export class MatchmakingService {
     this.pendingBatches.delete(batchId);
     const entries = pending.map((entry) => {
       const activeEntry = cloneEntry({ ...entry, tableId });
-      if (!isPresetEntry(activeEntry)) this.activeByUser.set(activeEntry.userId, activeEntry);
+      this.activeByUser.set(activeEntry.userId, activeEntry);
       return activeEntry;
     });
     this.activeTables.set(tableId, entries);
@@ -293,10 +292,6 @@ export class MatchmakingService {
       entries: entries.map(cloneEntry),
     };
   }
-}
-
-export function isPresetEntry(entry: Pick<MatchEntry, "userId">): boolean {
-  return entry.userId.startsWith("builtin:");
 }
 
 function cloneEntry(entry: MatchEntry): MatchEntry {

@@ -50,17 +50,20 @@ export class TableManager {
     this.finishedTables = entries.map((e) => e.info);
   }
 
-  ensureShowcaseTable(): TableInstance {
+  ensureShowcaseTable(): TableInstance | undefined {
     if (this.showcaseTableId) {
       const existing = this.tables.get(this.showcaseTableId);
       if (existing && existing.getStatus() !== "finished") {
         return existing;
       }
     }
+    const available = PERSONALITIES.filter((personality) => !this.isAgentSeated(personality.id));
+    if (available.length < DEFAULT_CONFIG.maxPlayers) return undefined;
+
     const id = `table-${randomUUID()}`;
     const config: TableConfig = { ...DEFAULT_CONFIG, mode: "exhibition", name: randomCasinoName() };
     const table = new TableInstance(id, config);
-    for (const personality of PERSONALITIES.slice(0, config.maxPlayers)) {
+    for (const personality of available.slice(0, config.maxPlayers)) {
       table.sitBuiltin(personality.id);
     }
     this.tables.set(id, table);
@@ -78,6 +81,11 @@ export class TableManager {
   ): TableInstance {
     if (entries.length !== DEFAULT_CONFIG.maxPlayers) {
       throw new Error(`Automatic ranked tables require ${DEFAULT_CONFIG.maxPlayers} Agents`);
+    }
+    for (const entry of entries) {
+      if (entry.userId.startsWith("builtin:") && this.isAgentSeated(entry.agent.id)) {
+        throw new Error(`Preset Agent ${entry.agent.id} is already seated at another table`);
+      }
     }
 
     const id = `table-${randomUUID()}`;
@@ -145,6 +153,14 @@ export class TableManager {
       if (table.getSeats().some((seat) => seat.agent?.id === agentId)) {
         return true;
       }
+    }
+    return false;
+  }
+
+  isAgentSeated(agentId: string): boolean {
+    for (const table of this.tables.values()) {
+      if (table.getStatus() === "finished") continue;
+      if (table.getSeats().some((seat) => seat.agent?.id === agentId)) return true;
     }
     return false;
   }

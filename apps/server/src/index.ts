@@ -642,8 +642,11 @@ function broadcastLobby() {
 }
 
 function startShowcaseTable(): void {
+  // Released presets serve waiting ranked entries before another exhibition.
+  matchmakingController.fillQueue();
+  if (matchmakingService.getQueueSnapshot().length > 0) return;
   const table = tableManager.ensureShowcaseTable();
-  if (table.getStatus() !== "waiting") return;
+  if (!table || table.getStatus() !== "waiting") return;
   wireTableEvents(table.id);
   table.start("zh").catch((err) => abortFailedTable(table.id, err));
   broadcastLobby();
@@ -656,7 +659,8 @@ const matchmakingController = new MatchmakingController({
     return agentId ? agents.find((agent) => agent.id === agentId) : agents[agents.length - 1];
   },
   isAgentPlaying: (agentId) => tableManager.isAgentPlaying(agentId),
-  getFillEntries: () => createBuiltinMatchEntries(),
+  getFillEntries: () => createBuiltinMatchEntries()
+    .filter((entry) => !tableManager.isAgentSeated(entry.agent.id)),
   createTable: (entries) => {
     const table = tableManager.createMatchedTable(entries);
     automaticTableIds.add(table.id);
@@ -709,9 +713,8 @@ function wireTableEvents(tableId: string) {
       // Seats are released as soon as the game ends; saving may retry for a while.
       if (automaticTableIds.delete(tableId)) {
         matchmakingController.completeTable(tableId);
-      } else {
-        startShowcaseTable();
       }
+      startShowcaseTable();
       broadcastLobby();
       void tableManager.archiveFinishedTable(tableId).then((archived) => {
         if (!archived) return;
@@ -775,9 +778,8 @@ function abortFailedTable(tableId: string, err: unknown): void {
   tableManager.removeTable(tableId);
   if (automaticTableIds.delete(tableId)) {
     matchmakingController.failTable(tableId);
-  } else {
-    startShowcaseTable();
   }
+  startShowcaseTable();
   broadcastLobby();
 }
 
@@ -850,6 +852,7 @@ io.on("connection", (socket) => {
 
   socket.on("matchmaking:leave", () => {
     matchmakingController.leave(socketUserMap.get(socket.id));
+    startShowcaseTable();
   });
 
   socket.on("matchmaking:status", () => {

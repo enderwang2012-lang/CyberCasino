@@ -50,6 +50,57 @@ describe("matchmaking contract", () => {
 });
 
 describe("MatchmakingService", () => {
+  it.each(["pending", "playing"] as const)(
+    "reserves a preset Agent while its batch is %s",
+    (status) => {
+      const service = new MatchmakingService({ requiredPlayers: 2 });
+      const preset = {
+        ...entry(1),
+        userId: "builtin:preset",
+        agent: { ...agent(1), id: "preset", userId: "builtin:preset" },
+        autoRequeue: false,
+      };
+      service.join(preset);
+      const result = service.join(entry(2));
+      if (!result.accepted || !result.batch) throw new Error("expected a full batch");
+      if (status === "playing") service.startBatch(result.batch.batchId, "preset-table");
+
+      for (const duplicate of [
+        preset,
+        { ...preset, agent: { ...preset.agent, id: "other-preset" } },
+        { ...preset, userId: "builtin:other", agent: { ...preset.agent, userId: "builtin:other" } },
+      ]) {
+        expect(service.join(duplicate)).toMatchObject({ accepted: false, code: "already_playing" });
+      }
+      expect(service.getState(preset.userId).status).toBe(status === "pending" ? "matched" : "playing");
+      expect(service.getQueueSnapshot()).toHaveLength(0);
+    },
+  );
+
+  it.each(["completeTable", "abortTable"] as const)(
+    "releases preset occupancy after %s without automatically requeueing it",
+    (finish) => {
+      const service = new MatchmakingService({ requiredPlayers: 2 });
+      const preset = {
+        ...entry(1),
+        userId: "builtin:preset",
+        agent: { ...agent(1), id: "preset", userId: "builtin:preset" },
+        autoRequeue: false,
+      };
+      service.join(preset);
+      const result = service.join({ ...entry(2), autoRequeue: false });
+      if (!result.accepted || !result.batch) throw new Error("expected a full batch");
+      service.startBatch(result.batch.batchId, "preset-table");
+      expect(service.getState(preset.userId).status).toBe("playing");
+
+      service[finish]("preset-table");
+
+      expect(service.getState(preset.userId).status).toBe("idle");
+      expect(service.getQueueSnapshot()).toEqual([]);
+      expect(service.join(preset).accepted).toBe(true);
+    },
+  );
+
   it("claims exactly six entries when the queue reaches the table size", () => {
     const service = new MatchmakingService({ requiredPlayers: 6, now: () => 1000 });
 
