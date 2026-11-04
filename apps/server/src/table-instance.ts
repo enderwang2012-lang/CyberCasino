@@ -29,7 +29,7 @@ import { wsAgentManager } from "./agents/websocket-agent-manager";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
 import { createStrategyPackage } from "./agents/strategy-package";
 import { auditDecision } from "./agents/action-audit";
-import { PERSONALITIES } from "./agents/personalities";
+import { PERSONALITIES, STYLE_PRESETS } from "./agents/personalities";
 import { buyIn, cashOut, settleHandStacks, skim, type SeasonEntry } from "./season-ledger";
 import { detectHighlights } from "./highlight-detector";
 import { generateCommentary, type CommentaryContext } from "./highlight-commentary";
@@ -998,6 +998,7 @@ export class TableInstance {
           createdBy: "platform_builtin",
         }),
         executionMode: "verified_package",
+        styleProfile: personality ? STYLE_PRESETS[personality.id] : undefined,
         createdAt: 0,
         updatedAt: 0,
       }, "builtin", this.config.mode);
@@ -1019,6 +1020,7 @@ export class TableInstance {
         createdBy: "platform_builtin",
       }),
       executionMode: "verified_package",
+      styleProfile: STYLE_PRESETS[fallback.id],
       createdAt: 0,
       updatedAt: 0,
     }, "builtin", this.config.mode);
@@ -1050,7 +1052,10 @@ export class TableInstance {
       },
       postflop: [
         { when: "monster", action: "value-bet-large", streets: ["flop", "turn", "river"], priority: 1 },
-        { when: "overpair", action: betAction, streets: ["flop", "turn"], priority: 2 },
+        { when: "three-of-a-kind", action: "value-bet-large", streets: ["flop", "turn", "river"], priority: 2 },
+        { when: "top-two-pair", action: betAction, streets: ["flop", "turn", "river"], priority: 3 },
+        { when: "two-pair", action: betAction, streets: ["flop", "turn", "river"], priority: 3 },
+        { when: "overpair", action: betAction, streets: ["flop", "turn"], priority: 4 },
         { when: "top-pair-top-kicker", action: "value-bet-small", streets: ["flop"], priority: 4 },
         { when: "top-pair-good-kicker", action: "check-call", streets: ["flop", "turn", "river"], priority: 6 },
         { when: "flush-draw", action: agg > 0.5 ? "semi-bluff-medium" : "check-call", streets: ["flop"], priority: 8 },

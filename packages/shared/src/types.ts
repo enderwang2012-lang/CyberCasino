@@ -306,6 +306,7 @@ export type PostflopCondition =
   | "gutshot"
   | "overcards"
   | "nothing"
+  | "board"
   | "monster";
 
 export type PostflopAction =

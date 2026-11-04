@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { AgentGameView, PostflopRule, StrategyConfig } from "@cybercasino/shared";
-import { decidePostflop, resolveAction } from "../strategy/postflop";
+import type { AgentGameView, Card, PostflopRule, PreflopConfig, StrategyConfig } from "@cybercasino/shared";
+import { decidePreflop } from "../strategy/preflop";
+import { classifyHand, decidePostflop, resolveAction } from "../strategy/postflop";
 import { validateAction } from "../action-audit";
 import { createStrategyPackage, seedToRandom } from "../strategy-package";
 
@@ -46,11 +47,117 @@ describe("strategy DSL execution correctness", () => {
     expect(large.action).toBe("fold");
   });
 
-  it("returns raise-to totals rather than incremental raise chips", () => {
-    expect(resolveAction("value-bet-medium", 1000, 200, 100)).toEqual({
+  it("sizes a raise from the pot after the call is added", () => {
+    expect(resolveAction("value-bet-medium", 1000, 200, 100, 0)).toEqual({
       type: "raise",
       amount: 700,
     });
+    expect(resolveAction("value-bet-medium", 1000, 200, 100, 200)).toEqual({
+      type: "raise",
+      amount: 800,
+    });
+    expect(resolveAction("value-bet-small", 600, 200, 200, 200).amount).toBeGreaterThan(400);
+  });
+
+  it("reads two pair ahead of an overpair and does not claim a board straight", () => {
+    const flop = classifyHand({
+      myCards: [{ rank: 14, suit: "h" }, { rank: 14, suit: "d" }],
+      communityCards: [{ rank: 13, suit: "s" }, { rank: 13, suit: "c" }, { rank: 7, suit: "d" }],
+      street: "flop",
+      isIP: true,
+      potSize: 300,
+      callAmount: 0,
+    });
+    expect(flop).toContain("two-pair");
+    expect(flop).not.toContain("overpair");
+
+    const boardStraight = classifyHand({
+      myCards: [{ rank: 2, suit: "c" }, { rank: 3, suit: "d" }],
+      communityCards: [
+        { rank: 9, suit: "h" }, { rank: 10, suit: "d" }, { rank: 11, suit: "c" },
+        { rank: 12, suit: "s" }, { rank: 13, suit: "h" },
+      ],
+      street: "river",
+      isIP: true,
+      potSize: 1000,
+      callAmount: 0,
+    });
+    expect(boardStraight).toEqual(["board"]);
+  });
+
+  it("raises a configured 3-bet multiple of the previous bet", () => {
+    const cards: Card[] = [{ rank: 14, suit: "h" }, { rank: 14, suit: "d" }];
+    const config = {
+      ranges: { BTN: { raise: ["AA"], call: [], fold: [] } },
+      sizing: { openRaise: "2.5", threeBet: "3", fourBet: "2.5" },
+    } as PreflopConfig;
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+      const open = decidePreflop(cards, "BTN", config, 0, 100, 100, 100);
+      const threeBet = decidePreflop(cards, "BTN", config, 150, 150, 100, 250);
+      expect(open?.amount).toBe(220);
+      expect(threeBet?.amount).toBe(525);
+    } finally {
+      Math.random = random;
+    }
+  });
+
+  it("moves the sizing baseline with pressure without collapsing to a min-raise", () => {
+    const cards: Card[] = [{ rank: 14, suit: "h" }, { rank: 14, suit: "d" }];
+    const config = {
+      ranges: { BTN: { raise: ["AA"], call: [], fold: [] } },
+      sizing: { openRaise: "2.5", threeBet: "3", fourBet: "2.5" },
+    } as PreflopConfig;
+    const random = Math.random;
+    Math.random = () => 1;
+    try {
+      const aggressive = decidePreflop(cards, "BTN", config, 0, 100, 100, 100, undefined, 1);
+      const passive = decidePreflop(cards, "BTN", config, 0, 100, 100, 100, undefined, 0);
+      expect(aggressive?.amount).toBe(390);
+      expect(passive?.amount).toBe(260);
+      expect(passive!.amount!).toBeGreaterThan(200);
+    } finally {
+      Math.random = random;
+    }
+  });
+
+  it("does not treat a board-only straight or flush draw as the player's draw", () => {
+    const boardStraight = classifyHand({
+      myCards: [{ rank: 7, suit: "c" }, { rank: 3, suit: "d" }],
+      communityCards: [
+        { rank: 10, suit: "h" }, { rank: 11, suit: "d" }, { rank: 12, suit: "c" }, { rank: 13, suit: "s" },
+      ],
+      street: "turn",
+      isIP: true,
+      potSize: 400,
+      callAmount: 0,
+    });
+    expect(boardStraight).not.toContain("straight-draw");
+
+    const realStraight = classifyHand({
+      myCards: [{ rank: 9, suit: "c" }, { rank: 3, suit: "d" }],
+      communityCards: [
+        { rank: 10, suit: "h" }, { rank: 11, suit: "d" }, { rank: 12, suit: "c" }, { rank: 2, suit: "s" },
+      ],
+      street: "turn",
+      isIP: true,
+      potSize: 400,
+      callAmount: 0,
+    });
+    expect(realStraight).toContain("straight-draw");
+
+    const boardFlush = classifyHand({
+      myCards: [{ rank: 2, suit: "c" }, { rank: 3, suit: "d" }],
+      communityCards: [
+        { rank: 4, suit: "h" }, { rank: 8, suit: "h" }, { rank: 11, suit: "h" }, { rank: 13, suit: "h" },
+      ],
+      street: "turn",
+      isIP: true,
+      potSize: 400,
+      callAmount: 0,
+    });
+    expect(boardFlush).not.toContain("flush-draw");
   });
 });
 

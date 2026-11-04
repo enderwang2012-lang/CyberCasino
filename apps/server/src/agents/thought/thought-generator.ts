@@ -38,6 +38,7 @@ const HAND_DESC_ZH: Record<string, string> = {
   "gutshot": "卡顺听牌",
   "overcards": "高牌",
   "nothing": "空气牌",
+  "board": "公牌成牌",
   "monster": "怪兽牌",
 };
 
@@ -63,6 +64,7 @@ const HAND_DESC_EN: Record<string, string> = {
   "gutshot": "gutshot straight draw",
   "overcards": "overcards",
   "nothing": "nothing",
+  "board": "playing the board",
   "monster": "monster",
 };
 

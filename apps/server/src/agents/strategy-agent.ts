@@ -20,7 +20,7 @@ import type {
 import type { PostflopContext } from "./strategy/postflop";
 import type { IPokerAgent } from "./agent-interface";
 import type { PsychologicalState } from "./imperfection/psychological-state";
-import { decidePreflop } from "./strategy";
+import { decidePreflop, sizingScale } from "./strategy";
 import { decidePostflop, classifyHand } from "./strategy";
 import { calculateDifficulty, estimateHandStrength } from "./imperfection/decision-difficulty";
 import { buildDecisionDistribution, sampleFromDistribution } from "./imperfection/decision-distribution";
@@ -76,6 +76,7 @@ export class StrategyAgent implements IPokerAgent {
   readonly agentType: "builtin" | "external";
 
   private config: StrategyConfig;
+  private readonly sizingPressure: number;
   private readonly strategyPackage: StrategyPackage;
   private actionHistory: ActionRecord[] = [];
   private profiles: Map<string, PlayerProfile> = new Map();
@@ -95,6 +96,7 @@ export class StrategyAgent implements IPokerAgent {
       agentType === "builtin" ? "platform_builtin" : "bootstrap_ai",
     );
     this.config = this.strategyPackage.strategy;
+    this.sizingPressure = agentConfig.styleProfile?.sizingPressure ?? 0.5;
     this.psychState = createInitialState();
   }
 
@@ -140,6 +142,7 @@ export class StrategyAgent implements IPokerAgent {
         view.bigBlind,
         view.currentBet,
         view,
+        this.sizingPressure,
       );
 
       if (result) {
@@ -168,6 +171,7 @@ export class StrategyAgent implements IPokerAgent {
         minRaise,
         validActions,
         random,
+        this.sizingPressure,
       );
 
       strategicAction = postflopDecision.action;
@@ -221,7 +225,7 @@ export class StrategyAgent implements IPokerAgent {
         raiseAmount = Math.max(minTotalBet, strategicAmount);
       } else {
         // Mistake-raise: default to pot-sized
-        raiseAmount = Math.max(minTotalBet, Math.round(potSize * 0.5));
+        raiseAmount = Math.max(minTotalBet, view.currentBet + Math.round((potSize + callAmount) * 0.5 * sizingScale(this.sizingPressure)));
       }
     }
 

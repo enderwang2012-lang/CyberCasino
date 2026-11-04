@@ -1,6 +1,10 @@
 import type { GameEvent } from "@cybercasino/shared";
 import { EMPTY_PIXEL_TABLE_STATE, type PixelTableState, type SeatState } from "./types";
 
+export function chipsToCommit(already: number, target: number, chips: number): number {
+  return Math.min(Math.max(0, target - already), Math.max(0, chips));
+}
+
 export function eventsToTableState(events: GameEvent[]): PixelTableState {
   let state: PixelTableState = { ...EMPTY_PIXEL_TABLE_STATE, seats: [] };
 
@@ -34,6 +38,20 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
           lastDecision: null,
         })),
       };
+    case "blinds-posted":
+      return {
+        ...next,
+        seats: next.seats.map((s) => {
+          const posted = s.playerId === e.smallBlindPlayerId
+            ? e.smallBlind
+            : s.playerId === e.bigBlindPlayerId
+              ? e.bigBlind
+              : 0;
+          if (posted <= 0) return s;
+          const cost = chipsToCommit(s.currentBet, posted, s.chips);
+          return { ...s, chips: s.chips - cost, currentBet: s.currentBet + cost };
+        }),
+      };
     case "pot-updated":
       return { ...next, potTotal: e.pots.reduce((sum, pot) => sum + pot.amount, 0) };
     case "phase-change":
@@ -55,15 +73,20 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
 
     case "action-taken": {
       const isAllIn = e.allIn === true;
+      const toCall = next.seats.reduce((max, s) => Math.max(max, s.currentBet), 0);
       const seats = next.seats.map((s) => {
         if (s.playerId !== e.playerId) return s;
         const isFold = e.action.type === "fold";
-        const amount = e.action.amount ?? 0;
-        const delta = amount - s.currentBet;  // 加注差值
+        const target = e.action.type === "raise"
+          ? e.action.amount ?? s.currentBet
+          : e.action.type === "call"
+            ? toCall
+            : s.currentBet;
+        const cost = isFold ? 0 : chipsToCommit(s.currentBet, target, s.chips);
         return {
           ...s,
-          currentBet: isFold ? s.currentBet : Math.max(s.currentBet, amount),
-          chips: isFold ? s.chips : Math.max(0, s.chips - Math.max(0, delta)),
+          currentBet: s.currentBet + cost,
+          chips: s.chips - cost,
           status: isFold ? "folded" : isAllIn ? "all-in" : "active",
           lastDecision: {
             action: e.action.type,

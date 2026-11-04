@@ -151,13 +151,13 @@ export async function* gameLoop(
       }
     }
 
-    let currentBet = phase === "preflop" ? config.bigBlind : 0;
+    let currentBet = phase === "preflop" ? Math.max(sbAmount, bbAmount) : 0;
     let minRaise = config.bigBlind;
-    let lastRaiserIdx = -1;
     let raiseCount = 0;
     const MAX_RAISES = 4;
+    // 已经对上一次完整加注表过态的人。不足额全下不会清空它，因此不能再加注。
+    const acted = new Set<string>();
 
-    // Determine starting player
     let startIdx: number;
     if (phase === "preflop") {
       const bbIdx = seatOrder.indexOf(bbPlayer);
@@ -167,96 +167,99 @@ export async function* gameLoop(
     }
 
     let actorIdx = startIdx;
-    let playersToAct = canAct.filter((p) => !p.folded && !p.allIn).length;
-    let acted = 0;
-    let iterations = 0;
+    let idle = 0;
+    let guard = 0;
+    const needsAction = (player: PlayerState) =>
+      !player.folded && !player.allIn && player.chips > 0
+      && (!acted.has(player.id) || player.bet < currentBet);
 
-    while (acted < playersToAct && iterations < seatOrder.length * (MAX_RAISES + 2)) {
-      iterations++;
+    while (idle < seatOrder.length && guard < seatOrder.length * (MAX_RAISES + 3)) {
+      guard++;
       const player = seatOrder[actorIdx];
+      actorIdx = (actorIdx + 1) % seatOrder.length;
+      if (!needsAction(player)) {
+        idle++;
+        continue;
+      }
+      idle = 0;
 
-      if (!player.folded && !player.allIn && player.chips > 0) {
-        const callAmount = currentBet - player.bet;
-        const validActions: ActionType[] = [];
-
-        if (callAmount <= 0) {
-          validActions.push("check");
-        } else {
-          validActions.push("call");
-        }
-        validActions.push("fold");
-        if (player.chips > callAmount && raiseCount < MAX_RAISES) {
-          validActions.push("raise");
-        }
-
-        yield {
-          type: "action-required",
-          playerId: player.id,
-          validActions,
-          currentBet,
-          minRaise,
-          callAmount: Math.min(callAmount, player.chips),
-        };
-
-        const { action, thought, audit } = await getDecision(
-          player.id,
-          validActions,
-          currentBet,
-          minRaise,
-          Math.min(callAmount, player.chips)
-        );
-
-        switch (action.type) {
-          case "fold":
-            player.folded = true;
-            potManager.markFolded(player.id);
-            break;
-
-          case "check":
-            break;
-
-          case "call": {
-            const toCall = Math.min(currentBet - player.bet, player.chips);
-            player.chips -= toCall;
-            player.bet += toCall;
-            potManager.addBet(player.id, toCall);
-            if (player.chips === 0) player.allIn = true;
-            break;
-          }
-
-          case "raise": {
-            let raiseAmount = action.amount ?? currentBet + minRaise;
-            // Validate: raise must meet minimum raise requirement
-            const minTotalBet = currentBet + minRaise;
-            if (raiseAmount < minTotalBet) {
-              raiseAmount = minTotalBet;
-            }
-            const totalBet = Math.min(raiseAmount, player.bet + player.chips);
-            const toAdd = totalBet - player.bet;
-            const actualRaise = totalBet - currentBet;
-            if (actualRaise > minRaise) minRaise = actualRaise;
-            player.chips -= toAdd;
-            player.bet = totalBet;
-            potManager.addBet(player.id, toAdd);
-            if (player.chips === 0) player.allIn = true;
-            currentBet = totalBet;
-            lastRaiserIdx = actorIdx;
-            raiseCount++;
-            playersToAct = canAct.filter((p) => !p.folded && !p.allIn).length;
-            acted = 0;
-            break;
-          }
-        }
-
-        yield { type: "action-taken", playerId: player.id, action, thought, audit, allIn: player.allIn || undefined };
-        yield { type: "pot-updated", pots: potManager.calculatePots() };
-
-        if (state.filter((p) => !p.folded).length === 1) break;
-
-        acted++;
+      const callAmount = Math.max(0, currentBet - player.bet);
+      const validActions: ActionType[] = [];
+      if (callAmount <= 0) validActions.push("check");
+      else validActions.push("call");
+      validActions.push("fold");
+      const facingShortAllIn = acted.has(player.id) && player.bet < currentBet;
+      if (player.chips > callAmount && raiseCount < MAX_RAISES && !facingShortAllIn) {
+        validActions.push("raise");
       }
 
-      actorIdx = (actorIdx + 1) % seatOrder.length;
+      yield {
+        type: "action-required",
+        playerId: player.id,
+        validActions,
+        currentBet,
+        minRaise,
+        callAmount: Math.min(callAmount, player.chips),
+      };
+
+      const { action, thought, audit } = await getDecision(
+        player.id,
+        validActions,
+        currentBet,
+        minRaise,
+        Math.min(callAmount, player.chips)
+      );
+
+      switch (action.type) {
+        case "fold":
+          player.folded = true;
+          potManager.markFolded(player.id);
+          acted.add(player.id);
+          break;
+
+        case "check":
+          acted.add(player.id);
+          break;
+
+        case "call": {
+          const toCall = Math.min(currentBet - player.bet, player.chips);
+          player.chips -= toCall;
+          player.bet += toCall;
+          potManager.addBet(player.id, toCall);
+          if (player.chips === 0) player.allIn = true;
+          acted.add(player.id);
+          break;
+        }
+
+        case "raise": {
+          let raiseAmount = action.amount ?? currentBet + minRaise;
+          const minTotalBet = currentBet + minRaise;
+          if (raiseAmount < minTotalBet) {
+            raiseAmount = minTotalBet;
+          }
+          const totalBet = Math.min(raiseAmount, player.bet + player.chips);
+          const toAdd = totalBet - player.bet;
+          const actualRaise = totalBet - currentBet;
+          const fullRaise = actualRaise >= minRaise;
+          if (fullRaise && actualRaise > minRaise) minRaise = actualRaise;
+          player.chips -= toAdd;
+          player.bet = totalBet;
+          potManager.addBet(player.id, toAdd);
+          if (player.chips === 0) player.allIn = true;
+          if (actualRaise > 0) currentBet = totalBet;
+          if (fullRaise) {
+            raiseCount++;
+            acted.clear();
+          }
+          acted.add(player.id);
+          break;
+        }
+      }
+
+      yield { type: "action-taken", playerId: player.id, action, thought, audit, allIn: player.allIn || undefined };
+      yield { type: "pot-updated", pots: potManager.calculatePots() };
+
+      if (state.filter((p) => !p.folded).length === 1) break;
     }
 
     if (state.filter((p) => !p.folded).length <= 1) break;
@@ -298,6 +301,9 @@ export async function* gameLoop(
       const eligibleResults = showdownResults.filter((r) =>
         pot.eligiblePlayerIds.includes(r.playerId)
       );
+      if (eligibleResults.length === 0) continue;
+      // 只有一个人够到这一层，说明多出来的筹码没人跟，退回即可，不算赢下底池。
+      const contested = pot.eligiblePlayerIds.length > 1;
 
       const evaluated = eligibleResults.map((r) => ({
         ...r,
@@ -310,12 +316,19 @@ export async function* gameLoop(
       const potWinners = evaluated.filter((e) => e.eval.score === bestScore);
       const share = Math.floor(pot.amount / potWinners.length);
       const remainder = pot.amount - share * potWinners.length;
+      const seatsFromButton = (playerId: string) => {
+        const pos = seatOrder.findIndex((p) => p.id === playerId);
+        return (pos - dealerIdx - 1 + seatOrder.length) % seatOrder.length;
+      };
+      const orderedWinners = [...potWinners].sort(
+        (a, b) => seatsFromButton(a.playerId) - seatsFromButton(b.playerId),
+      );
 
-      for (let i = 0; i < potWinners.length; i++) {
+      for (let i = 0; i < orderedWinners.length; i++) {
         const amount = share + (i === 0 ? remainder : 0);
-        const player = state.find((p) => p.id === potWinners[i].playerId)!;
+        const player = state.find((p) => p.id === orderedWinners[i].playerId)!;
         player.chips += amount;
-        winners.push({ playerId: player.id, amount, potIndex: potIdx });
+        if (contested) winners.push({ playerId: player.id, amount, potIndex: potIdx });
       }
     }
   }
