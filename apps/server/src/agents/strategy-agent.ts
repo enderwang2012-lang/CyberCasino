@@ -33,19 +33,19 @@ import { packageForAgent, seedToRandom } from "./strategy-package";
 // ---------------------------------------------------------------------------
 
 const DEFAULT_IMPERFECTION: ImperfectionConfig = {
-  baseMistakeRate: 0.04,
+  baseMistakeRate: 0.005,
   tendencies: {
-    scaredFold: 0.15,
-    stickyCall: 0.15,
-    slowplayBias: 0.1,
-    tiltAggression: 0.2,
+    scaredFold: 0.02,
+    stickyCall: 0.02,
+    slowplayBias: 0.02,
+    tiltAggression: 0.02,
   },
   tilt: {
-    triggerThreshold: 0.5,
-    decayRate: 0.1,
-    maxLevel: 0.8,
+    triggerThreshold: 0.8,
+    decayRate: 0.2,
+    maxLevel: 0.3,
   },
-  confidenceNoise: 0.1,
+  confidenceNoise: 0.02,
 };
 
 function defaultExpression(language: "zh" | "en" = "zh"): ExpressionConfig {

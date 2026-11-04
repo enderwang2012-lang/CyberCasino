@@ -81,17 +81,22 @@ function computeSizing(action: string, state: DecisionState): number | undefined
   }
 
   if (action === "raise") {
-    // Preflop: standard 3x open
+    // Preflop: 加注区间
     if (state.street === "preflop") {
+      const isFacingRaise = state.actionContext.facingBetBb > 1;
+      const ratio = isFacingRaise
+        ? 2.2 + Math.random() * 1.3   // 3-bet+: 2.2-3.5x 对手押注
+        : 2.0 + Math.random() * 1.5;  // 开池: 2.0-3.5x BB
       return Math.max(
         state.actionContext.facingBetBb + state.actionContext.minRaiseBb,
-        state.actionContext.facingBetBb > 1 ? state.actionContext.facingBetBb * 3 : 3.0,
+        isFacingRaise ? state.actionContext.facingBetBb * ratio : ratio,
       );
     }
-    // Postflop: pot-size raise
+    // Postflop: pot-size raise with variance
+    const potRatio = 0.5 + Math.random() * 0.5;
     return Math.max(
       state.actionContext.facingBetBb + state.actionContext.minRaiseBb,
-      state.actionContext.facingBetBb + state.table.potBb * 0.75,
+      state.actionContext.facingBetBb + state.table.potBb * potRatio,
     );
   }
 
@@ -101,18 +106,16 @@ function computeSizing(action: string, state: DecisionState): number | undefined
     const handStrength = state.derived.handStrength ?? 0.5;
     const texture = state.board.texture;
 
-    // Base sizing from hand strength
+    // Base sizing from hand strength, with ±25% variance
     let potRatio: number;
     if (handStrength >= 0.8) {
-      // Strong hand: larger bet
       potRatio = texture?.dryness === "dry" ? 0.75 : 0.66;
     } else if (handStrength >= 0.4) {
-      // Medium hand: standard bet
       potRatio = 0.50;
     } else {
-      // Weak/bluff: smaller bet
       potRatio = 0.33;
     }
+    potRatio *= 0.75 + Math.random() * 0.5; // 0.75x - 1.25x
 
     return Math.max(1, pot * potRatio); // minimum 1 BB
   }

@@ -800,10 +800,6 @@ function abortFailedTable(tableId: string, err: unknown): void {
   broadcastLobby();
 }
 
-// Create initial preset table on startup
-const initialRankedTable = tableManager.ensurePresetTable();
-wireTableEvents(initialRankedTable.id);
-
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
 
@@ -1039,6 +1035,8 @@ io.on("connection", (socket) => {
 export const serverReady = initStores().then(async () => {
   agentStore.activatePendingStylesAfterRestart();
   tableManager.loadPersistedHistory();
+  const initialTable = tableManager.ensurePresetTable();
+  wireTableEvents(initialTable.id);
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(PORT, () => {

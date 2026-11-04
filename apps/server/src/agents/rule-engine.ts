@@ -278,7 +278,12 @@ export function ruleDecide(
   if (phase === "preflop") {
     if (isPremium(myCards)) {
       if (validActions.includes("raise")) {
-        const amount = Math.max(view.currentBet + minRaise, bigBlind * 3);
+        // 加注尺度区间：开池 2-3.5 BB，3-bet+ 为对手押注的 2.2-3.5x
+        const isFacingRaise = view.currentBet > bigBlind;
+        const baseAmount = isFacingRaise
+          ? Math.round(view.currentBet * (2.2 + Math.random() * 1.3))
+          : Math.round(bigBlind * (2.0 + Math.random() * 1.5));
+        const amount = Math.max(view.currentBet + minRaise, baseAmount);
         return {
           confidence: 0.9,
           decision: {
@@ -335,7 +340,7 @@ export function ruleDecide(
 
   if (strength >= 0.8) {
     if (validActions.includes("raise")) {
-      const amount = Math.max(view.currentBet + minRaise, Math.floor(potSize * 0.7));
+      const amount = Math.max(view.currentBet + minRaise, Math.floor(potSize * (0.55 + Math.random() * 0.35)));
       return {
         confidence: 0.95,
         decision: {
@@ -364,7 +369,7 @@ export function ruleDecide(
       };
     }
     if (rand < bluffFrequency && validActions.includes("raise")) {
-      const amount = Math.max(view.currentBet + minRaise, Math.floor(potSize * 0.5));
+      const amount = Math.max(view.currentBet + minRaise, Math.floor(potSize * (0.35 + Math.random() * 0.35)));
       return {
         confidence: 0.6,
         decision: {

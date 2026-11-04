@@ -135,4 +135,31 @@ describe("table lifecycle", () => {
       expect(id).toMatch(/^table-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     }
   });
+
+  it("preserves legacy and UUID archives when new tables are created after restart", async () => {
+    const { manager, table } = finishedTable();
+    const replay = table.getReplayData();
+    await manager.archiveFinishedTable(table.id);
+    const archived = manager.getHistoryTables()[0];
+    const history = [
+      { info: archived, events: replay },
+      { info: { ...archived, id: "table-1" }, events: replay },
+    ];
+    const restored = new TableManager();
+    managers.push(restored);
+    restored.setHistoryStore({
+      getAll: () => history,
+    } as unknown as GameHistoryStore);
+
+    restored.loadPersistedHistory();
+    const publicTable = restored.ensurePresetTable();
+    const matchedTable = restored.createMatchedTable(presetEntries());
+
+    expect(restored.getHistoryTables()).toEqual(history.map((entry) => entry.info));
+    expect(restored.getHomepageTables().map((info) => info.id))
+      .toContain(archived.id);
+    expect(restored.getTable(archived.id)).toBeUndefined();
+    expect(restored.getTable("table-1")).toBeUndefined();
+    expect(new Set([publicTable.id, matchedTable.id, archived.id, "table-1"]).size).toBe(4);
+  });
 });

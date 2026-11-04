@@ -305,15 +305,17 @@ export async function generateLLMThought(
   language: "zh" | "en",
   state: PsychologicalState,
 ): Promise<AgentThought | null> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    const client = getClient();
     const prompt = buildThoughtPrompt(view, action, amount, language);
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("LLM thought timeout")), 5000)
-    );
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("LLM thought timeout")), 5000);
+    });
 
     const response = await Promise.race([
-      getClient().chat.completions.create({
+      client.chat.completions.create({
         model: getModel(),
         max_tokens: 80,
         temperature: 0.9,
@@ -345,5 +347,7 @@ export async function generateLLMThought(
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

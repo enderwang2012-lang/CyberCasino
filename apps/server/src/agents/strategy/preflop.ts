@@ -110,6 +110,11 @@ function buildRangeSet(range: string[]): Set<string> {
  * Check if a hand matches any entry in the given range.
  * Supports exact match ("AA", "AKs", "T9o") and shorthand ("99+", "ATs+", "KTo+").
  */
+/** 在 [min, max] 区间内取随机值 */
+function randomInRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
 export function matchesRange(hand: Card[], range: string[]): boolean {
   const key = handToKey(hand);
   const rangeSet = buildRangeSet(range);
@@ -330,13 +335,24 @@ export function decidePreflop(
   const handKey = handToKey(hand);
 
   if (raiseSet.has(handKey)) {
-    const sizingStr = currentBet <= bigBlind ? config.sizing.openRaise : config.sizing.threeBet;
-    const sizingMultiplier = parseFloat(sizingStr) || 2.5;
     const minTotalBet = currentBet + minRaise;
     const isPushFold = adjustments.some((reason) => reason.includes("push/fold"));
-    const raiseAmount = isPushFold && view
-      ? view.myBet + view.myChips
-      : Math.max(minTotalBet, Math.round(bigBlind * sizingMultiplier));
+    let raiseAmount: number;
+
+    if (isPushFold && view) {
+      raiseAmount = view.myBet + view.myChips;
+    } else if (currentBet <= bigBlind) {
+      // 开池加注：BB 倍数区间 [multiplier * 0.7, multiplier * 1.3]
+      const base = parseFloat(config.sizing.openRaise) || 2.5;
+      const multiplier = randomInRange(base * 0.7, base * 1.3);
+      raiseAmount = Math.max(minTotalBet, Math.round(bigBlind * multiplier));
+    } else {
+      // 3-bet / 4-bet：前一个押注的倍数区间
+      // base 控制中位数，实际在 ±30% 内随机
+      const base = parseFloat(config.sizing.threeBet) || 3.0;
+      const ratio = randomInRange(base * 0.6, base * 1.2);
+      raiseAmount = Math.max(minTotalBet, Math.round(currentBet * (1 + ratio * 0.45)));
+    }
     return {
       action: "raise",
       amount: raiseAmount,

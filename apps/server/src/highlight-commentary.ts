@@ -92,13 +92,15 @@ ${result}
 }
 
 export async function generateCommentary(ctx: CommentaryContext): Promise<string> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Commentary LLM timeout (30s)")), 30000)
-    );
+    const client = getClient();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("Commentary LLM timeout (30s)")), 30000);
+    });
 
     const response = await Promise.race([
-      getClient().chat.completions.create({
+      client.chat.completions.create({
         model: getModel(),
         max_tokens: 500,
         messages: [
@@ -127,5 +129,7 @@ export async function generateCommentary(ctx: CommentaryContext): Promise<string
       "multi-way-allin": "三路全下！这把牌的火药味直接拉满！",
     };
     return fallbacks[ctx.reasons[0]] ?? "精彩一手！";
+  } finally {
+    clearTimeout(timeout);
   }
 }
