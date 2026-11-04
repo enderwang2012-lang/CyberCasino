@@ -34,7 +34,10 @@ function builtinEntries(): MatchEntry[] {
   }));
 }
 
-function createController(getFillEntries?: () => MatchEntry[]) {
+function createController(
+  getFillEntries?: () => MatchEntry[],
+  isAgentPlaying: (agentId: string) => boolean = () => false,
+) {
   const agents = new Map(Array.from({ length: 12 }, (_, index) => {
     const config = agent(index + 1);
     return [config.userId, config] as const;
@@ -51,7 +54,7 @@ function createController(getFillEntries?: () => MatchEntry[]) {
       const config = agents.get(userId);
       return config && (!agentId || config.id === agentId) ? config : undefined;
     },
-    isAgentPlaying: () => false,
+    isAgentPlaying,
     getFillEntries,
     createTable: (entries) => {
       const table = { id: `controller-table-${created.length + 1}` };
@@ -160,37 +163,71 @@ describe("MatchmakingController", () => {
     expect(service.getQueueSnapshot()).toHaveLength(0);
   });
 
-  it("reuses preset Agents that are already playing so concurrent users are not starved", () => {
-    const service = new MatchmakingService();
-    const users = [agent(1), agent(2)];
-    const playing = new Set<string>();
-    const created: Array<{ id: string; entries: MatchEntry[] }> = [];
-    const controller = new MatchmakingController({
-      service,
-      getAgent: (userId) => users.find((config) => config.userId === userId),
-      isAgentPlaying: (agentId) => playing.has(agentId),
-      getFillEntries: () => builtinEntries(),
-      createTable: (entries) => {
-        const table = { id: `concurrent-table-${created.length + 1}`, entries };
-        created.push(table);
-        for (const entry of entries) playing.add(entry.agent.id);
-        return table;
-      },
-      removeTable: () => {},
-      startTable: () => {},
-      emitState: () => {},
-      emitMatched: () => {},
-      emitError: (userId, error) => { throw new Error(`${userId}:${error.code}`); },
-    });
+  it("queues later users together instead of reusing presets from an active table", () => {
+    const { service, controller, created, started } = createController(builtinEntries);
 
-    for (const config of users) controller.join(config.userId);
+    controller.join("controller-user-1");
+    controller.join("controller-user-2");
+
+    expect(created).toHaveLength(1);
+    expect(service.getState("controller-user-2")).toMatchObject({ status: "queued", queueSize: 2 });
+    for (let index = 3; index <= 6; index++) controller.join(`controller-user-${index}`);
 
     expect(created).toHaveLength(2);
-    for (const [index, table] of created.entries()) {
-      expect(table.entries.map((entry) => entry.userId)).toContain(users[index].userId);
-      expect(table.entries.filter((entry) => entry.userId.startsWith("builtin:"))).toHaveLength(5);
-      expect(service.getState(users[index].userId)).toMatchObject({ status: "playing", tableId: table.id });
-    }
+    expect(started[0].entries.filter((entry) => entry.userId.startsWith("builtin:"))).toHaveLength(5);
+    expect(started[1].entries.filter((entry) => entry.userId.startsWith("builtin:"))).toHaveLength(1);
+    expect(started[1].entries.filter((entry) => !entry.userId.startsWith("builtin:")).map((entry) => entry.userId))
+      .toEqual(["controller-user-2", "controller-user-3", "controller-user-4", "controller-user-5", "controller-user-6"]);
+    expect(new Set(started.flatMap(({ entries }) => entries.map((entry) => entry.agent.id))).size).toBe(12);
+  });
+
+  it("does not fill with presets occupied by an exhibition table", () => {
+    const { controller, service, created } = createController(
+      builtinEntries,
+      (agentId) => agentId.startsWith("personality-"),
+    );
+    controller.join("controller-user-1");
+    expect(created).toHaveLength(0);
+    expect(service.getQueueSnapshot().map((entry) => entry.userId)).toEqual(["controller-user-1"]);
+    expect(service.getState("controller-user-1").status).toBe("queued");
+  });
+
+  it.each(["completeTable", "failTable"] as const)(
+    "fills waiting demand with presets released by %s",
+    (finish) => {
+      const { controller, service, created, started } = createController(
+        () => builtinEntries().slice(0, 5),
+      );
+      controller.join("controller-user-1");
+      controller.join("controller-user-2");
+      controller.leave("controller-user-1");
+      expect(created).toHaveLength(1);
+
+      controller[finish](created[0].id);
+
+      expect(created).toHaveLength(2);
+      expect(service.getState("controller-user-1").status).toBe("idle");
+      expect(service.getState("controller-user-2")).toMatchObject({
+        status: "playing", tableId: created[1].id,
+      });
+      expect(started[1].entries[0].userId).toBe("controller-user-2");
+      expect(started[1].entries.slice(1).map((entry) => entry.agent.id))
+        .toEqual(["personality-1", "personality-2", "personality-3", "personality-4", "personality-5"]);
+    },
+  );
+
+  it("serves waiting users before the just-completed user's automatic requeue", () => {
+    const { controller, service, created, started } = createController(builtinEntries);
+    controller.join("controller-user-1");
+    controller.join("controller-user-2");
+    expect(created).toHaveLength(1);
+
+    controller.completeTable(created[0].id);
+
+    expect(created).toHaveLength(2);
+    expect(started[1].entries.filter((entry) => !entry.userId.startsWith("builtin:"))
+      .map((entry) => entry.userId)).toEqual(["controller-user-2", "controller-user-1"]);
+    expect(service.getQueueSnapshot()).toEqual([]);
   });
 
   it("fills a real Agent with five formal built-in Agents without requeueing the built-ins", () => {
@@ -424,7 +461,9 @@ describe("MatchmakingController", () => {
         });
       }
       for (const entry of presets) {
-        expect(service.getState(entry.userId).status).toBe("idle");
+        expect(service.getState(entry.userId)).toMatchObject({
+          status: "playing", tableId: "failure-table-2",
+        });
       }
       expect(events.filter((event) => event.type === "error")).toHaveLength(2);
     } finally {

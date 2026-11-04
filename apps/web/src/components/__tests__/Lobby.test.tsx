@@ -108,7 +108,7 @@ describe("Lobby matchmaking controls", () => {
     expect(screen.getByText(/table-9/)).toBeInTheDocument();
   });
 
-  it("labels the always-on preset table as an unranked exhibition", () => {
+  it("labels the preset table as an unranked exhibition", () => {
     const table = (id: string, mode: TableInfo["config"]["mode"]): TableInfo => ({
       id,
       name: id,

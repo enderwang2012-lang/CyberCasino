@@ -137,12 +137,11 @@ describe("table lifecycle", () => {
     const first = new TableManager();
     const second = new TableManager();
     managers.push(first, second);
-    const ids = [
-      first.ensureShowcaseTable().id,
-      first.createMatchedTable(presetEntries()).id,
-      second.ensureShowcaseTable().id,
-      second.createMatchedTable(presetEntries()).id,
-    ];
+    const ids = [first, second].flatMap((manager) => {
+      const showcase = manager.ensureShowcaseTable()!;
+      manager.removeTable(showcase.id);
+      return [showcase.id, manager.createMatchedTable(presetEntries()).id];
+    });
     expect(new Set(ids).size).toBe(4);
     for (const id of ids) {
       expect(id).toMatch(/^table-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -166,6 +165,8 @@ describe("table lifecycle", () => {
 
     restored.loadPersistedHistory();
     const publicTable = restored.ensureShowcaseTable();
+    if (!publicTable) throw new Error("expected an exhibition after restart");
+    restored.removeTable(publicTable.id);
     const matchedTable = restored.createMatchedTable(presetEntries());
 
     expect(restored.getHistoryTables()).toEqual(history.map((entry) => entry.info));

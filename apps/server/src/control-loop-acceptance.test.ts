@@ -142,9 +142,23 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
       }
     });
     socket.emit("matchmaking:join", agentId);
+    await socketMessages.next("matchmaking:state", (event) => event.payload.status === "queued");
+    expect(await summary()).toMatchObject({
+      currentMatch: { status: "queued", queueSize: 1 },
+    });
+    const firstExhibition = await serverMessages.next("exhibition_waiting");
+    child.send({ type: "release_exhibition", tableId: firstExhibition.tableId });
     const matched = await socketMessages.next("matchmaking:matched");
     const firstTableId = matched.payload.tableId as string;
     await serverMessages.next("first_turn", (event) => event.turn.table_id === firstTableId);
+    await serverMessages.next("archive_pending", (event) => event.tableId === firstExhibition.tableId);
+    child.send({ type: "release_archive", tableId: firstExhibition.tableId });
+    await serverMessages.next("archive_saved", (event) => event.tableId === firstExhibition.tableId);
+    socketMessages.discard("lobby:tables");
+    socket.emit("lobby:join");
+    const rankedLobby = await socketMessages.next("lobby:tables");
+    expect(rankedLobby.payload.filter((table: { status: string }) => table.status === "playing")
+      .map((table: { id: string }) => table.id)).toEqual([firstTableId]);
     expect(await summary()).toMatchObject({
       agent: { id: agentId, strategyVersion: 1 },
       externalAgentConnected: true,
@@ -193,10 +207,16 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
 
     // The next match uses the activated version; disconnect before its archive completes.
     socket.emit("matchmaking:join", agentId);
+    await socketMessages.next("matchmaking:state", (event) => event.payload.status === "queued");
+    const secondExhibition = await serverMessages.next("exhibition_waiting");
+    child.send({ type: "release_exhibition", tableId: secondExhibition.tableId });
     const secondMatch = await socketMessages.next("matchmaking:matched");
     const secondTableId = secondMatch.payload.tableId as string;
     expect(secondTableId).not.toBe(firstTableId);
     await serverMessages.next("first_turn", (event) => event.turn.table_id === secondTableId);
+    await serverMessages.next("archive_pending", (event) => event.tableId === secondExhibition.tableId);
+    child.send({ type: "release_archive", tableId: secondExhibition.tableId });
+    await serverMessages.next("archive_saved", (event) => event.tableId === secondExhibition.tableId);
     expect(await summary()).toMatchObject({
       currentMatch: { status: "playing", tableId: secondTableId },
       currentMatchStrategyVersion: 2,
@@ -235,8 +255,12 @@ it("completes the authenticated HTTP, Socket.IO and external-Agent result loop",
     expect(standings).toHaveLength(6);
     expect(standings.every((standing) => standing.gamesPlayed === 2)).toBe(true);
     const persisted = JSON.parse(await readFile(join(dataDir, "game_history.json"), "utf8"));
-    expect(persisted.map((entry: { info: { id: string } }) => entry.info.id).sort())
+    expect(persisted.filter((entry: { info: { config: { mode: string } } }) => entry.info.config.mode === "ranked")
+      .map((entry: { info: { id: string } }) => entry.info.id).sort())
       .toEqual([firstTableId, secondTableId].sort());
+    expect(persisted.filter((entry: { info: { config: { mode: string } } }) => entry.info.config.mode === "exhibition")
+      .map((entry: { info: { id: string } }) => entry.info.id).sort())
+      .toEqual([firstExhibition.tableId, secondExhibition.tableId].sort());
 
     socketMessages.discard("lobby:tables");
     socket.emit("lobby:join");

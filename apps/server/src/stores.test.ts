@@ -4,6 +4,22 @@ import { join } from "node:path";
 import type { ReplayData, TableInfo } from "@cybercasino/shared";
 import { calculateLeaderboard } from "./stores";
 
+describe("PostgreSQL match publication", () => {
+  it.each(["in-order", "reverse-order", "retry", "replacement"])(
+    "keeps replay, audits and standings consistent after %s saves",
+    async (scenario) => {
+      // Isolate the database mock from other tests importing the shared stores.
+      const fixturePath = join(import.meta.dirname, "test-utils", "stores-concurrency-fixture.ts");
+      const fixture = await Bun.$`bun --no-env-file ${fixturePath} ${scenario}`.env({
+        ...process.env,
+        DATABASE_URL: "",
+      }).quiet().nothrow();
+      expect(fixture.stderr.toString()).toBe("");
+      expect(fixture.exitCode).toBe(0);
+    },
+  );
+});
+
 describe("leaderboard", () => {
   it("includes preset Agents in the same standings as user Agents", () => {
     const replay: ReplayData = {
