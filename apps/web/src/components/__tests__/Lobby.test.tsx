@@ -124,4 +124,22 @@ describe("Lobby matchmaking controls", () => {
     expect(screen.getByText("表演赛")).toBeInTheDocument();
     expect(screen.getByText(/仅供观赛，不计入排名/)).toBeInTheDocument();
   });
+
+  it("labels a seated cash table separately from a spectator table", () => {
+    const table = (id: string, mode: TableInfo["config"]["mode"], spectator?: boolean): TableInfo => ({
+      id,
+      name: id,
+      config: { name: id, mode, smallBlind: 50, bigBlind: 100, startingChips: 5000, maxPlayers: 6 },
+      playerCount: 2,
+      handNumber: 1,
+      status: "playing",
+      seats: [],
+      spectator,
+    });
+    renderLobby(state(), { tables: [table("Cash", "cash"), table("Watch", "cash", true)] });
+
+    expect(screen.getByText("现金桌")).toBeInTheDocument();
+    expect(screen.getByText(/两人开打/)).toBeInTheDocument();
+    expect(screen.getByText("表演赛")).toBeInTheDocument();
+  });
 });

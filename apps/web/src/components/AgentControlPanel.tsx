@@ -145,6 +145,17 @@ export function AgentControlPanel({
                 {t(currentMatch.autoRequeue ? "agentConsole.autoRequeue" : "agentConsole.requeueStopped")}
               </p>
             )}
+            {currentMatch.seasonHands != null && (
+              <p className="text-text-secondary text-[13px] mt-2">
+                {t("agentConsole.seasonLine", {
+                  equity: currentMatch.seasonEquity ?? 0,
+                  hands: currentMatch.seasonHands,
+                  rate: currentMatch.seasonBbPer100 == null
+                    ? t("agentConsole.seasonProvisional")
+                    : currentMatch.seasonBbPer100.toFixed(1),
+                })}
+              </p>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-2 mt-4">
               {currentMatch.status === "idle" && (

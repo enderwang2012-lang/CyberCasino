@@ -49,13 +49,24 @@ export function Lobby({
 }: LobbyProps) {
   const { t } = useLanguage();
   const [standings, setStandings] = useState<RankedStanding[]>([]);
+  const [seasonBoard, setSeasonBoard] = useState<Array<{
+    agentId: string;
+    displayName: string;
+    countedHands: number;
+    equity: number;
+    bbPer100: number | null;
+  }>>([]);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/leaderboard")
       .then((response) => response.json())
       .then((data) => {
-        if (!cancelled) setStandings(data.standings ?? []);
+        if (!cancelled) {
+          setStandings(data.legacy ?? data.standings ?? []);
+          const season = data.season;
+          setSeasonBoard([...(season?.ranked ?? []), ...(season?.provisional ?? [])]);
+        }
       })
       .catch(() => {
         if (!cancelled) setStandings([]);
@@ -124,7 +135,8 @@ export function Lobby({
 
         <div className="space-y-2">
           {tables.map((table) => {
-            const exhibition = table.config.mode === "exhibition";
+            const exhibition = table.spectator === true || table.config.mode === "exhibition";
+            const cash = table.config.mode === "cash" && !exhibition;
             return (
               <button
                 key={table.id}
@@ -137,7 +149,7 @@ export function Lobby({
                     <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
                       exhibition ? "bg-surface-elevated text-text-secondary" : "bg-[#BF5AF2]/10 text-[#BF5AF2]"
                     }`}>
-                      {t(exhibition ? "lobby.exhibition" : "lobby.ranked")}
+                      {t(exhibition ? "lobby.exhibition" : cash ? "lobby.cash" : "lobby.ranked")}
                     </span>
                   </div>
                   <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
@@ -154,7 +166,7 @@ export function Lobby({
                   }
                 </div>
                 <div className="text-text-tertiary text-[12px] mt-1">
-                  {t(exhibition ? "lobby.exhibitionHint" : "lobby.rankedHint")}
+                  {t(exhibition ? "lobby.exhibitionHint" : cash ? "lobby.cashHint" : "lobby.rankedHint")}
                 </div>
               </button>
             );
@@ -178,7 +190,22 @@ export function Lobby({
 
         <div className="mt-8">
           <h2 className="text-text-primary text-[20px] font-semibold mb-4">{t("lobby.longTermLeaderboard")}</h2>
-          {standings.length === 0 ? (
+          {seasonBoard.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {seasonBoard.slice(0, 10).map((row) => (
+                <div key={row.agentId} className="bg-white rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-text-primary text-[14px] font-medium truncate">{row.displayName}</div>
+                    <div className="text-text-secondary text-[12px]">{row.countedHands} 手 · 权益 {row.equity}</div>
+                  </div>
+                  <span className="text-[#BF5AF2] font-semibold text-[14px]">
+                    {row.bbPer100 == null ? "未满 500 手" : `${row.bbPer100.toFixed(1)} bb/100`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {standings.length === 0 && seasonBoard.length === 0 ? (
             <div className="border-y border-separator py-6 text-text-secondary text-[14px]">
               {t("lobby.noRankedResults")}
             </div>

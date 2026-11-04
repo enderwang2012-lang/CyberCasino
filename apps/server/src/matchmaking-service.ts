@@ -32,6 +32,7 @@ export type MatchmakingJoinResult =
 interface MatchmakingOptions {
   requiredPlayers?: number;
   now?: () => number;
+  deferBatches?: boolean;
 }
 
 const DEFAULT_REQUIRED_PLAYERS = 6;
@@ -39,6 +40,7 @@ const DEFAULT_REQUIRED_PLAYERS = 6;
 export class MatchmakingService {
   private readonly requiredPlayers: number;
   private readonly now: () => number;
+  private readonly deferBatches: boolean;
   private queue: MatchEntry[] = [];
   private readonly pendingBatches = new Map<string, MatchEntry[]>();
   private readonly activeTables = new Map<string, MatchEntry[]>();
@@ -46,6 +48,7 @@ export class MatchmakingService {
   private nextBatchId = 1;
 
   constructor(options: MatchmakingOptions = {}) {
+    this.deferBatches = options.deferBatches === true;
     this.requiredPlayers = options.requiredPlayers ?? DEFAULT_REQUIRED_PLAYERS;
     if (!Number.isSafeInteger(this.requiredPlayers) || this.requiredPlayers < 2) {
       throw new Error("requiredPlayers must be an integer greater than one");
@@ -281,7 +284,41 @@ export class MatchmakingService {
     };
   }
 
+  assignSeat(userId: string, tableId: string): MatchEntry | undefined {
+    const active = this.activeByUser.get(userId);
+    if (active) {
+      active.tableId = tableId;
+      return cloneEntry(active);
+    }
+    const index = this.queue.findIndex((entry) => entry.userId === userId);
+    if (index < 0) return undefined;
+    const [entry] = this.queue.splice(index, 1);
+    const seated = cloneEntry({ ...entry, tableId });
+    this.activeByUser.set(userId, seated);
+    const table = this.activeTables.get(tableId) ?? [];
+    table.push(seated);
+    this.activeTables.set(tableId, table);
+    return cloneEntry(seated);
+  }
+
+  releaseAgent(agentId: string): string | undefined {
+    for (const [userId, entry] of this.activeByUser) {
+      if (entry.agent.id !== agentId) continue;
+      this.activeByUser.delete(userId);
+      const tableId = entry.tableId;
+      if (tableId) {
+        const table = this.activeTables.get(tableId) ?? [];
+        const remaining = table.filter((item) => item.userId !== userId);
+        if (remaining.length === 0) this.activeTables.delete(tableId);
+        else this.activeTables.set(tableId, remaining);
+      }
+      return userId;
+    }
+    return undefined;
+  }
+
   private claimBatch(): MatchBatch | undefined {
+    if (this.deferBatches) return undefined;
     if (this.queue.length < this.requiredPlayers) return undefined;
 
     const entries = this.queue.splice(0, this.requiredPlayers);

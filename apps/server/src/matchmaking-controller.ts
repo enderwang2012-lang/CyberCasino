@@ -21,6 +21,7 @@ export interface MatchmakingControllerDependencies {
   removeTable: (tableId: string) => void;
   startTable: (table: MatchmakingTable, entries: MatchEntry[]) => void;
   getFillEntries?: () => MatchEntry[];
+  syncCashSeating?: () => void;
   emitState: (userId: string, state: MatchmakingState) => void;
   emitMatched: (userId: string, tableId: string, agentId: string) => void;
   emitError: (userId: string, error: MatchmakingError) => void;
@@ -72,11 +73,7 @@ export class MatchmakingController {
     }
 
     this.emitTrackedStates([userId]);
-    if (result.batch) {
-      this.activateBatch(result.batch);
-    } else {
-      this.fillQueue();
-    }
+    this.continueSeating(result.batch);
   }
 
   leave(userId: string | undefined): void {
@@ -105,11 +102,7 @@ export class MatchmakingController {
       this.deps.emitState(entry.userId, this.deps.service.getState(entry.userId));
     }
     this.emitTrackedStates();
-    if (result.batch) {
-      this.activateBatch(result.batch);
-    } else {
-      this.fillQueue();
-    }
+    this.continueSeating(result.batch);
   }
 
   failTable(tableId: string): void {
@@ -118,6 +111,18 @@ export class MatchmakingController {
       this.deps.emitState(entry.userId, this.deps.service.getState(entry.userId));
     }
     this.emitTrackedStates();
+    this.continueSeating();
+  }
+
+  private continueSeating(batch?: MatchBatch): void {
+    if (batch) {
+      this.activateBatch(batch);
+      return;
+    }
+    if (this.deps.syncCashSeating) {
+      this.deps.syncCashSeating();
+      return;
+    }
     this.fillQueue();
   }
 

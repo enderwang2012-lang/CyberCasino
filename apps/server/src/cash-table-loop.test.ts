@@ -1,0 +1,145 @@
+import { afterEach, describe, expect, it } from "bun:test";
+import type { ActionType, AgentDecision, AgentGameView, TableConfig } from "@cybercasino/shared";
+import { Deck } from "@cybercasino/engine";
+import type { IPokerAgent } from "./agents/agent-interface";
+import { createSeasonEntry } from "./season-ledger";
+import { TableInstance } from "./table-instance";
+
+const originalShuffle = Deck.prototype.shuffle;
+
+afterEach(() => {
+  Deck.prototype.shuffle = originalShuffle;
+});
+
+function cashConfig(maxPlayers: number, handLimit?: number): TableConfig {
+  return {
+    name: "cash",
+    mode: "cash",
+    smallBlind: 50,
+    bigBlind: 100,
+    startingChips: 5_000,
+    maxPlayers,
+    handLimit,
+    interHandDelayMs: 0,
+    actionDelayMs: 0,
+    commentaryMode: "rule",
+  };
+}
+
+function scripted(
+  id: string,
+  choose: (view: AgentGameView, valid: ActionType[]) => AgentDecision["action"],
+): IPokerAgent {
+  return {
+    id,
+    name: id,
+    avatar: "",
+    agentType: "external",
+    async decide(view, validActions) {
+      return {
+        action: choose(view, validActions),
+        thought: { message: "script", confidence: 1, isBluffing: false, thinkingSource: "rule" },
+      };
+    },
+    recordAction() {},
+    clearHistory() {},
+  };
+}
+
+function callOrCheck(valid: ActionType[]): AgentDecision["action"] {
+  if (valid.includes("call")) return { type: "call" };
+  if (valid.includes("check")) return { type: "check" };
+  return { type: "fold" };
+}
+
+describe("cash table loop", () => {
+  it("keeps playing after a busted player stands up", async () => {
+    Deck.prototype.shuffle = function shuffle() {};
+    const table = new TableInstance("cash-bust", cashConfig(3, 1));
+    let shortStillSeatedWhileAllIn = false;
+    table.useScriptedAgent(scripted("short", (_view, valid) => callOrCheck(valid)));
+    table.useScriptedAgent(scripted("caller", (view, valid) => {
+      const short = view.players.find((player) => player.id === "short");
+      if (short && short.chips === 0) {
+        shortStillSeatedWhileAllIn = table.getSeats().some((seat) => seat.agent?.id === "short");
+      }
+      return callOrCheck(valid);
+    }));
+    table.useScriptedAgent(scripted("blind", (_view, valid) => callOrCheck(valid)));
+    for (const id of ["short", "caller", "blind"]) {
+      table.sit({ id, userId: `user-${id}`, name: id, avatar: "" });
+    }
+    table.fund("short", 100);
+    table.fund("caller", 5_000);
+    table.fund("blind", 5_000);
+
+    await table.start("en");
+
+    expect(shortStillSeatedWhileAllIn).toBe(true);
+    expect(table.cashSettlements).toHaveLength(1);
+    expect(table.cashSettlements[0].status).toBe("playing");
+    expect(table.cashSettlements[0].seatedIds).not.toContain("short");
+    expect(table.cashSettlements[0].seatedIds).toEqual(["caller", "blind"]);
+    expect(table.cashSettlements[0].smallBlind).toBe(50);
+    expect(table.cashSettlements[0].bigBlind).toBe(100);
+    expect(table.cashSettlements[0].chips.caller).not.toBe(5_000);
+    expect(table.getLiveEventHistory().some((event) => event.type === "tournament-complete")).toBe(false);
+    expect(table.getLiveEventHistory().some((event) => event.type === "blind-level-up")).toBe(false);
+  });
+
+  it("skims a stack above 15000 back into the season bankroll", () => {
+    const table = new TableInstance("cash-skim", cashConfig(2));
+    table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
+    table.sit({ id: "villain", userId: "user-villain", name: "villain", avatar: "" });
+    table.useScriptedAgent(scripted("hero", (_view, valid) => callOrCheck(valid)));
+    table.useScriptedAgent(scripted("villain", (_view, valid) => callOrCheck(valid)));
+    table.fund("hero", 18_000);
+    table.fund("villain", 5_000);
+    const before = { ...createSeasonEntry("s1", "hero", "Hero", "user"), bankroll: 10_000, tableStack: 5_000 };
+    table.attachSeason(before);
+
+    table.applyBetweenHands();
+
+    expect(table.getPlayerChips("hero")).toBe(15_000);
+    expect(table.getSeasonEntry("hero")).toEqual(expect.objectContaining({
+      bankroll: 13_000,
+      tableStack: 15_000,
+      countedHands: 1,
+    }));
+  });
+
+  it("finishes the current hand and does not start another during season wind-down", async () => {
+    Deck.prototype.shuffle = function shuffle() {};
+    const table = new TableInstance("cash-wind-down", cashConfig(2));
+    table.useScriptedAgent(scripted("hero", (_view, valid) => callOrCheck(valid)));
+    table.useScriptedAgent(scripted("villain", (_view, valid) => callOrCheck(valid)));
+    table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
+    table.sit({ id: "villain", userId: "user-villain", name: "villain", avatar: "" });
+    table.fund("hero", 5_000);
+    table.fund("villain", 5_000);
+    table.setBetweenHandsHandler(() => table.requestSeasonWindDown());
+
+    await table.start("en");
+
+    expect(table.cashSettlements).toHaveLength(1);
+    expect(table.getHandNumber()).toBe(1);
+    expect(table.getStatus()).toBe("finished");
+    expect(table.getDepartureReason("hero")).toBe("season_ended");
+  });
+
+  it("moves the button by seat index after seat 5 leaves", () => {
+    const table = new TableInstance("cash-button", cashConfig(6));
+    for (let index = 0; index < 6; index += 1) {
+      const id = `p${index}`;
+      table.sit({ id, userId: `user-${id}`, name: id, avatar: "" });
+      table.useScriptedAgent(scripted(id, (_view, valid) => callOrCheck(valid)));
+      table.fund(id, index === 5 ? 0 : 1_000);
+    }
+    (table as unknown as { dealerSeatIndex: number }).dealerSeatIndex = 5;
+
+    table.applyBetweenHands();
+
+    expect(table.getSeats().find((seat) => seat.seatIndex === 5)?.status).toBe("empty");
+    expect(table.getDealerSeatIndex()).toBe(0);
+  });
+});

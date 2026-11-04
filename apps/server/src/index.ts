@@ -10,6 +10,7 @@ import type {
   AgentConfigV2,
 } from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
+import type { TableInstance } from "./table-instance";
 import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
 import { PERSONALITIES } from "./agents/personalities";
 import { validateStrategyConfig, validateStrategyPackage, validatePreview, createAgentFromAI } from "./api/agent-create";
@@ -17,6 +18,9 @@ import type { CreateAgentRequest } from "./api/agent-create";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
 import { verifyJwt } from "./auth";
 import { MatchmakingService } from "./matchmaking-service";
+import { SeasonStore } from "./season-store";
+import { bbPer100 } from "./season-ledger";
+import { sessionResultMessageFor } from "./agents/match-result-message";
 import type { MatchEntry } from "./matchmaking-service";
 import { MatchmakingController } from "./matchmaking-controller";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
@@ -378,7 +382,12 @@ ${configJson}
 
   if (req.url === "/api/leaderboard" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-    res.end(JSON.stringify({ standings: gameHistoryStore.getLeaderboard() }));
+    const legacy = gameHistoryStore.getLeaderboard();
+    res.end(JSON.stringify({
+      standings: legacy,
+      legacy,
+      season: seasonStore.leaderboard(),
+    }));
     return;
   }
 
@@ -613,7 +622,11 @@ export const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
 const gameHistoryStore = new GameHistoryStore();
-const matchmakingService = new MatchmakingService();
+const seasonStore = SeasonStore.open({
+  file: join(process.env.CYBERCASINO_DATA_DIR || join(import.meta.dirname, "..", "data"), "season.json"),
+});
+tableManager.setSeasonStore(seasonStore);
+const matchmakingService = new MatchmakingService({ deferBatches: true });
 const automaticTableIds = new Set<string>();
 const builtinStrategies = loadBuiltinStrategies();
 tableManager.setHistoryStore(gameHistoryStore);
@@ -642,14 +655,92 @@ function broadcastLobby() {
 }
 
 function startShowcaseTable(): void {
-  // Released presets serve waiting ranked entries before another exhibition.
-  matchmakingController.fillQueue();
-  if (matchmakingService.getQueueSnapshot().length > 0) return;
-  const table = tableManager.ensureShowcaseTable();
-  if (!table || table.getStatus() !== "waiting") return;
-  wireTableEvents(table.id);
-  table.start("zh").catch((err) => abortFailedTable(table.id, err));
+  syncCashArena();
+}
+
+function syncCashArena(): void {
+  const now = Date.now();
+  if (seasonStore.isWindingDown(now)) {
+    for (const info of tableManager.getActiveTableInfos()) {
+      const table = tableManager.getTable(info.id);
+      if (table?.config.mode === "cash") table.requestSeasonWindDown();
+    }
+    return;
+  }
+  seasonStore.refresh(now);
+  const waiting = matchmakingService.getQueueSnapshot()
+    .filter((entry) => !entry.userId.startsWith("builtin:"));
+  const presets = createBuiltinMatchEntries()
+    .filter((entry) => !tableManager.isAgentSeated(entry.agent.id));
+  tableManager.syncCashTables(waiting, presets);
+  if (waiting.length === 0) tableManager.ensureShowcaseTable();
+
+  for (const entry of waiting) {
+    const tableId = findTableIdForAgent(entry.agent.id);
+    if (!tableId) continue;
+    const seated = matchmakingService.assignSeat(entry.userId, tableId);
+    if (!seated) continue;
+    const socketId = userSocketMap.get(entry.userId);
+    io.sockets.sockets.get(socketId ?? "")?.emit("matchmaking:matched", {
+      tableId,
+      agentId: entry.agent.id,
+    });
+    matchmakingController.status(entry.userId);
+  }
+
+  for (const info of tableManager.getActiveTableInfos()) {
+    const table = tableManager.getTable(info.id);
+    if (!table || table.getStatus() !== "waiting" || table.getOccupiedCount() < 2) continue;
+    beginCashTable(table);
+  }
   broadcastLobby();
+}
+
+function findTableIdForAgent(agentId: string): string | undefined {
+  return tableManager.getActiveTableInfos().find((info) =>
+    info.seats.some((seat) => seat.agent?.id === agentId))?.id;
+}
+
+function beginCashTable(table: TableInstance): void {
+  if (automaticTableIds.has(table.id)) return;
+  automaticTableIds.add(table.id);
+  wireTableEvents(table.id);
+  table.setBetweenHandsHandler(() => syncCashArena());
+  table.setSeasonRecorder((entries, handNumber) => {
+    if (table.isSpectator()) return;
+    try {
+      seasonStore.recordHand(table.id, handNumber, entries);
+    } catch (error) {
+      console.error(`[season:${table.id}] failed to record hand ${handNumber}:`, error);
+    }
+  });
+  table.setSeatVacatedHandler((agentId) => {
+    const entry = table.getSeasonEntry(agentId);
+    const sitting = table.getSitting(agentId);
+    if (entry && sitting) {
+      const equity = entry.bankroll + entry.tableStack;
+      seasonStore.save(entry);
+      wsAgentManager.sendSessionResult(agentId, sessionResultMessageFor({
+        table_id: table.id,
+        season_id: entry.seasonId,
+        started_at: sitting.at,
+        ended_at: Date.now(),
+        counted_hands: Math.max(0, entry.countedHands - sitting.hands),
+        sit_equity: sitting.equity,
+        equity,
+        net_chips: equity - sitting.equity,
+        reason: table.getDepartureReason(agentId),
+        replay: table.getReplayData(),
+      }, agentId));
+    }
+    const userId = matchmakingService.releaseAgent(agentId);
+    if (userId) matchmakingController.status(userId);
+    broadcastLobby();
+  });
+  table.start("zh", tableManager.getAgentV2Configs(table.id)).then(() => {
+    if (automaticTableIds.delete(table.id)) matchmakingController.completeTable(table.id);
+    syncCashArena();
+  }).catch((err) => abortFailedTable(table.id, err));
 }
 
 const matchmakingController = new MatchmakingController({
@@ -683,7 +774,14 @@ const matchmakingController = new MatchmakingController({
   },
   emitState: (userId, state) => {
     const socketId = userSocketMap.get(userId);
-    if (socketId) io.sockets.sockets.get(socketId)?.emit("matchmaking:state", state);
+    if (!socketId) return;
+    const entry = state.agentId ? seasonStore.get(state.agentId) : undefined;
+    io.sockets.sockets.get(socketId)?.emit("matchmaking:state", entry ? {
+      ...state,
+      seasonEquity: entry.bankroll + entry.tableStack,
+      seasonHands: entry.countedHands,
+      seasonBbPer100: bbPer100(entry),
+    } : state);
   },
   emitMatched: (userId, tableId, agentId) => {
     const socketId = userSocketMap.get(userId);
@@ -692,6 +790,7 @@ const matchmakingController = new MatchmakingController({
       userSocket?.emit("matchmaking:matched", { tableId, agentId });
     }
   },
+  syncCashSeating: () => syncCashArena(),
   emitError: (userId, error) => {
     if (!userId) return;
     const socketId = userSocketMap.get(userId);
@@ -851,8 +950,15 @@ io.on("connection", (socket) => {
   });
 
   socket.on("matchmaking:leave", () => {
-    matchmakingController.leave(socketUserMap.get(socket.id));
-    startShowcaseTable();
+    const userId = socketUserMap.get(socket.id);
+    const state = userId ? matchmakingService.getState(userId) : undefined;
+    if (state?.status === "playing" && state.agentId && state.tableId) {
+      const table = tableManager.getTable(state.tableId);
+      const stoodImmediately = table?.requestCashLeave(state.agentId) ?? false;
+      if (stoodImmediately) matchmakingService.releaseAgent(state.agentId);
+    }
+    matchmakingController.leave(userId);
+    syncCashArena();
   });
 
   socket.on("matchmaking:status", () => {

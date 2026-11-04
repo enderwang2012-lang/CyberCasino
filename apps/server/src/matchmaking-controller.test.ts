@@ -75,6 +75,31 @@ function createController(
 }
 
 describe("MatchmakingController", () => {
+  it("asks cash seating to place a single user instead of waiting for six", () => {
+    const service = new MatchmakingService({ deferBatches: true });
+    const realAgent = agent(1);
+    let syncs = 0;
+    const controller = new MatchmakingController({
+      service,
+      getAgent: (userId) => userId === realAgent.userId ? realAgent : undefined,
+      isAgentPlaying: () => false,
+      createTable: () => { throw new Error("cash seating should not create a six-player batch"); },
+      removeTable: () => {},
+      startTable: () => {},
+      syncCashSeating: () => { syncs += 1; },
+      emitState: () => {},
+      emitMatched: () => {},
+      emitError: () => {},
+    });
+
+    controller.join(realAgent.userId);
+
+    expect(syncs).toBe(1);
+    expect(service.getQueueSnapshot().map((entry) => entry.userId)).toEqual([realAgent.userId]);
+    expect(service.assignSeat(realAgent.userId, "cash-table")?.tableId).toBe("cash-table");
+    expect(service.getState(realAgent.userId)).toMatchObject({ status: "playing", tableId: "cash-table" });
+  });
+
   it("rejects unregistered users and missing Agents with stable errors", () => {
     const { controller, errors } = createController();
 

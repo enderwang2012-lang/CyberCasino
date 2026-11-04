@@ -4,6 +4,9 @@ import { TableInstance } from "./table-instance";
 import type { GameHistoryStore } from "./stores";
 import type { MatchEntry } from "./matchmaking-service";
 import { PERSONALITIES } from "./agents/personalities";
+import { planCashSeats, type WaitingAgent } from "./cash-seat-policy";
+import { buyIn, createSeasonEntry } from "./season-ledger";
+import type { SeasonStore } from "./season-store";
 
 const CASINO_NAMES = [
   "Bellagio", "Marina Bay Sands", "The Venetian", "Wynn Palace",
@@ -26,6 +29,11 @@ const DEFAULT_CONFIG: TableConfig = {
   maxPlayers: 6,
 };
 
+const CASH_CONFIG: TableConfig = {
+  ...DEFAULT_CONFIG,
+  mode: "cash",
+};
+
 const DEFAULT_ARCHIVE_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
 
 export class TableManager {
@@ -34,6 +42,7 @@ export class TableManager {
   private finishedTables: TableInfo[] = [];
   private showcaseTableId: string | null = null;
   private historyStore: GameHistoryStore | null = null;
+  private seasonStore: SeasonStore | null = null;
   private readonly archiveRetryDelaysMs: readonly number[];
 
   constructor(options: { archiveRetryDelaysMs?: readonly number[] } = {}) {
@@ -44,6 +53,10 @@ export class TableManager {
     this.historyStore = store;
   }
 
+  setSeasonStore(store: SeasonStore): void {
+    this.seasonStore = store;
+  }
+
   loadPersistedHistory(): void {
     if (!this.historyStore) return;
     const entries = this.historyStore.getAll();
@@ -51,24 +64,36 @@ export class TableManager {
   }
 
   ensureShowcaseTable(): TableInstance | undefined {
-    if (this.showcaseTableId) {
-      const existing = this.tables.get(this.showcaseTableId);
-      if (existing && existing.getStatus() !== "finished") {
-        return existing;
+    const existing = this.showcaseTableId ? this.tables.get(this.showcaseTableId) : undefined;
+    if (existing && existing.getStatus() !== "finished") return existing;
+    const { opened } = this.syncCashTables([], this.idlePresetEntries());
+    return opened.find((table) => table.isSpectator());
+  }
+
+  syncCashTables(waiting: MatchEntry[], idlePresets: MatchEntry[]): {
+    opened: TableInstance[];
+    stillWaiting: MatchEntry[];
+  } {
+    const moves = planCashSeats({
+      tables: this.cashSnapshots(),
+      waitingUsers: waiting.filter((entry) => !entry.userId.startsWith("builtin:")).map(toWaitingUser),
+      idlePresets: idlePresets.filter((entry) => !this.isAgentSeated(entry.agent.id)).map(toWaitingPreset),
+    });
+    const opened: TableInstance[] = [];
+    const seatedUsers = new Set<string>();
+    for (const move of moves) {
+      const table = move.open ? this.openCashTable(move.sit, waiting, idlePresets) : this.tables.get(move.tableId);
+      if (!table) continue;
+      if (move.open) opened.push(table);
+      else this.applySeatMove(table, move, waiting, idlePresets);
+      for (const agent of move.sit) {
+        if (agent.kind === "user") seatedUsers.add(agent.userId);
       }
     }
-    const available = PERSONALITIES.filter((personality) => !this.isAgentSeated(personality.id));
-    if (available.length < DEFAULT_CONFIG.maxPlayers) return undefined;
-
-    const id = `table-${randomUUID()}`;
-    const config: TableConfig = { ...DEFAULT_CONFIG, mode: "exhibition", name: randomCasinoName() };
-    const table = new TableInstance(id, config);
-    for (const personality of available.slice(0, config.maxPlayers)) {
-      table.sitBuiltin(personality.id);
-    }
-    this.tables.set(id, table);
-    this.showcaseTableId = id;
-    return table;
+    return {
+      opened,
+      stillWaiting: waiting.filter((entry) => !seatedUsers.has(entry.userId)),
+    };
   }
 
   isShowcaseTable(id: string): boolean {
@@ -79,8 +104,8 @@ export class TableManager {
     entries: MatchEntry[],
     runOptions: Pick<TableConfig, "handLimit" | "interHandDelayMs" | "actionDelayMs" | "commentaryMode"> = {},
   ): TableInstance {
-    if (entries.length !== DEFAULT_CONFIG.maxPlayers) {
-      throw new Error(`Automatic ranked tables require ${DEFAULT_CONFIG.maxPlayers} Agents`);
+    if (entries.length < 2 || entries.length > DEFAULT_CONFIG.maxPlayers) {
+      throw new Error(`Cash tables require 2 to ${DEFAULT_CONFIG.maxPlayers} Agents`);
     }
     for (const entry of entries) {
       if (entry.userId.startsWith("builtin:") && this.isAgentSeated(entry.agent.id)) {
@@ -89,7 +114,7 @@ export class TableManager {
     }
 
     const id = `table-${randomUUID()}`;
-    const config = { ...DEFAULT_CONFIG, ...runOptions, name: randomCasinoName() };
+    const config = { ...CASH_CONFIG, ...runOptions, name: randomCasinoName() };
     const table = new TableInstance(id, config);
     const frozenConfigs = new Map<string, AgentConfigV2>();
 
@@ -203,6 +228,122 @@ export class TableManager {
     return true;
   }
 
+  private idlePresetEntries(): MatchEntry[] {
+    return PERSONALITIES
+      .filter((personality) => !this.isAgentSeated(personality.id))
+      .map((personality) => ({
+        userId: `builtin:${personality.id}`,
+        agent: {
+          id: personality.id,
+          userId: `builtin:${personality.id}`,
+          name: personality.name,
+          avatar: personality.avatar,
+          strategy: {} as AgentConfigV2["strategy"],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        enteredAt: 0,
+        autoRequeue: false,
+      }));
+  }
+
+  private cashSnapshots() {
+    return [...this.tables.values()]
+      .filter((table) => table.config.mode === "cash" && table.getStatus() !== "finished")
+      .map((table) => ({
+        id: table.id,
+        seats: table.getSeats().flatMap((seat) => seat.agent ? [{
+          agentId: seat.agent.id,
+          kind: seat.agent.type === "builtin" ? "preset" as const : "user" as const,
+          userId: seat.agent.userId,
+        }] : []),
+      }));
+  }
+
+  private findEntry(agent: WaitingAgent, waiting: MatchEntry[], idlePresets: MatchEntry[]): MatchEntry | undefined {
+    return [...waiting, ...idlePresets].find((entry) => entry.agent.id === agent.agentId);
+  }
+
+  private openCashTable(sit: WaitingAgent[], waiting: MatchEntry[], idlePresets: MatchEntry[]): TableInstance {
+    const id = `table-${randomUUID()}`;
+    const table = new TableInstance(id, { ...CASH_CONFIG, name: randomCasinoName() });
+    const spectator = sit.every((agent) => agent.kind === "preset");
+    table.markSpectator(spectator);
+    this.tables.set(id, table);
+    if (spectator) this.showcaseTableId = id;
+    this.seatAgents(table, sit, waiting, idlePresets, spectator);
+    return table;
+  }
+
+  private applySeatMove(
+    table: TableInstance,
+    move: { sit: WaitingAgent[]; standAgentIds: string[] },
+    waiting: MatchEntry[],
+    idlePresets: MatchEntry[],
+  ): void {
+    for (const agentId of move.standAgentIds) {
+      if (!table.standUp(agentId)) return;
+    }
+    const becomingSeason = table.isSpectator() && move.sit.some((agent) => agent.kind === "user");
+    if (becomingSeason) {
+      table.markSpectator(false);
+      if (this.showcaseTableId === table.id) this.showcaseTableId = null;
+      for (const seat of table.getSeats()) {
+        if (!seat.agent) continue;
+        this.fundSeasonSeat(table, seat.agent.id, seat.agent.userId ?? `builtin:${seat.agent.id}`, seat.agent.name);
+      }
+    }
+    this.seatAgents(table, move.sit, waiting, idlePresets, table.isSpectator());
+    if (table.getOccupiedCount() < 2) {
+      table.stop();
+      this.tables.delete(table.id);
+    }
+  }
+
+  private seatAgents(
+    table: TableInstance,
+    sit: WaitingAgent[],
+    waiting: MatchEntry[],
+    idlePresets: MatchEntry[],
+    spectator: boolean,
+  ): void {
+    const frozen = this.agentV2ConfigsForTable.get(table.id) ?? new Map<string, AgentConfigV2>();
+    for (const agent of sit) {
+      const entry = this.findEntry(agent, waiting, idlePresets);
+      if (!entry) throw new Error(`Missing cash entry for ${agent.agentId}`);
+      if (entry.userId.startsWith("builtin:") && this.isAgentSeated(entry.agent.id)) {
+        throw new Error(`Preset Agent ${entry.agent.id} is already seated at another table`);
+      }
+      const frozenAgent = cloneAgentConfig(entry.agent);
+      const seated = agent.kind === "preset"
+        ? table.sitBuiltin(frozenAgent.id, frozenAgent.strategyVersion)
+        : table.sit(frozenAgent, frozenAgent.executionMode === "verified_package" ? "verified_package" : "remote_agent", frozenAgent.strategyVersion);
+      if (!seated) throw new Error(`Unable to seat cash Agent ${frozenAgent.id}`);
+      if (!spectator) this.fundSeasonSeat(table, frozenAgent.id, entry.userId, frozenAgent.name);
+      else table.fund(frozenAgent.id, CASH_CONFIG.startingChips);
+      frozen.set(entry.userId, frozenAgent);
+    }
+    this.agentV2ConfigsForTable.set(table.id, frozen);
+  }
+
+  private fundSeasonSeat(table: TableInstance, agentId: string, userId: string, name: string): void {
+    const kind = userId.startsWith("builtin:") ? "preset" : "user";
+    const existing = this.seasonStore?.getOrCreate(agentId, name, kind)
+      ?? createSeasonEntry("season-current", agentId, name, kind);
+    if (existing.tableStack > 0) {
+      table.standUp(agentId);
+      return;
+    }
+    const bought = buyIn(existing);
+    if (!bought.ok) {
+      table.standUp(agentId);
+      return;
+    }
+    table.fund(agentId, bought.entry.tableStack);
+    table.attachSeason(bought.entry);
+    this.seasonStore?.save(bought.entry);
+  }
+
   private toTableInfo(table: TableInstance): TableInfo {
     return {
       id: table.id,
@@ -212,6 +353,7 @@ export class TableManager {
       handNumber: table.getHandNumber(),
       status: table.getStatus(),
       seats: table.getSeats(),
+      spectator: table.isSpectator(),
     };
   }
 
@@ -231,4 +373,22 @@ export class TableManager {
 
 function cloneAgentConfig(agent: AgentConfigV2): AgentConfigV2 {
   return JSON.parse(JSON.stringify(agent)) as AgentConfigV2;
+}
+
+function toWaitingUser(entry: MatchEntry): WaitingAgent {
+  return {
+    userId: entry.userId,
+    agentId: entry.agent.id,
+    enteredAt: entry.enteredAt,
+    kind: "user",
+  };
+}
+
+function toWaitingPreset(entry: MatchEntry): WaitingAgent {
+  return {
+    userId: entry.userId,
+    agentId: entry.agent.id,
+    enteredAt: entry.enteredAt,
+    kind: "preset",
+  };
 }

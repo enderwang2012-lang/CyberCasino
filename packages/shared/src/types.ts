@@ -494,7 +494,7 @@ export type ArenaExecutionMode = "verified_package" | "remote_agent";
 // Users only enter ranked matches; execution mode remains an internal
 // capability/audit property.
 /** Exhibition tables are spectator-only bot matches and never affect ratings. */
-export type ArenaTableMode = "ranked" | "exhibition";
+export type ArenaTableMode = "ranked" | "exhibition" | "cash";
 
 export interface StrategyPackageManifest {
   packageId: string;
@@ -720,6 +720,7 @@ export interface TableInfo {
   status: "waiting" | "playing" | "finished";
   seats: TableSeat[];
   finishedAt?: number;
+  spectator?: boolean;
 }
 
 export type MatchmakingQueueName = "ranked-default";
@@ -743,6 +744,9 @@ export interface MatchmakingState {
   tableId?: string;
   enteredAt?: number;
   autoRequeue: boolean;
+  seasonEquity?: number;
+  seasonHands?: number;
+  seasonBbPer100?: number | null;
 }
 
 export interface MatchmakingError {

@@ -66,7 +66,8 @@ describe("TableManager automatic matches", () => {
       (table as any).emit({ type: "tournament-complete", rankings: [] });
       const showcase = manager.ensureShowcaseTable();
       expect(showcase?.getOccupiedCount()).toBe(6);
-      expect(showcase?.config.mode).toBe("exhibition");
+      expect(showcase?.config.mode).toBe("cash");
+      expect(showcase?.isSpectator()).toBe(true);
       expect(manager.getTable(table.id)?.getStatus()).toBe("finished");
     } finally {
       manager.removeTable(table.id);
@@ -80,7 +81,7 @@ describe("TableManager automatic matches", () => {
 
     const table = manager.createMatchedTable(matchEntries);
 
-    expect(table.config.mode).toBe("ranked");
+    expect(table.config.mode).toBe("cash");
     expect(table.getOccupiedCount()).toBe(6);
     expect(table.getSeats().every((seat) => seat.agent?.type === "custom")).toBe(true);
     expect(table.getSeats().map((seat) => seat.agent?.id)).toEqual(
@@ -121,6 +122,68 @@ describe("TableManager automatic matches", () => {
       type: "builtin",
     });
     expect(table.getSeats().slice(1).every((seat) => seat.agent?.type === "custom")).toBe(true);
+  });
+
+  it("seats one waiting user with idle presets immediately", () => {
+    const manager = new TableManager();
+    const user = entries()[0];
+    const presets = manager["idlePresetEntries"]().slice(0, 5);
+    const result = manager.syncCashTables([user], presets);
+
+    expect(result.stillWaiting).toEqual([]);
+    expect(result.opened).toHaveLength(1);
+    expect(result.opened[0].isSpectator()).toBe(false);
+    expect(result.opened[0].getOccupiedCount()).toBe(6);
+    expect(result.opened[0].getSeats().some((seat) => seat.agent?.id === user.agent.id)).toBe(true);
+    manager.removeTable(result.opened[0].id);
+  });
+
+  it("replaces one preset when a second user is waiting", () => {
+    const manager = new TableManager();
+    const [first, second] = entries();
+    const presets = manager["idlePresetEntries"]();
+    const opened = manager.syncCashTables([first], presets.slice(0, 5)).opened[0];
+    const result = manager.syncCashTables([second], manager["idlePresetEntries"]());
+
+    expect(result.opened).toEqual([]);
+    expect(result.stillWaiting).toEqual([]);
+    expect(opened.getSeats().filter((seat) => seat.agent?.type === "custom")).toHaveLength(2);
+    expect(opened.getOccupiedCount()).toBe(6);
+    manager.removeTable(opened.id);
+  });
+
+  it("keeps a seventh user waiting when no preset can join", () => {
+    const manager = new TableManager();
+    const users = entries();
+    const seventh = {
+      ...users[0],
+      userId: "matched-user-7",
+      agent: { ...users[0].agent, id: "matched-agent-7", userId: "matched-user-7" },
+      enteredAt: 7,
+    };
+    const opened = manager.syncCashTables(users, []).opened[0];
+    const result = manager.syncCashTables([seventh], []);
+
+    expect(result.opened).toEqual([]);
+    expect(result.stillWaiting.map((entry) => entry.userId)).toEqual(["matched-user-7"]);
+    expect(opened.getOccupiedCount()).toBe(6);
+    manager.removeTable(opened.id);
+  });
+
+  it("opens a spectator table and yields a preset when a user arrives", () => {
+    const manager = new TableManager();
+    const spectator = manager.ensureShowcaseTable();
+    if (!spectator) throw new Error("expected a spectator table");
+    expect(spectator.isSpectator()).toBe(true);
+    expect(spectator.getOccupiedCount()).toBe(6);
+
+    const result = manager.syncCashTables([entries()[0]], []);
+
+    expect(result.stillWaiting).toEqual([]);
+    expect(spectator.isSpectator()).toBe(false);
+    expect(spectator.getSeats().some((seat) => seat.agent?.id === "matched-agent-1")).toBe(true);
+    expect(spectator.getOccupiedCount()).toBe(6);
+    manager.removeTable(spectator.id);
   });
 
   it("keeps the existing default queue size at six", () => {

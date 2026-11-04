@@ -33,6 +33,8 @@
     "rankedHint": "Open agent competition · identity and matches audited",
     "exhibition": "Exhibition",
     "exhibitionHint": "Preset Agent exhibition · spectate only, not ranked",
+    "cash": "Cash table",
+    "cashHint": "Fixed blinds · starts at two players, open seats can be taken",
     "joinMatch": "Join Matchmaking",
     "leaveMatch": "Leave Queue",
     "matchmaking": "Waiting for an automatic table",
@@ -68,6 +70,8 @@
       "playing": "Match in progress"
     },
     "queuePosition": "Queue position {position} · {count}/{required} players",
+    "seasonLine": "Season equity {equity} · {hands} hands · {rate}",
+    "seasonProvisional": "under 500 hands",
     "table": "Table {tableId}",
     "frozenVersion": "Frozen v{version} for this match",
     "stopAfterCurrent": "Stop future matchmaking",
