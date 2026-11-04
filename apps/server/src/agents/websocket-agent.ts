@@ -73,6 +73,7 @@ export class WebSocketAgent implements IPokerAgent {
         );
         return decision;
       } catch (err) {
+        if (err instanceof Error && ["Table stopped", "Agent server closed"].includes(err.message)) throw err;
         console.warn(
           `[WebSocketAgent:${this.id}] WebSocket decision failed: ${(err as Error).message}, falling back to StrategyAgent`
         );

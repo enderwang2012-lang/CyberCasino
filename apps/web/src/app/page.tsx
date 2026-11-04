@@ -19,9 +19,12 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     connected, tables, events,
     tableError, tableStarted, seatUpdates,
     personalities, historyTables, deletedAgentId,
+    matchmakingState, matchmakingError, matchedTableId,
     joinTable, leaveTable,
     sitAtTable, sitBuiltin, removeSeat, clearSeats,
-    startGame, getHistory, refreshLobby, clearTableError, deleteAgent,
+    startGame, getHistory, refreshLobby, joinMatchmaking, leaveMatchmaking,
+    refreshMatchmaking, refreshAgentSummary, clearMatchedTable, clearTableError, deleteAgent,
+    agentSummary, agentSummaryLoading, agentSummaryError,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
   const [agentV2, setAgentV2] = useState<AgentConfigV2 | null>(null);
@@ -47,6 +50,12 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
 
   const activeTable = tables.find((t) => t.id === activeTableId);
+  const refreshConsole = useCallback(() => {
+    refreshLobby();
+    getHistory();
+    refreshMatchmaking();
+    void refreshAgentSummary();
+  }, [getHistory, refreshAgentSummary, refreshLobby, refreshMatchmaking]);
 
   useEffect(() => {
     if (tableStarted && tableStarted === activeTableId) {
@@ -56,6 +65,17 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   }, [tableStarted, activeTableId, joinTable]);
 
   useEffect(() => {
+    if (!matchedTableId) return;
+    if (activeTableId && activeTableId !== matchedTableId) {
+      leaveTable(activeTableId);
+    }
+    setActiveTableId(matchedTableId);
+    joinTable(matchedTableId);
+    setView("table-live");
+    clearMatchedTable();
+  }, [matchedTableId, activeTableId, clearMatchedTable, joinTable, leaveTable]);
+
+  useEffect(() => {
     if (seatUpdates && seatUpdates.tableId === activeTableId && activeTable) {
       activeTable.seats = seatUpdates.seats;
     }
@@ -63,9 +83,43 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
 
   useEffect(() => {
     if (view === "lobby") {
-      refreshLobby();
+      refreshConsole();
     }
-  }, [view, refreshLobby]);
+  }, [view, refreshConsole]);
+
+  useEffect(() => {
+    if (view !== "lobby") return;
+
+    let disposed = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const visible = () => !disposed && document.visibilityState === "visible";
+    const schedule = () => {
+      if (visible()) timer = setTimeout(pollSummary, 5000);
+    };
+    async function pollSummary() {
+      if (!visible() || inFlight) return;
+      inFlight = true;
+      try {
+        await refreshAgentSummary();
+      } finally {
+        inFlight = false;
+        schedule();
+      }
+    }
+    function handleVisibilityChange() {
+      clearTimeout(timer);
+      if (visible()) void pollSummary();
+    }
+
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [view, refreshAgentSummary]);
 
   function handleJoinTable(tableId: string) {
     // Leave current table room first to prevent event leakage
@@ -87,13 +141,11 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       return;
     }
 
-    // Historical table — not in active tables, join directly for replay
-    const hist = historyTables.find((t) => t.id === tableId);
-    if (hist) {
-      joinTable(tableId);
-      setActiveTableId(tableId);
-      setView("table-live");
-    }
+    // Historical table — the server resolves the replay even when history has
+    // not arrived yet and the table is absent from active tables.
+    joinTable(tableId);
+    setActiveTableId(tableId);
+    setView("table-live");
   }
 
   function handleLeave() {
@@ -163,14 +215,19 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
   }
 
   if (view === "table-live" && activeTableId) {
-    const viewingTable = tables.find((t) => t.id === activeTableId);
-    const isFinished = viewingTable?.status === "finished";
+    const viewingTable = tables.find((t) => t.id === activeTableId)
+      ?? historyTables.find((t) => t.id === activeTableId);
+    const recentMatch = agentSummary?.recentMatches.find((match) => match.tableId === activeTableId);
+    const isFinished = viewingTable?.status === "finished"
+      || historyTables.some((t) => t.id === activeTableId)
+      || recentMatch !== undefined;
     return (
       <TableView
+        key={activeTableId}
         tableId={activeTableId}
-        tableName={viewingTable?.name}
-          events={events}
-          onLeave={handleLeave}
+        tableName={viewingTable?.name ?? recentMatch?.tableName}
+        events={events}
+        onLeave={handleLeave}
         defaultTab={isFinished ? "leaderboard" : "highlights"}
         isFinished={isFinished}
       />
@@ -186,6 +243,15 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       onClearSeats={clearSeats}
       connected={connected}
       agentV2={agentV2}
+      matchmakingState={matchmakingState}
+      matchmakingError={matchmakingError?.message ?? null}
+      onJoinMatchmaking={joinMatchmaking}
+      onLeaveMatchmaking={leaveMatchmaking}
+      agentSummary={agentSummary}
+      agentSummaryLoading={agentSummaryLoading}
+      agentSummaryError={agentSummaryError}
+      onRefresh={refreshConsole}
+      onOpenReplay={handleJoinTable}
     />
   );
 }

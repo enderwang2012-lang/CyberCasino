@@ -24,7 +24,42 @@ function agent(id: string): Pick<AgentConfigV2, "id" | "userId" | "name" | "avat
 }
 
 describe("open ranked competition", () => {
-  it("admits hosted packages, remote agents and reference AI to ranked tables", () => {
+  it("keeps a stable, privacy-safe snapshot for a seated Agent", () => {
+    const table = new TableInstance("snapshot", config("ranked"));
+    const heroCards = [{ rank: 14 as const, suit: "s" as const }, { rank: 14 as const, suit: "h" as const }];
+    const villainCards = [{ rank: 2 as const, suit: "c" as const }, { rank: 7 as const, suit: "d" as const }];
+
+    (table as any).emit({
+      type: "hand-start",
+      handNumber: 1,
+      dealerSeatIndex: 0,
+      players: [
+        { id: "hero", name: "Hero", avatar: "", chips: 5000, holeCards: null, bet: 0, folded: false, allIn: false, seatIndex: 0 },
+        { id: "villain", name: "Villain", avatar: "", chips: 5000, holeCards: null, bet: 0, folded: false, allIn: false, seatIndex: 1 },
+      ],
+    });
+    (table as any).emit({
+      type: "cards-dealt",
+      hands: { hero: heroCards, villain: villainCards },
+    });
+
+    const first = table.getSnapshotForAgent("hero");
+    const second = table.getSnapshotForAgent("hero");
+    if (!first || !second) throw new Error("expected seated Agent snapshot");
+    (table as any).snapshotSeq++;
+    const sameStateAtLaterSequence = table.getSnapshotForAgent("hero");
+    if (!sameStateAtLaterSequence) throw new Error("expected later Agent snapshot");
+    expect(first.tableSeq).toBeGreaterThan(0);
+    expect(first.stateHash).toHaveLength(64);
+    expect(first.stateHash).toBe(second.stateHash);
+    expect(sameStateAtLaterSequence.tableSeq).toBeGreaterThan(first.tableSeq);
+    expect(sameStateAtLaterSequence.stateHash).toBe(first.stateHash);
+    expect(first.myCards).toEqual(heroCards);
+    expect(first).not.toHaveProperty("holeCards");
+    expect(JSON.stringify(first)).not.toContain(JSON.stringify(villainCards));
+  });
+
+  it("admits hosted packages, remote agents and preset Agents to ranked tables", () => {
     const table = new TableInstance("ranked", config("ranked"));
 
     expect(table.sit(agent("strategy"), "verified_package")).toBe(true);
@@ -38,7 +73,7 @@ describe("open ranked competition", () => {
     ]);
   });
 
-  it("does not expose match events until the ranked match has finished", () => {
+  it("keeps the full public match history available to live viewers", () => {
     const table = new TableInstance("ranked", config("ranked"));
     const cardsEvent = {
       type: "cards-dealt" as const,
@@ -47,12 +82,13 @@ describe("open ranked competition", () => {
 
     (table as any).emit(cardsEvent);
     expect(table.getEventHistory()).toEqual([]);
+    expect(table.getLiveEventHistory()).toEqual([cardsEvent]);
 
     (table as any).handNumber = 1;
     expect(table.getEventHistory()).toEqual([cardsEvent]);
   });
 
-  it("publishes only sanitized live standings and commentary during play", () => {
+  it("publishes live cards, standings and completed-hand highlights", () => {
     const table = new TableInstance("ranked", config("ranked"));
     const live: unknown[] = [];
     table.onLiveEvent((event) => live.push(event));
@@ -77,14 +113,21 @@ describe("open ranked competition", () => {
 
     expect(live).toEqual([
       {
-        type: "public-standings",
-        handNumber: 0,
+        type: "cards-dealt",
+        hands: { hero: [{ rank: 14, suit: "s" }, { rank: 14, suit: "h" }] },
+      },
+      {
+        type: "hand-complete",
+        winners: [],
         players: [{ id: "hero", chips: 5100 }, { id: "villain", chips: 4900 }],
       },
       {
-        type: "public-commentary",
+        type: "hand-highlight",
         handNumber: 1,
         commentary: "精彩一手，完整牌面请在赛后回放中查看。",
+        reasons: ["bad-beat"],
+        potTotal: 5000,
+        involvedPlayerIds: ["hero"],
       },
     ]);
   });

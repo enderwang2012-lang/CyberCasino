@@ -10,6 +10,7 @@ export interface AuditRuntimeContext {
   tableMode: AgentActionAudit["tableMode"];
   executionMode: AgentActionAudit["executionMode"];
   runtime: AgentActionAudit["runtime"];
+  strategyVersion?: number;
 }
 
 function fallbackAction(validActions: ActionType[]): Action {
@@ -68,6 +69,11 @@ export function auditDecision(
   const audit: AgentActionAudit = {
     ...existing,
     agentId: view.myId,
+    tableId: view.tableId,
+    handId: view.handId,
+    turnId: view.turnId,
+    clientActionId: decision.protocol?.clientActionId,
+    strategyVersion: context.strategyVersion ?? existing?.packageVersion,
     handNumber: view.handNumber,
     street: view.phase === "showdown" ? "river" : view.phase,
     tableMode: context.tableMode,

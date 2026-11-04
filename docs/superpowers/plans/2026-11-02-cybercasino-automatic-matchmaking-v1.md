@@ -2,7 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add one in-memory six-Agent ranked queue that automatically creates, starts, archives, and optionally requeues matches while exposing stable Socket.IO and Lobby state.
+> **Execution status (2026-11-02):** Tasks 1-6 implementation and focused verification are complete in the current working tree. The separate commit steps remain unchecked because this branch also contains the preceding Protocol v1 and Snapshot / Resync work, which is intentionally being kept together for local development.
+
+**Decision update (2026-11-03):** The queue is the single formal ranked path. Preset Agents fill cold-start seats, participate in the same matches and leaderboard, and do not auto-requeue. There is no separate practice mode or post-match result page; complete results return through the Agent protocol. Season, rewards, payments and complex Elo remain later work.
+
+**Goal:** Add one in-memory six-Agent ranked queue that automatically creates, starts, archives, returns complete results to Agents, and requeues eligible user Agents while exposing stable Socket.IO and Lobby state.
 
 **Architecture:** A dedicated `MatchmakingService` owns queue entries, active table membership, explicit leave intent, and the synchronous six-entry batch boundary. `TableManager` creates automatic ranked tables from frozen `AgentConfigV2` entries, while `index.ts` owns Socket.IO authorization, table wiring, broadcasts, and archive callbacks. The React Lobby consumes a typed matchmaking state and keeps manual table/history viewing available during the migration.
 
@@ -16,10 +20,13 @@
 - Freeze Agent identity, execution mode, strategy, and strategy version at queue entry.
 - Keep Socket.IO Lobby connection state separate from external Agent WebSocket participation state.
 - A disconnected external Agent continues through the existing fallback behavior and reconnects through the existing protocol.
+- Preset Agents are formal ranked participants used to fill a table when user demand exists; they do not self-start or auto-requeue.
 - A user leaving the queue disables automatic requeue after the current table, if any.
 - Queue state is process-local and is cleared on server restart.
 - Preserve the existing manual table, live viewing, replay, audit, Snapshot / Resync, and Season boundary.
-- Do not add Season scoring, payments, private matches, database queue persistence, cross-process locks, or complex matching rules.
+- Keep live table information visible for the current stage; revisit fairness filtering only after real user feedback.
+- Send complete `match_result` payloads to external Agents and buffer offline delivery in process memory.
+- Do not add Season scoring, rewards, payments, private matches, database queue persistence, cross-process locks, or complex Elo / matching rules.
 - Use the repository test entrypoints; local WebSocket tests require the approved escalated localhost test command.
 
 ---
@@ -37,7 +44,7 @@
 - Extends `ServerToClientEvents` with `matchmaking:state`, `matchmaking:matched`, and `matchmaking:error`.
 - Extends `ClientToServerEvents` with `matchmaking:join`, `matchmaking:leave`, and `matchmaking:status`.
 
-- [ ] **Step 1: Write the failing type and state-shape test**
+- [x] **Step 1: Write the failing type and state-shape test**
 
   Add a focused test that constructs:
 
@@ -57,7 +64,7 @@
 
   Also assert that `MatchmakingErrorCode` accepts `"already_playing"` and rejects no required field at compile time through the typed service usage added in Task 2.
 
-- [ ] **Step 2: Run the test to verify the type contract fails**
+- [x] **Step 2: Run the test to verify the type contract fails**
 
   Run:
 
@@ -67,7 +74,7 @@
 
   Expected: TypeScript failure because the matchmaking shared types do not exist.
 
-- [ ] **Step 3: Add the shared types and event signatures**
+- [x] **Step 3: Add the shared types and event signatures**
 
   Add:
 
@@ -102,7 +109,7 @@
 
   Add the three server events and three client events with the exact payloads in the spec. Make `matchmaking:join` accept an optional `agentId`.
 
-- [ ] **Step 4: Run the focused test to verify it passes**
+- [x] **Step 4: Run the focused test to verify it passes**
 
   Run:
 
@@ -131,7 +138,7 @@
 - Consumes `AgentConfigV2` and the shared matchmaking types.
 - Produces `MatchEntry`, `MatchBatch`, `MatchmakingService.join`, `leave`, `startBatch`, `cancelBatch`, `completeTable`, `getState`, and `getQueueSnapshot`.
 
-- [ ] **Step 1: Write failing queue behavior tests**
+- [x] **Step 1: Write failing queue behavior tests**
 
   Add tests for:
 
@@ -151,7 +158,7 @@
 
   Cover duplicate `userId`, duplicate `agent.id`, `leave` removing a queued entry, `leave` disabling auto-requeue for an active table, and `getState` returning queue position.
 
-- [ ] **Step 2: Run the service tests to verify they fail**
+- [x] **Step 2: Run the service tests to verify they fail**
 
   Run:
 
@@ -161,7 +168,7 @@
 
   Expected: FAIL because `MatchmakingService` and its result types do not exist.
 
-- [ ] **Step 3: Implement the minimal queue state machine**
+- [x] **Step 3: Implement the minimal queue state machine**
 
   Implement:
 
@@ -194,7 +201,7 @@
 
   Keep queue mutation synchronous. When a batch is claimed, remove exactly the first six entries and put them in a pending batch until `startBatch` or `cancelBatch`. `cancelBatch` restores entries in their original order. `completeTable` removes active entries, requeues only entries whose `autoRequeue` remains true, and immediately claims the next six if available.
 
-- [ ] **Step 4: Run the service tests to verify they pass**
+- [x] **Step 4: Run the service tests to verify they pass**
 
   Run:
 
@@ -225,7 +232,7 @@
 - `TableManager.getActiveTableInfos(): TableInfo[]` exposes active automatic tables for the Lobby.
 - `TableInstance` keeps its current automatic start, stop, and Snapshot / Resync behavior.
 
-- [ ] **Step 1: Write failing table factory tests**
+- [x] **Step 1: Write failing table factory tests**
 
   Add a test with six distinct `AgentConfigV2` fixtures that asserts:
 
@@ -239,7 +246,7 @@
 
   Assert that `getActiveTableInfos()` includes the new waiting table and that `removeTable` removes it.
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
   Run:
 
@@ -249,7 +256,7 @@
 
   Expected: FAIL because automatic table creation and active table listing do not exist.
 
-- [ ] **Step 3: Implement the table factory**
+- [x] **Step 3: Implement the table factory**
 
   Add a `createMatchedTable` method that:
 
@@ -262,7 +269,7 @@
 
   Add `getActiveTableInfos()` and include active automatic tables in the Lobby list without changing the existing finished history behavior.
 
-- [ ] **Step 4: Run the focused test to verify it passes**
+- [x] **Step 4: Run the focused test to verify it passes**
 
   Run:
 
@@ -293,7 +300,7 @@
 - Produces `matchmaking:join`, `matchmaking:leave`, and `matchmaking:status` behavior.
 - Produces `matchmaking:state`, `matchmaking:matched`, and `matchmaking:error` broadcasts.
 
-- [ ] **Step 1: Write failing controller tests around a testable controller**
+- [x] **Step 1: Write failing controller tests around a testable controller**
 
   Extract a small `MatchmakingController` from `index.ts` with injected `AgentStore`, `TableManager`, `MatchmakingService`, and callbacks for emitting user state, joining a Socket.IO room, and starting a table. Test:
 
@@ -304,7 +311,7 @@
   - Leaving a queued user removes the entry.
   - Completing a table calls `completeTable` and starts the returned next batch.
 
-- [ ] **Step 2: Run the controller tests to verify they fail**
+- [x] **Step 2: Run the controller tests to verify they fail**
 
   Run:
 
@@ -314,7 +321,7 @@
 
   Expected: FAIL because the controller and injected lifecycle seams do not exist.
 
-- [ ] **Step 3: Implement the controller and wire it into `index.ts`**
+- [x] **Step 3: Implement the controller and wire it into `index.ts`**
 
   Add a controller that:
 
@@ -329,7 +336,7 @@
 
   Update `wireTableEvents` so automatic tables archive through the existing store, then call `completeTable`. Any returned batch goes through the same automatic table start path. Manual preset table behavior remains unchanged.
 
-- [ ] **Step 4: Run the controller and server regression tests**
+- [x] **Step 4: Run the controller and server regression tests**
 
   Run:
 
@@ -362,7 +369,7 @@
 - Consumes the shared matchmaking Socket.IO events.
 - Produces typed hook state and callbacks: `joinMatchmaking`, `leaveMatchmaking`, and `refreshMatchmaking`.
 
-- [ ] **Step 1: Write failing Lobby state tests**
+- [x] **Step 1: Write failing Lobby state tests**
 
   Add component tests for:
 
@@ -371,7 +378,7 @@
   - A playing Agent shows the table id/status.
   - Clicking join and leave calls the supplied callbacks once.
 
-- [ ] **Step 2: Run the frontend test to verify it fails**
+- [x] **Step 2: Run the frontend test to verify it fails**
 
   Run:
 
@@ -381,7 +388,7 @@
 
   Expected: FAIL because Lobby has no matchmaking props or queue controls.
 
-- [ ] **Step 3: Implement hook and Lobby integration**
+- [x] **Step 3: Implement hook and Lobby integration**
 
   In `useSocket.ts`:
 
@@ -404,7 +411,7 @@
 
   Add Chinese and English strings for the four states, actions, queue position, errors, and automatic match copy.
 
-- [ ] **Step 4: Run frontend tests and build**
+- [x] **Step 4: Run frontend tests and build**
 
   Run:
 
@@ -437,7 +444,7 @@
 - Verifies the complete six-Agent queue-to-table-to-requeue cycle.
 - Documents the implemented process-local boundary and the explicit leave rule.
 
-- [ ] **Step 1: Write the failing acceptance test**
+- [x] **Step 1: Write the failing acceptance test**
 
   Use six frozen fixtures and the service plus table manager seams to assert:
 
@@ -453,7 +460,7 @@
 
   Also set one entry's `autoRequeue` to false through `leave` while active and assert that only five entries return.
 
-- [ ] **Step 2: Run the acceptance test to verify it fails**
+- [x] **Step 2: Run the acceptance test to verify it fails**
 
   Run:
 
@@ -463,7 +470,7 @@
 
   Expected: FAIL until the complete lifecycle is wired.
 
-- [ ] **Step 3: Implement the acceptance harness and documentation**
+- [x] **Step 3: Implement the acceptance harness and documentation**
 
   Keep this acceptance process-local and deterministic. Document:
 
@@ -474,7 +481,7 @@
   - process restart clearing queue state;
   - the remaining Season, persistence, and cross-process limits.
 
-- [ ] **Step 4: Run all required verification**
+- [x] **Step 4: Run all required verification**
 
   Run:
 
@@ -493,6 +500,14 @@
   ```
 
   Expected: all applicable checks pass; existing frontend jsdom canvas warnings remain non-failing.
+
+  Actual verification on 2026-11-02:
+
+  - Passed: focused matchmaking/table suite, 23 tests and 80 expectations.
+  - Passed: server TypeScript check, frontend Vitest, frontend build, workspace build, and `git diff --check`.
+  - Passed: Protocol v1 WebSocket suite when run alone with the approved localhost-port environment, 22 tests and 49 expectations.
+  - Not completed in this environment: the 100-hand WebSocket acceptance because the escalated localhost permission review failed twice; the sandbox run reproduced the existing `port 0` startup failure.
+  - Known suite limitation: `bun run test` currently runs the global WebSocket manager tests concurrently, producing `WebSocket server already attached`; this does not occur in the focused matchmaking suite or the isolated Protocol v1 run.
 
 - [ ] **Step 5: Commit documentation and final acceptance**
 

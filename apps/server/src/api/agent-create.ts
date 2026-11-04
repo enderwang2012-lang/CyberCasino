@@ -110,8 +110,8 @@ export function createAgentFromAI(
   const strategy = request.strategyPackage?.strategy ?? request.config;
   if (!strategy) throw new Error("Strategy config or strategy package is required");
   const incomingPackage = request.strategyPackage;
-  const previousVersion = existingAgent?.strategyPackage?.manifest.version;
-  const version = previousVersion
+  const previousVersion = getPreviousStrategyVersion(existingAgent);
+  const version = previousVersion !== undefined
     ? previousVersion + 1
     : Math.max(1, incomingPackage?.manifest.version ?? 1);
   const contentHash = hashStrategy(strategy);
@@ -172,4 +172,21 @@ export function createAgentFromAI(
     createdAt: existingAgent?.createdAt ?? now,
     updatedAt: now,
   };
+}
+
+function getPreviousStrategyVersion(agent: AgentConfigV2 | undefined): number | undefined {
+  if (!agent) return undefined;
+
+  const versions = [
+    agent.strategyVersion,
+    agent.strategyPackage?.manifest.version,
+    agent.pendingStrategyVersion,
+    ...(agent.strategyVersions?.map((entry) => entry.version) ?? []),
+  ].filter(isPositiveInteger);
+
+  return versions.length > 0 ? Math.max(...versions) : undefined;
+}
+
+function isPositiveInteger(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }

@@ -1,4 +1,5 @@
 import type { UserIdentity, AgentConfigV2, TableInfo, ReplayData, RankedStanding, AgentActionAudit } from "@cybercasino/shared";
+import { recentMatchesFor } from "./agent-summary";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sql, ensureSchema } from "./db";
@@ -7,7 +8,7 @@ import { sql, ensureSchema } from "./db";
 // File-based helpers
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = join(import.meta.dirname, "..", "data");
+const DATA_DIR = process.env.CYBERCASINO_DATA_DIR || join(import.meta.dirname, "..", "data");
 const USERS_FILE = join(DATA_DIR, "users.json");
 const AGENTS_V2_FILE = join(DATA_DIR, "agents_v2.json");
 const HISTORY_FILE = join(DATA_DIR, "game_history.json");
@@ -100,7 +101,10 @@ export async function initStores() {
     }
     console.log(`[stores] loaded ${userMap.size} users, ${agentRows.length} agents, ${historyRows.length} game histories from PostgreSQL`);
   } else {
-    userMap = new Map(Object.entries(loadJson<Record<string, UserIdentity>>(USERS_FILE, {})));
+    const persistedUsers = loadJson<Record<string, UserIdentity> | UserIdentity[]>(USERS_FILE, {});
+    userMap = Array.isArray(persistedUsers)
+      ? new Map(persistedUsers.map((user) => [user.userId, user]))
+      : new Map(Object.entries(persistedUsers));
     const agentsV2 = loadJson<AgentConfigV2[]>(AGENTS_V2_FILE, []);
     for (const agent of agentsV2) {
       const list = agentsV2Map.get(agent.userId) ?? [];
@@ -327,8 +331,19 @@ export class GameHistoryStore {
   }
 
   getLeaderboard(): RankedStanding[] {
+    return calculateLeaderboard(Array.from(historyMap.values()));
+  }
+
+  getRecentMatchesForAgent(agentId: string, limit = 20) {
+    return recentMatchesFor(agentId, Array.from(historyMap.values()), limit);
+  }
+}
+
+export function calculateLeaderboard(
+  values: { info: TableInfo; events: ReplayData }[],
+): RankedStanding[] {
     const minimumRatedGames = 3;
-    const values = Array.from(historyMap.values())
+    const matches = values
       .filter((entry) => entry.events && Array.isArray(entry.events.rankings))
       .sort((a, b) => (a.info.finishedAt ?? 0) - (b.info.finishedAt ?? 0));
     const ratings = new Map<string, number>();
@@ -344,11 +359,11 @@ export class GameHistoryStore {
     }>();
     const k = 24;
 
-    for (const { events: replay } of values) {
+    for (const { events: replay } of matches) {
       const players = new Map(replay.players.map((player) => [player.id, player]));
-      const externalResults = replay.rankings.filter((result) => players.get(result.playerId)?.type !== "builtin");
-      const isRatedMatch = externalResults.length >= 2;
-      for (const result of externalResults) {
+      const results = replay.rankings.filter((result) => players.has(result.playerId));
+      const isRatedMatch = results.length >= 2;
+      for (const result of results) {
         const player = players.get(result.playerId);
         if (!player) continue;
         const previous = stats.get(result.playerId);
@@ -360,21 +375,23 @@ export class GameHistoryStore {
           wins: (previous?.wins ?? 0) + (result.position === 1 ? 1 : 0),
           totalFinish: (previous?.totalFinish ?? 0) + result.position,
           activeStrategyVersion: player.strategyVersion ?? previous?.activeStrategyVersion,
-          visibleInLeaderboard: player.type !== "builtin",
+          visibleInLeaderboard: true,
         });
         if (!ratings.has(result.playerId)) ratings.set(result.playerId, 1000);
       }
 
-      const results = isRatedMatch ? externalResults : [];
+      const ratedResults = isRatedMatch ? results : [];
       const deltas = new Map<string, number>();
-      for (const result of results) {
-        for (const opponent of results) {
+      for (const result of ratedResults) {
+        for (const opponent of ratedResults) {
           if (result.playerId === opponent.playerId) continue;
           const own = ratings.get(result.playerId) ?? 1000;
           const other = ratings.get(opponent.playerId) ?? 1000;
           const expected = 1 / (1 + Math.pow(10, (other - own) / 400));
           const actual = result.position < opponent.position ? 1 : result.position === opponent.position ? 0.5 : 0;
-          const adjustment = results.length > 1 ? (k * (actual - expected)) / (results.length - 1) : 0;
+          const adjustment = ratedResults.length > 1
+            ? (k * (actual - expected)) / (ratedResults.length - 1)
+            : 0;
           deltas.set(result.playerId, (deltas.get(result.playerId) ?? 0) + adjustment);
         }
       }
@@ -398,5 +415,4 @@ export class GameHistoryStore {
         provisional: entry.ratedGames < minimumRatedGames,
       }))
       .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.rating - a.rating || b.wins - a.wins);
-  }
 }

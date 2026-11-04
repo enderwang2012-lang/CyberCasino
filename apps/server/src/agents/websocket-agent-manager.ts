@@ -1,17 +1,32 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
+import { randomUUID } from "node:crypto";
 import type {
   AgentGameView,
   AgentDecision,
   ActionType,
-  ActionRecord,
   StyleProfile,
-  HighLevelStyle,
   StrategyConfig,
+  DecisionContext,
+  ExternalAgentMatchResult,
+  ProtocolActionAck,
 } from "@cybercasino/shared";
-import type { IPokerAgent } from "./agent-interface";
-import { parseStyleToPersonality, parseStyleInput } from "./style-parser";
-import { ruleDecide, ruleFallback } from "./rule-engine";
+import { parseStyleInput } from "./style-parser";
+import {
+  actionAckFor,
+  actionRejectedFor,
+  decisionKey,
+  parseActionMessage,
+  parseResyncMessage,
+  resyncRejectedFor,
+  sameAction,
+  snapshotMessageFor,
+  type AgentSnapshotState,
+  type SnapshotSource,
+  type ParsedActionMessage,
+} from "./external-agent-protocol";
+import { MatchResultDeliveryQueue } from "./match-result-delivery";
+import { matchResultMessageFor } from "./match-result-message";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,11 +44,24 @@ interface WsAgentConnection {
 }
 
 interface PendingDecision {
+  agentId: string;
+  context: DecisionContext;
+  turnToken: string;
+  validActions: ActionType[];
+  minRaiseTo: number;
+  maxRaiseTo: number;
   resolve: (decision: AgentDecision) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
-  timeoutMs: number;
+  deadlineAt: number;
   yourTurnPayload: Record<string, unknown>;
+}
+
+interface AcceptedAction {
+  agentId: string;
+  action: ParsedActionMessage;
+  ack: ProtocolActionAck;
+  expiresAt: number;
 }
 
 interface AuthenticatedAgent {
@@ -46,6 +74,8 @@ interface PendingStyleUpdate {
   styleProfile: StyleProfile;
 }
 
+const MATCH_RESULT_CLOSE_GRACE_MS = 5_000;
+
 // ---------------------------------------------------------------------------
 // WebSocket Agent Manager
 // ---------------------------------------------------------------------------
@@ -54,11 +84,18 @@ export class WebSocketAgentManager {
   private wss: WebSocketServer | null = null;
   private connections = new Map<string, WsAgentConnection>(); // token → connection
   private agentIdToToken = new Map<string, string>(); // agentId → token
-  private pendingDecisions = new Map<string, PendingDecision>(); // `${agentId}:${handIndex}` → pending
+  private pendingDecisions = new Map<string, PendingDecision>(); // agentId:table:hand:turn → pending
+  private acceptedActions = new Map<string, AcceptedAction>(); // agentId:client_action_id → ack
   private stylePrompts = new Map<string, string>(); // agentId → stylePrompt (persisted)
   private styleProfiles = new Map<string, StyleProfile>(); // agentId → StyleProfile (V2)
   private activeMatchLocks = new Map<string, Set<string>>(); // agentId → table IDs
   private pendingStyleUpdates = new Map<string, PendingStyleUpdate>(); // agentId → next-match style
+  private snapshotSources = new Map<string, SnapshotSource>(); // tableId → Agent-scoped snapshot source
+  private readonly pendingMatchResults = new MatchResultDeliveryQueue();
+  private readonly inFlightMatchResults = new Map<WebSocket, {
+    agentId: string;
+    results: Map<string, ExternalAgentMatchResult>;
+  }>();
 
   // Callback to persist style prompt to DB
   private onStyleUpdate?: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void;
@@ -70,6 +107,14 @@ export class WebSocketAgentManager {
 
   setAuthenticationResolver(cb: (token: string) => AuthenticatedAgent | undefined) {
     this.resolveToken = cb;
+  }
+
+  registerSnapshotSource(tableId: string, source: SnapshotSource): void {
+    this.snapshotSources.set(tableId, source);
+  }
+
+  unregisterSnapshotSource(tableId: string): void {
+    this.snapshotSources.delete(tableId);
   }
 
   loadStylePrompt(agentId: string, style: string, profile?: StyleProfile) {
@@ -151,7 +196,8 @@ export class WebSocketAgentManager {
   // -----------------------------------------------------------------------
 
   attach(server: Server) {
-    this.wss = new WebSocketServer({ server, path: "/agent" });
+    if (this.wss) throw new Error("WebSocket server already attached");
+    this.wss = new WebSocketServer({ server, path: "/agent", maxPayload: 64 * 1024 });
 
     this.wss.on("connection", (ws, req) => {
       const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim()
@@ -165,6 +211,7 @@ export class WebSocketAgentManager {
         let msg: any;
         try {
           msg = JSON.parse(raw.toString());
+          if (!msg || typeof msg !== "object" || Array.isArray(msg)) throw new Error("Invalid message");
         } catch {
           ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
           return;
@@ -197,9 +244,10 @@ export class WebSocketAgentManager {
           const agentId = authenticatedAgent.id;
 
           // Close existing connection for this token if any
-          const existing = this.connections.get(token);
+          const existing = this.getConnection(agentId);
           if (existing && existing.ws.readyState === WebSocket.OPEN) {
             existing.ws.close(4001, "Replaced by new connection");
+            this.connections.delete(existing.token);
           }
 
           const conn: WsAgentConnection = {
@@ -217,20 +265,24 @@ export class WebSocketAgentManager {
 
           ws.send(JSON.stringify({
             type: "authenticated",
+            protocol_version: 1,
             agentId,
             name: conn.name,
           }));
 
-          // On reconnection: resend pending decision with a fresh timeout
-          const pending = this.pendingDecisions.get(agentId);
-          if (pending) {
-            clearTimeout(pending.timer);
-            pending.timer = setTimeout(() => {
-              this.pendingDecisions.delete(agentId);
-              pending.reject(new Error("Decision timeout"));
-            }, pending.timeoutMs);
-            ws.send(JSON.stringify(pending.yourTurnPayload));
+          this.sendPendingMatchResults(agentId, ws);
+
+          // On reconnection: resend pending decisions without extending their deadlines.
+          for (const pending of this.pendingDecisions.values()) {
+            if (pending.agentId !== agentId) continue;
+            if (pending.deadlineAt <= Date.now()) continue;
+            ws.send(JSON.stringify({
+              ...pending.yourTurnPayload,
+              type: "pending_decision",
+              protocol_version: 1,
+            }));
           }
+          this.sendSnapshotsForAgent(agentId, ws);
 
           console.log(`[ws-agent] ${agentId} authenticated`);
           return;
@@ -240,43 +292,182 @@ export class WebSocketAgentManager {
           ws.send(JSON.stringify({ type: "error", message: "Not authenticated" }));
           return;
         }
+        // A replaced socket may still deliver buffered messages before close.
+        if (this.connections.get(connToken)?.ws !== ws) return;
+        const conn = this.connections.get(connToken);
+        if (!conn) return;
 
         // --- action (decision response) ---
         if (msg.type === "action") {
           const conn = this.connections.get(connToken);
           if (!conn) return;
 
-          const actionKey = `${conn.agentId}`;
-          const pending = this.pendingDecisions.get(actionKey);
+          const parsed = parseActionMessage(msg);
+          if (!parsed.ok) {
+            ws.send(JSON.stringify(actionRejectedFor({
+              clientActionId: typeof msg.client_action_id === "string" ? msg.client_action_id : undefined,
+              context: {
+                tableId: typeof msg.table_id === "string" ? msg.table_id : undefined,
+                handId: typeof msg.hand_id === "string" ? msg.hand_id : undefined,
+                turnId: typeof msg.turn_id === "string" ? msg.turn_id : undefined,
+              },
+              reason: parsed.reason,
+              retryable: parsed.retryable,
+            })));
+            return;
+          }
+
+          const action = parsed.action;
+          this.pruneAcceptedActions();
+          const actionCacheKey = JSON.stringify([conn.agentId, action.client_action_id]);
+          const accepted = this.acceptedActions.get(actionCacheKey);
+          if (accepted) {
+            if (sameAction(accepted.action, action)) {
+              ws.send(JSON.stringify(accepted.ack));
+              return;
+            }
+            ws.send(JSON.stringify(actionRejectedFor({
+              context: {
+                tableId: action.table_id,
+                handId: action.hand_id,
+                turnId: action.turn_id,
+              },
+              clientActionId: action.client_action_id,
+              reason: "duplicate_action_id",
+              retryable: false,
+            })));
+            return;
+          }
+
+          const context: DecisionContext = {
+            tableId: action.table_id,
+            handId: action.hand_id,
+            turnId: action.turn_id,
+          };
+          const pending = this.pendingDecisions.get(decisionKey(conn.agentId, context));
           if (!pending) {
-            // No pending decision — might be a stale response, ignore
+            ws.send(JSON.stringify(actionRejectedFor({
+              context,
+              clientActionId: action.client_action_id,
+              reason: "unknown_turn",
+              retryable: false,
+            })));
+            return;
+          }
+
+          if (action.turn_token !== pending.turnToken) {
+            ws.send(JSON.stringify(actionRejectedFor({
+              context,
+              clientActionId: action.client_action_id,
+              reason: "stale_turn_token",
+              retryable: false,
+            })));
+            return;
+          }
+
+          if (Date.now() >= pending.deadlineAt) {
+            clearTimeout(pending.timer);
+            this.pendingDecisions.delete(decisionKey(conn.agentId, context));
+            pending.reject(new Error("Decision timeout"));
+            ws.send(JSON.stringify(actionRejectedFor({
+              context, clientActionId: action.client_action_id,
+              reason: "decision_expired", retryable: false,
+            })));
+            return;
+          }
+
+          if (!pending.validActions.includes(action.action)) {
+            ws.send(JSON.stringify(actionRejectedFor({
+              context,
+              clientActionId: action.client_action_id,
+              reason: "invalid_action",
+              retryable: true,
+            })));
+            return;
+          }
+
+          if (action.action === "raise" && (action.amount! < pending.minRaiseTo
+            || action.amount! > pending.maxRaiseTo)) {
+            ws.send(JSON.stringify(actionRejectedFor({
+              context, clientActionId: action.client_action_id,
+              reason: "invalid_amount", retryable: true,
+            })));
             return;
           }
 
           clearTimeout(pending.timer);
-          this.pendingDecisions.delete(actionKey);
-
-          // Validate action
-          const action = msg.action as string;
-          if (!["fold", "check", "call", "raise"].includes(action)) {
-            pending.reject(new Error(`Invalid action: ${action}`));
-            return;
-          }
+          this.pendingDecisions.delete(decisionKey(conn.agentId, context));
 
           const decision: AgentDecision = {
             action: {
-              type: action as ActionType,
-              amount: action === "raise" ? msg.amount : undefined,
+              type: action.action,
+              amount: action.action === "raise" ? action.amount : undefined,
             },
             thought: {
-              message: msg.thought ?? "...",
-              confidence: msg.confidence ?? 0.5,
-              isBluffing: msg.isBluffing ?? false,
+              message: action.thought ?? "...",
+              confidence: action.confidence ?? 0.5,
+              isBluffing: action.isBluffing ?? false,
               thinkingSource: "llm",
             },
+            protocol: { ...context, clientActionId: action.client_action_id },
           };
 
+          const ack = actionAckFor(action);
+          this.acceptedActions.set(actionCacheKey, {
+            agentId: conn.agentId,
+            action,
+            ack,
+            expiresAt: Date.now() + 300_000,
+          });
+          const agentEntries = [...this.acceptedActions.entries()]
+            .filter(([, entry]) => entry.agentId === conn.agentId);
+          for (const [key] of agentEntries.slice(0, Math.max(0, agentEntries.length - 1024))) {
+            this.acceptedActions.delete(key);
+          }
+          // Receipt delivery may fail after acceptance. Keep the decision and ACK
+          // so the replacement connection can retry the identical action.
           pending.resolve(decision);
+          ws.send(JSON.stringify(ack));
+          return;
+        }
+
+        // --- resync (authoritative table snapshot) ---
+        if (msg.type === "resync") {
+          const parsed = parseResyncMessage(msg);
+          if (!parsed.ok) {
+            ws.send(JSON.stringify(resyncRejectedFor({
+              tableId: typeof msg.table_id === "string" ? msg.table_id : undefined,
+              reason: parsed.reason,
+              retryable: parsed.retryable,
+            })));
+            return;
+          }
+
+          const source = this.snapshotSources.get(parsed.request.table_id);
+          if (!source) {
+            ws.send(JSON.stringify(resyncRejectedFor({
+              tableId: parsed.request.table_id,
+              reason: "unknown_table",
+              retryable: false,
+            })));
+            return;
+          }
+
+          const snapshot = source(conn.agentId);
+          if (!snapshot) {
+            ws.send(JSON.stringify(resyncRejectedFor({
+              tableId: parsed.request.table_id,
+              reason: "unknown_table",
+              retryable: false,
+            })));
+            return;
+          }
+
+          ws.send(JSON.stringify(this.snapshotForAgent(
+            conn.agentId,
+            snapshot,
+            parsed.request.last_seen_seq,
+          )));
           return;
         }
 
@@ -337,6 +528,7 @@ export class WebSocketAgentManager {
       });
 
       ws.on("close", (code: number, reason: Buffer) => {
+        this.requeueMatchResultsForConnection(ws);
         if (connToken) {
           const conn = this.connections.get(connToken);
           if (conn && conn.ws === ws) {
@@ -353,8 +545,9 @@ export class WebSocketAgentManager {
     });
 
     // Heartbeat check every 30s
-    setInterval(() => {
+    const heartbeat = setInterval(() => {
       const now = Date.now();
+      this.pruneAcceptedActions();
       for (const [token, conn] of this.connections) {
         if (now - conn.lastHeartbeat > 60_000) {
           console.log(`[ws-agent] agent ${conn.agentId} timed out (no heartbeat)`);
@@ -364,6 +557,22 @@ export class WebSocketAgentManager {
         }
       }
     }, 30_000);
+    heartbeat.unref();
+    server.once("close", () => {
+      clearInterval(heartbeat);
+      for (const pending of this.pendingDecisions.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error("Agent server closed"));
+      }
+      this.pendingDecisions.clear();
+      this.acceptedActions.clear();
+      this.connections.clear();
+      this.agentIdToToken.clear();
+      this.snapshotSources.clear();
+      this.inFlightMatchResults.clear();
+      this.wss?.close();
+      this.wss = null;
+    });
 
     console.log("[ws-agent] WebSocket server attached at /agent");
   }
@@ -385,6 +594,120 @@ export class WebSocketAgentManager {
     return this.connections.get(token);
   }
 
+  sendMatchResult(
+    agentIds: string[],
+    result: Omit<ExternalAgentMatchResult, "type" | "protocol_version">,
+  ): void {
+    const message: ExternalAgentMatchResult = matchResultMessageFor(result);
+
+    this.pendingMatchResults.enqueue(agentIds, message);
+    for (const agentId of new Set(agentIds)) {
+      const connection = this.getConnection(agentId);
+      if (!connection || connection.ws.readyState !== WebSocket.OPEN) continue;
+      this.sendPendingMatchResults(agentId, connection.ws);
+    }
+  }
+
+  private sendPendingMatchResults(agentId: string, ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    const pendingResults = this.pendingMatchResults.drain(agentId);
+    for (const message of pendingResults) {
+      const inFlight = this.inFlightMatchResults.get(ws) ?? {
+        agentId,
+        results: new Map<string, ExternalAgentMatchResult>(),
+      };
+      inFlight.results.set(message.table_id, message);
+      this.inFlightMatchResults.set(ws, inFlight);
+      try {
+        ws.send(JSON.stringify(message), (error) => {
+          if (!error) {
+            const timer = setTimeout(() => {
+              const current = this.inFlightMatchResults.get(ws);
+              if (current?.results.get(message.table_id) !== message) return;
+              current.results.delete(message.table_id);
+              if (current.results.size === 0) this.inFlightMatchResults.delete(ws);
+            }, MATCH_RESULT_CLOSE_GRACE_MS);
+            timer.unref();
+            return;
+          }
+          const current = this.inFlightMatchResults.get(ws);
+          current?.results.delete(message.table_id);
+          if (current?.results.size === 0) this.inFlightMatchResults.delete(ws);
+          this.pendingMatchResults.enqueue([agentId], message);
+          console.error(`[ws-agent] failed to send match result to ${agentId}:`, error);
+        });
+      } catch (error) {
+        const current = this.inFlightMatchResults.get(ws);
+        current?.results.delete(message.table_id);
+        if (current?.results.size === 0) this.inFlightMatchResults.delete(ws);
+        this.pendingMatchResults.enqueue([agentId], message);
+        console.error(`[ws-agent] failed to send match result to ${agentId}:`, error);
+      }
+    }
+  }
+
+  private requeueMatchResultsForConnection(ws: WebSocket): void {
+    const inFlight = this.inFlightMatchResults.get(ws);
+    if (!inFlight) return;
+    this.inFlightMatchResults.delete(ws);
+
+    for (const message of inFlight.results.values()) {
+      this.pendingMatchResults.enqueue([inFlight.agentId], message);
+    }
+  }
+
+  private findPendingDecision(agentId: string, tableId: string): PendingDecision | undefined {
+    for (const pending of this.pendingDecisions.values()) {
+      if (pending.agentId === agentId && pending.context.tableId === tableId) return pending;
+    }
+    return undefined;
+  }
+
+  private snapshotForAgent(
+    agentId: string,
+    source: AgentSnapshotState,
+    requestedSeq?: number,
+  ) {
+    const pending = this.findPendingDecision(agentId, source.tableId);
+    return snapshotMessageFor(
+      source,
+      agentId,
+      requestedSeq,
+      pending && pending.deadlineAt > Date.now()
+        ? {
+            context: pending.context,
+            turnToken: pending.turnToken,
+            deadlineAt: pending.deadlineAt,
+          }
+        : undefined,
+    );
+  }
+
+  private sendSnapshotsForAgent(agentId: string, ws: WebSocket): void {
+    for (const source of this.snapshotSources.values()) {
+      const snapshot = source(agentId);
+      if (!snapshot) continue;
+      ws.send(JSON.stringify(this.snapshotForAgent(agentId, snapshot)));
+    }
+  }
+
+  private pruneAcceptedActions() {
+    const now = Date.now();
+    for (const [key, accepted] of this.acceptedActions) {
+      if (accepted.expiresAt <= now) this.acceptedActions.delete(key);
+    }
+  }
+
+  cancelTableDecisions(tableId: string) {
+    for (const [key, pending] of this.pendingDecisions) {
+      if (pending.context.tableId !== tableId) continue;
+      clearTimeout(pending.timer);
+      this.pendingDecisions.delete(key);
+      pending.reject(new Error("Table stopped"));
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Decision request (called by WebSocketAgent.decide)
   // -----------------------------------------------------------------------
@@ -404,14 +727,45 @@ export class WebSocketAgentManager {
     if (!conn || conn.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("Agent not connected"));
     }
+    const resolvedTableId = view.tableId || tableId;
+    if (!resolvedTableId || (view.tableId && tableId && view.tableId !== tableId)) {
+      return Promise.reject(new Error("Invalid table context"));
+    }
+    for (const pending of this.pendingDecisions.values()) {
+      if (pending.agentId === agentId && pending.context.tableId === resolvedTableId) {
+        return Promise.reject(new Error("Decision already pending for this Agent and table"));
+      }
+    }
 
     return new Promise((resolve, reject) => {
+      const context: DecisionContext = {
+        tableId: resolvedTableId,
+        handId: view.handId || `${resolvedTableId}:hand-${view.handNumber}`,
+        turnId: view.turnId || randomUUID(),
+      };
+      const key = decisionKey(agentId, context);
+      const turnToken = randomUUID();
+      const deadlineAt = Date.now() + timeoutMs;
+      const maxRaiseTo = view.myBet + view.myChips;
+      const minRaiseTo = Math.min(view.currentBet + minRaise, maxRaiseTo);
       const timer = setTimeout(() => {
-        this.pendingDecisions.delete(agentId);
+        this.pendingDecisions.delete(key);
         reject(new Error("Decision timeout"));
       }, timeoutMs);
 
-      this.pendingDecisions.set(agentId, { resolve, reject, timer, timeoutMs, yourTurnPayload: {} });
+      this.pendingDecisions.set(key, {
+        agentId,
+        context,
+        turnToken,
+        validActions: [...validActions],
+        minRaiseTo,
+        maxRaiseTo,
+        resolve,
+        reject,
+        timer,
+        deadlineAt,
+        yourTurnPayload: {},
+      });
 
       // Build your_turn message
       const potSize = view.pots.reduce((s, p) => s + p.amount, 0);
@@ -434,7 +788,13 @@ export class WebSocketAgentManager {
 
       const yourTurnMsg = {
         type: "your_turn",
-        roomId: tableId,
+        protocol_version: 1,
+        table_id: context.tableId,
+        hand_id: context.handId,
+        turn_id: context.turnId,
+        turn_token: turnToken,
+        deadline_at: deadlineAt,
+        roomId: context.tableId,
         handIndex: view.handNumber,
         phase: view.phase,
         myCards,
@@ -445,6 +805,8 @@ export class WebSocketAgentManager {
         validActions,
         callAmount,
         minRaise,
+        minRaiseTo,
+        maxRaiseTo,
         players,
         actionHistory,
         stylePrompt,
@@ -452,10 +814,16 @@ export class WebSocketAgentManager {
       };
 
       // Store payload for reconnection resync
-      const pending = this.pendingDecisions.get(agentId);
+      const pending = this.pendingDecisions.get(key);
       if (pending) pending.yourTurnPayload = yourTurnMsg;
 
-      conn.ws.send(JSON.stringify(yourTurnMsg));
+      try {
+        conn.ws.send(JSON.stringify(yourTurnMsg));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingDecisions.delete(key);
+        reject(error);
+      }
     });
   }
 }

@@ -10,13 +10,15 @@
 ```text
 选择已配置 Agent
 → 加入公共排名队列
-→ 6 个 Agent 自动组成牌桌
+→ 不足 6 人时由预置 Agent 补齐
+→ 6 个正式参赛 Agent 自动组成牌桌
 → 自动开始比赛
+→ 完整结果回流给参赛 Agent
 → 比赛结束后归档
 → 仍然参赛的 Agent 自动回到队列
 ```
 
-这一阶段只实现单进程内的默认公共队列和一桌 6 人的自动组桌。已有手动牌桌、观赛、回放和外部 Agent WebSocket 协议继续可用。
+这一阶段只实现单进程内的默认公共队列、一桌 6 人的自动组桌和 Agent 结果回流。已有手动牌桌、实时观赛、回放和外部 Agent WebSocket 协议继续可用；不增加独立练习赛或专门的赛后结果页。
 
 ## 产品边界
 
@@ -30,13 +32,16 @@
 - 已经在进行中的牌桌中的 Agent 不能再次入队。
 - 用户主动退出队列后，该 Agent 不参与下一次自动回队。
 - 队列状态保存在进程内；服务重启后队列清空。
+- 预置 Agent 不是练习赛机器人，而是正式参赛 Agent；它们进入同一排行榜。
 
 ### 匹配
 
 - 当队列达到 6 个不同 Agent 时，服务端一次性取出前 6 个入队项。
+- 当至少有一个用户 Agent 排队但队列不足 6 个时，服务端使用预置 Agent 补齐剩余席位。
+- 如果已经有 6 个用户 Agent 排队，优先组成全用户 Agent 牌桌，不加入预置 Agent。
 - 取出和创建牌桌必须在同一个事件循环操作中完成，不能重复消费同一入队项。
 - 创建的牌桌使用现有 `TableInstance` 和 `ranked` 模式。
-- 6 个 Agent 全部以 custom seat 入座，不自动补充 house bot。
+- 用户 Agent 以 custom seat 入座，预置 Agent 以 builtin seat 入座；二者都属于正式参赛席位。
 - 牌桌创建完成后立即调用 `start()`。
 - 牌桌使用入队时冻结的配置，不读取比赛中途更新的策略版本。
 
@@ -53,7 +58,9 @@
 ### 比赛结束
 
 - 自动牌桌复用现有 `archiveFinishedTable()`，先保存回放和审计，再从活动牌桌中移除。
+- 归档前向所有在线外部 Agent 发送 `match_result`，内容包括排名、参赛者和完整 replay；离线结果进入进程内短期缓存，Agent 下次认证时补发。
 - 归档完成后，对仍处于自动参赛状态的 Agent 重新入队。
+- 预置 Agent 的 `autoRequeue` 为 `false`，不会在没有用户需求时自行循环。
 - 重入队时使用上一场结束后当前可用的 Agent 配置快照；比赛中的配置更新仍由现有 pending strategy 规则处理。
 - 归档失败时不回队列，并向关联 Socket.IO 用户发送稳定错误。
 
@@ -98,7 +105,8 @@ type MatchmakingErrorCode =
   | "already_queued"
   | "already_playing"
   | "queue_not_found"
-  | "invalid_agent";
+  | "invalid_agent"
+  | "match_start_failed";
 ```
 
 用户重新连接并发送 `matchmaking:status` 后，服务端返回该用户 Agent 的当前状态。服务端在状态改变时向 Lobby 房间和对应用户推送更新。
@@ -153,6 +161,9 @@ completeTable(tableId: string): MatchEntry[];
 6. 牌桌归档失败时，Agent 不会错误回队。
 7. Socket.IO 用户断开不改变当前比赛和自动回队意愿。
 8. 6 个 Agent 的配置在建桌时被冻结，比赛中修改只作为下一场 pending 配置。
+9. 一个用户 Agent 入队时由五个预置 Agent 补齐，预置 Agent 不回队；比赛结束后用户 Agent 可以触发下一桌。
+10. 预置 Agent 和用户 Agent 都出现在比赛结果和排行榜中。
+11. 外部 Agent 断线后，认证成功可以收到尚未投递的 `match_result`。
 
 前端测试必须覆盖：
 
@@ -160,4 +171,4 @@ completeTable(tableId: string): MatchEntry[];
 2. 加入和退出匹配按钮发送正确 Socket.IO 事件。
 3. `matchmaking:matched` 后切换到对应牌桌。
 
-本阶段不覆盖服务重启后的队列恢复、跨进程匹配、Season 计分、支付、私赛和复杂匹配算法。
+本阶段不覆盖服务重启后的队列恢复、跨进程匹配、Season 计分、奖励、支付、私赛和复杂 Elo / 匹配算法。

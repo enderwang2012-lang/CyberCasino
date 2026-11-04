@@ -62,6 +62,7 @@ export interface AgentDecision {
   action: Action;
   thought: AgentThought;
   audit?: AgentActionAudit;
+  protocol?: DecisionContext & { clientActionId: string };
 }
 
 export interface AgentGameView {
@@ -80,6 +81,129 @@ export interface AgentGameView {
   minRaise: number;
   handNumber: number;
   actionHistory: ActionRecord[];
+  /** Protocol v1 context for an external Agent decision. */
+  tableId?: string;
+  handId?: string;
+  turnId?: string;
+}
+
+export interface DecisionContext {
+  tableId: string;
+  handId: string;
+  turnId: string;
+}
+
+export interface ProtocolActionMessage {
+  type: "action";
+  table_id: string;
+  hand_id: string;
+  turn_id: string;
+  turn_token: string;
+  client_action_id: string;
+  action: ActionType;
+  amount?: number;
+  thought?: string;
+  confidence?: number;
+  isBluffing?: boolean;
+}
+
+export type ProtocolActionRejectedReason =
+  | "missing_context"
+  | "missing_client_action_id"
+  | "unknown_turn"
+  | "stale_turn_token"
+  | "invalid_action"
+  | "invalid_amount"
+  | "duplicate_action_id"
+  | "decision_expired"
+  | "invalid_metadata";
+
+export interface ProtocolActionAck {
+  type: "action_ack";
+  protocol_version: 1;
+  table_id: string;
+  hand_id: string;
+  turn_id: string;
+  client_action_id: string;
+  action: ActionType;
+  amount?: number;
+}
+
+export interface ProtocolActionRejected {
+  type: "action_rejected";
+  protocol_version: 1;
+  table_id?: string;
+  hand_id?: string;
+  turn_id?: string;
+  client_action_id?: string;
+  reason: ProtocolActionRejectedReason;
+  retryable: boolean;
+}
+
+export interface ProtocolResyncMessage {
+  type: "resync";
+  table_id: string;
+  last_seen_seq?: number;
+}
+
+export type ProtocolResyncRejectedReason = "missing_context" | "invalid_sequence" | "unknown_table";
+
+export interface ProtocolResyncRejected {
+  type: "resync_rejected";
+  protocol_version: 1;
+  table_id?: string;
+  reason: ProtocolResyncRejectedReason;
+  retryable: boolean;
+}
+
+export interface ExternalAgentSnapshotPlayer {
+  id: string;
+  name: string;
+  avatar: string;
+  chips: number;
+  bet: number;
+  folded: boolean;
+  allIn: boolean;
+  seat_index: number;
+}
+
+export interface ExternalAgentSnapshotAction {
+  player_id: string;
+  phase: GamePhase;
+  action: Action;
+}
+
+export interface ExternalAgentTableSnapshot {
+  type: "table_snapshot";
+  protocol_version: 1;
+  table_id: string;
+  table_seq: number;
+  state_hash: string;
+  sync_mode: "full";
+  requested_seq?: number;
+  unchanged: boolean;
+  status: "waiting" | "playing" | "finished";
+  hand_id: string | null;
+  hand_number: number;
+  phase: GamePhase | null;
+  my_cards: string[];
+  community_cards: string[];
+  players: ExternalAgentSnapshotPlayer[];
+  pots: Pot[];
+  dealer_seat_index: number | null;
+  current_player_id: string | null;
+  is_current_actor: boolean;
+  current_bet: number;
+  call_amount: number;
+  min_raise_to: number | null;
+  max_raise_to: number | null;
+  valid_actions: ActionType[];
+  action_history: ExternalAgentSnapshotAction[];
+  turn?: {
+    turn_id: string;
+    turn_token: string;
+    deadline_at: number;
+  };
 }
 
 export interface AgentPlayerView {
@@ -466,6 +590,17 @@ export interface UserIdentity {
   createdAt: number;
 }
 
+export interface ExternalAgentMatchResult {
+  type: "match_result";
+  protocol_version: 1;
+  table_id: string;
+  finished_at: number;
+  total_hands: number;
+  rankings: { player_id: string; position: number; hands_played: number }[];
+  players: ReplayData["players"];
+  replay: ReplayData;
+}
+
 export interface TableSeat {
   seatIndex: number;
   status: "empty" | "occupied";
@@ -529,6 +664,9 @@ export interface ServerToClientEvents {
   "agent:created": (data: { agentId: string; status: string; previewUrl?: string }) => void;
   "agent:create-error": (data: { error: string; details?: string }) => void;
   "agent:deleted": (agentId: string) => void;
+  "matchmaking:state": (state: MatchmakingState) => void;
+  "matchmaking:matched": (data: { tableId: string; agentId: string }) => void;
+  "matchmaking:error": (data: MatchmakingError) => void;
 }
 
 export interface ClientToServerEvents {
@@ -544,6 +682,9 @@ export interface ClientToServerEvents {
   "table:start": (tableId: string, language?: "zh" | "en") => void;
   "table:history": () => void;
   "agent:create-by-ai": (data: { config: StrategyConfig; preview: AgentPreview }) => void;
+  "matchmaking:join": (agentId?: string) => void;
+  "matchmaking:leave": () => void;
+  "matchmaking:status": () => void;
 }
 
 export interface BlindLevel {
@@ -564,6 +705,14 @@ export interface TableConfig {
   startingChips: number;
   maxPlayers: number;
   blindSchedule?: BlindSchedule;
+  /** Optional bounded-run limit. Normal elimination matches omit this. */
+  handLimit?: number;
+  /** Delay between hands; defaults to the existing 3000ms pacing. */
+  interHandDelayMs?: number;
+  /** Delay after a house-bot decision; defaults to the existing 1000-3000ms pacing. */
+  actionDelayMs?: number;
+  /** Offline commentary for local runs; live tables default to LLM commentary. */
+  commentaryMode?: "llm" | "rule";
 }
 
 export interface TableInfo {
@@ -575,6 +724,55 @@ export interface TableInfo {
   status: "waiting" | "playing" | "finished";
   seats: TableSeat[];
   finishedAt?: number;
+}
+
+export type MatchmakingQueueName = "ranked-default";
+export type MatchmakingStatus = "idle" | "queued" | "matched" | "playing";
+export type MatchmakingErrorCode =
+  | "not_registered"
+  | "agent_not_found"
+  | "already_queued"
+  | "already_playing"
+  | "queue_not_found"
+  | "invalid_agent"
+  | "match_start_failed";
+
+export interface MatchmakingState {
+  queue: MatchmakingQueueName;
+  status: MatchmakingStatus;
+  agentId?: string;
+  position?: number;
+  queueSize: number;
+  requiredPlayers: number;
+  tableId?: string;
+  enteredAt?: number;
+  autoRequeue: boolean;
+}
+
+export interface MatchmakingError {
+  code: MatchmakingErrorCode;
+  message: string;
+}
+
+export interface AgentMatchSummary {
+  tableId: string;
+  tableName: string;
+  finishedAt?: number;
+  position: number;
+  totalPlayers: number;
+  handsPlayed: number;
+  totalHands: number;
+  strategyVersion?: number;
+  replayAvailable: boolean;
+}
+
+export interface AgentArenaSummary {
+  agent: AgentConfigV2 | null;
+  standing?: RankedStanding;
+  currentMatch: MatchmakingState;
+  currentMatchStrategyVersion?: number;
+  externalAgentConnected?: boolean;
+  recentMatches: AgentMatchSummary[];
 }
 
 // Agent personality config
@@ -599,6 +797,7 @@ export interface BuiltinPersonalityInfo {
 // --- Replay types ---
 
 export interface ReplayHandAction {
+  turnId?: string;
   playerId: string;
   phase: GamePhase;
   action: ActionType;
@@ -608,6 +807,7 @@ export interface ReplayHandAction {
 }
 
 export interface ReplayHand {
+  handId?: string;
   handNumber: number;
   smallBlind: number;
   bigBlind: number;
@@ -624,7 +824,7 @@ export interface ReplayData {
   config: TableConfig;
   players: { id: string; name: string; avatar: string; type: string; strategyVersion?: number }[];
   hands: ReplayHand[];
-  rankings: { playerId: string; position: number }[];
+  rankings: { playerId: string; position: number; handsPlayed?: number }[];
   totalHands: number;
   timeline?: GameEvent[];
 }
@@ -842,6 +1042,11 @@ export interface DecisionResult {
 // and reproducible sampling, not whether a poker decision was strategically good.
 export interface AgentActionAudit {
   agentId: string;
+  tableId?: string;
+  handId?: string;
+  turnId?: string;
+  clientActionId?: string;
+  strategyVersion?: number;
   handNumber: number;
   street: Street;
   tableMode: ArenaTableMode;

@@ -9,6 +9,8 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "turbo test",
+    "test:protocol": "bun test apps/server/src/agents/__test__/protocol-v1.test.ts",
+    "test:acceptance": "bun test apps/server/src/continuous-run.test.ts",
     "lint": "turbo lint"
   },
   "packageManager": "bun@1.3.13",

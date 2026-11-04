@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   GameEvent,
   AgentActionAudit,
@@ -31,6 +32,7 @@ import { auditDecision } from "./agents/action-audit";
 import { PERSONALITIES } from "./agents/personalities";
 import { detectHighlights } from "./highlight-detector";
 import { generateCommentary, type CommentaryContext } from "./highlight-commentary";
+import type { AgentSnapshotAction, AgentSnapshotState } from "./agents/external-agent-protocol";
 
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
@@ -71,8 +73,33 @@ export class TableInstance {
   private language: "zh" | "en" = "zh";
   private controllerUserId?: string;
   private lockedStyleAgentIds = new Set<string>();
+  private snapshotSeq = 0;
+  private snapshotStatus: AgentSnapshotState["status"] = "waiting";
+  private snapshotHandId: string | null = null;
+  private snapshotHandNumber = 0;
+  private snapshotPhase: AgentSnapshotState["phase"] = null;
+  private snapshotCommunityCards: Card[] = [];
+  private snapshotPlayers: AgentPlayerView[] = [];
+  private snapshotPots: AgentSnapshotState["pots"] = [];
+  private snapshotDealerSeatIndex: number | null = null;
+  private snapshotCurrentPlayerId: string | null = null;
+  private snapshotCurrentBet = 0;
+  private snapshotCallAmount = 0;
+  private snapshotMinRaiseTo: number | null = null;
+  private snapshotMaxRaiseTo: number | null = null;
+  private snapshotValidActions: ActionType[] = [];
+  private snapshotActionHistory: AgentSnapshotAction[] = [];
+  private snapshotHoleCards = new Map<string, Card[]>();
 
   constructor(id: string, config: TableConfig, creatorUserId?: string, autoStart = false) {
+    if (config.handLimit !== undefined && (!Number.isSafeInteger(config.handLimit) || config.handLimit < 1)) {
+      throw new Error("handLimit must be a positive integer");
+    }
+    for (const delay of [config.interHandDelayMs, config.actionDelayMs]) {
+      if (delay !== undefined && (!Number.isSafeInteger(delay) || delay < 0)) {
+        throw new Error("Table delays must be non-negative integers");
+      }
+    }
     this.id = id;
     this.config = config;
     this.creatorUserId = creatorUserId;
@@ -84,6 +111,7 @@ export class TableInstance {
       seatIndex: i,
       status: "empty" as const,
     }));
+    wsAgentManager.registerSnapshotSource(this.id, (agentId) => this.getSnapshotForAgent(agentId));
   }
 
   // --- Seat management ---
@@ -113,7 +141,7 @@ export class TableInstance {
     return true;
   }
 
-  sitBuiltin(personalityId: string): boolean {
+  sitBuiltin(personalityId: string, strategyVersion?: number): boolean {
     if (this.running) return false;
     if (this.seats.some((s) => s.agent?.id === personalityId)) return false;
 
@@ -130,6 +158,7 @@ export class TableInstance {
       avatar: p.avatar,
       type: "builtin",
       executionMode: "house_bot",
+      strategyVersion,
     };
     return true;
   }
@@ -257,6 +286,8 @@ export class TableInstance {
   }
 
   private emit(event: GameEvent): void {
+    this.applySnapshotEvent(event);
+    this.snapshotSeq++;
     this.eventHistory.push(JSON.parse(JSON.stringify(event)));
     const publicEvent = this.toPublicEvent(event);
     const liveEvent = this.toLiveEvent(publicEvent);
@@ -271,23 +302,258 @@ export class TableInstance {
     }
   }
 
-  private toLiveEvent(event: GameEvent): GameEvent | undefined {
+  getSnapshotForAgent(agentId: string): AgentSnapshotState | undefined {
+    const hasAgent = this.snapshotPlayers.some((player) => player.id === agentId)
+      || this.seats.some((seat) => seat.agent?.id === agentId);
+    if (!hasAgent) return undefined;
+
+    const players = this.snapshotPlayers.length > 0
+      ? this.snapshotPlayers
+      : this.seats
+        .filter((seat) => seat.status === "occupied" && seat.agent)
+        .map((seat) => ({
+          id: seat.agent!.id,
+          name: seat.agent!.name,
+          avatar: seat.agent!.avatar,
+          chips: this.config.startingChips,
+          bet: 0,
+          folded: false,
+          allIn: false,
+          seatIndex: seat.seatIndex,
+        }));
+    const stateWithoutHash = {
+      tableId: this.id,
+      tableSeq: this.snapshotSeq,
+      status: this.snapshotStatus,
+      handId: this.snapshotHandId,
+      handNumber: this.snapshotHandNumber,
+      phase: this.snapshotPhase,
+      myCards: this.snapshotHoleCards.get(agentId) ?? [],
+      communityCards: this.snapshotCommunityCards,
+      players,
+      pots: this.snapshotPots,
+      dealerSeatIndex: this.snapshotDealerSeatIndex,
+      currentPlayerId: this.snapshotCurrentPlayerId,
+      currentBet: this.snapshotCurrentBet,
+      callAmount: this.snapshotCallAmount,
+      minRaiseTo: this.snapshotMinRaiseTo,
+      maxRaiseTo: this.snapshotMaxRaiseTo,
+      validActions: this.snapshotValidActions,
+      actionHistory: this.snapshotActionHistory,
+    };
+    const hashInput = { ...stateWithoutHash };
+    delete (hashInput as { tableSeq?: number }).tableSeq;
+    const stateHash = createHash("sha256")
+      .update(JSON.stringify(hashInput))
+      .digest("hex");
+
+    return {
+      ...stateWithoutHash,
+      stateHash,
+      myCards: [...stateWithoutHash.myCards],
+      communityCards: [...stateWithoutHash.communityCards],
+      players: players.map((player) => ({ ...player })),
+      pots: stateWithoutHash.pots.map((pot) => ({
+        amount: pot.amount,
+        eligiblePlayerIds: [...pot.eligiblePlayerIds],
+      })),
+      validActions: [...stateWithoutHash.validActions],
+      actionHistory: stateWithoutHash.actionHistory.map((entry) => ({
+        playerId: entry.playerId,
+        phase: entry.phase,
+        action: { ...entry.action },
+      })),
+    };
+  }
+
+  private syncSnapshotFromDecision(
+    view: AgentGameView,
+    validActions: ActionType[],
+    callAmount: number,
+    minRaise: number,
+  ): void {
+    this.snapshotStatus = "playing";
+    this.snapshotHandId = view.handId ?? `${this.id}:hand-${view.handNumber}`;
+    this.snapshotHandNumber = view.handNumber;
+    this.snapshotPhase = view.phase;
+    this.snapshotCommunityCards = [...view.communityCards];
+    this.snapshotPlayers = view.players.map((player) => ({ ...player }));
+    this.snapshotPots = view.pots.map((pot) => ({
+      amount: pot.amount,
+      eligiblePlayerIds: [...pot.eligiblePlayerIds],
+    }));
+    this.snapshotDealerSeatIndex = view.dealerSeatIndex;
+    this.snapshotCurrentPlayerId = view.myId;
+    this.snapshotCurrentBet = view.currentBet;
+    this.snapshotCallAmount = callAmount;
+    this.snapshotMinRaiseTo = Math.min(view.currentBet + minRaise, view.myBet + view.myChips);
+    this.snapshotMaxRaiseTo = view.myBet + view.myChips;
+    this.snapshotValidActions = [...validActions];
+    this.snapshotActionHistory = view.actionHistory.map((entry) => ({
+      playerId: entry.playerId,
+      phase: entry.phase,
+      action: { ...entry.action },
+    }));
+    this.snapshotHoleCards.set(view.myId, [...view.myCards]);
+    this.snapshotSeq++;
+  }
+
+  private applySnapshotEvent(event: GameEvent): void {
     switch (event.type) {
       case "agent-roster":
-        return event;
+        this.snapshotPlayers = event.agents.map((agent) => {
+          const seatIndex = this.seats.find((seat) => seat.agent?.id === agent.id)?.seatIndex ?? 0;
+          return {
+            id: agent.id,
+            name: agent.name,
+            avatar: agent.avatar,
+            chips: this.config.startingChips,
+            bet: 0,
+            folded: false,
+            allIn: false,
+            seatIndex,
+          };
+        });
+        this.snapshotStatus = "waiting";
+        break;
+      case "hand-start":
+        this.snapshotStatus = "playing";
+        this.snapshotHandId = `${this.id}:hand-${event.handNumber}`;
+        this.snapshotHandNumber = event.handNumber;
+        this.snapshotPhase = "preflop";
+        this.snapshotCommunityCards = [];
+        this.snapshotPlayers = event.players.map(({ holeCards: _holeCards, ...player }) => ({ ...player }));
+        this.snapshotPots = [];
+        this.snapshotDealerSeatIndex = event.dealerSeatIndex;
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotCurrentBet = 0;
+        this.snapshotCallAmount = 0;
+        this.snapshotMinRaiseTo = null;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [];
+        this.snapshotActionHistory = [];
+        this.snapshotHoleCards.clear();
+        break;
+      case "blinds-posted":
+        this.updateSnapshotPlayer(event.smallBlindPlayerId, (player) => ({
+          ...player,
+          chips: player.chips - event.smallBlind,
+          bet: event.smallBlind,
+          allIn: player.chips - event.smallBlind === 0,
+        }));
+        this.updateSnapshotPlayer(event.bigBlindPlayerId, (player) => ({
+          ...player,
+          chips: player.chips - event.bigBlind,
+          bet: event.bigBlind,
+          allIn: player.chips - event.bigBlind === 0,
+        }));
+        break;
+      case "cards-dealt":
+        for (const [playerId, cards] of Object.entries(event.hands)) {
+          this.snapshotHoleCards.set(playerId, [...cards]);
+        }
+        break;
+      case "phase-change":
+        this.snapshotPhase = event.phase;
+        this.snapshotCommunityCards = [...event.communityCards];
+        this.snapshotPlayers = this.snapshotPlayers.map((player) => ({ ...player, bet: 0 }));
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotCurrentBet = 0;
+        this.snapshotCallAmount = 0;
+        this.snapshotMinRaiseTo = null;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [];
+        break;
+      case "action-required":
+        this.snapshotCurrentPlayerId = event.playerId;
+        this.snapshotCurrentBet = event.currentBet;
+        this.snapshotCallAmount = event.callAmount;
+        this.snapshotMinRaiseTo = event.currentBet + event.minRaise;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [...event.validActions];
+        break;
+      case "action-taken": {
+        const playerId = this.snapshotCurrentPlayerId ?? event.playerId;
+        const player = this.snapshotPlayers.find((entry) => entry.id === playerId);
+        if (player) {
+          if (event.action.type === "fold") {
+            player.folded = true;
+          } else if (event.action.type === "call") {
+            const toCall = Math.min(this.snapshotCallAmount, player.chips);
+            player.chips -= toCall;
+            player.bet += toCall;
+            player.allIn = player.chips === 0;
+          } else if (event.action.type === "raise") {
+            const totalBet = Math.min(event.action.amount ?? player.bet, player.bet + player.chips);
+            player.chips -= totalBet - player.bet;
+            player.bet = totalBet;
+            player.allIn = player.chips === 0;
+          }
+          if (event.allIn) player.allIn = true;
+        }
+        this.snapshotActionHistory.push({
+          playerId: event.playerId,
+          phase: this.snapshotPhase ?? "preflop",
+          action: { ...event.action },
+        });
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotCallAmount = 0;
+        this.snapshotMinRaiseTo = null;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [];
+        break;
+      }
+      case "pot-updated":
+        this.snapshotPots = event.pots.map((pot) => ({
+          amount: pot.amount,
+          eligiblePlayerIds: [...pot.eligiblePlayerIds],
+        }));
+        break;
+      case "showdown":
+        this.snapshotPhase = "showdown";
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotValidActions = [];
+        break;
       case "hand-complete":
-        return {
-          type: "public-standings",
-          handNumber: this.handNumber,
-          players: event.players.map((player) => ({ id: player.id, chips: player.chips })),
-        };
+        this.snapshotPlayers = event.players.map(({ holeCards: _holeCards, ...player }) => ({ ...player }));
+        this.snapshotPhase = "showdown";
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotCallAmount = 0;
+        this.snapshotMinRaiseTo = null;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [];
+        break;
       case "player-eliminated":
-        return event;
-      case "hand-highlight":
-        return event;
+        this.updateSnapshotPlayer(event.playerId, (player) => ({ ...player, chips: 0, allIn: false }));
+        break;
+      case "public-standings":
+        for (const standing of event.players) {
+          this.updateSnapshotPlayer(standing.id, (player) => ({ ...player, chips: standing.chips }));
+        }
+        break;
+      case "tournament-complete":
+        this.snapshotStatus = "finished";
+        this.snapshotCurrentPlayerId = null;
+        this.snapshotCallAmount = 0;
+        this.snapshotMinRaiseTo = null;
+        this.snapshotMaxRaiseTo = null;
+        this.snapshotValidActions = [];
+        break;
       default:
-        return undefined;
+        break;
     }
+  }
+
+  private updateSnapshotPlayer(
+    playerId: string,
+    update: (player: AgentPlayerView) => AgentPlayerView,
+  ): void {
+    this.snapshotPlayers = this.snapshotPlayers.map((player) =>
+      player.id === playerId ? update(player) : player);
+  }
+
+  private toLiveEvent(event: GameEvent): GameEvent | undefined {
+    return event;
   }
 
   // --- Game control ---
@@ -332,69 +598,87 @@ export class TableInstance {
 
     let consecutiveErrors = 0;
 
-    while (this.running) {
-      const activePlayers = this.agents.filter(
-        (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
-      );
-      if (activePlayers.length < 2) {
-        this.running = false;
-        this.emitTournamentComplete();
-        break;
-      }
+    try {
+      while (this.running) {
+        if (this.config.handLimit !== undefined && this.handNumber >= this.config.handLimit) {
+          this.running = false;
+          this.emitTournamentComplete();
+          break;
+        }
 
-      this.handNumber++;
-      this.checkBlindLevel();
+        const activePlayers = this.agents.filter(
+          (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
+        );
+        if (activePlayers.length < 2) {
+          this.running = false;
+          this.emitTournamentComplete();
+          break;
+        }
 
-      // Ensure dealer is an active player
-      const dealerAgent = this.agents[this.dealerSeatIndex];
-      if (!dealerAgent || (this.playerStates.get(dealerAgent.id)?.chips ?? 0) <= 0) {
-        for (let i = 0; i < this.agents.length; i++) {
-          const idx = (this.dealerSeatIndex + i) % this.agents.length;
-          if ((this.playerStates.get(this.agents[idx]?.id)?.chips ?? 0) > 0) {
-            this.dealerSeatIndex = idx;
-            break;
+        this.handNumber++;
+        this.checkBlindLevel();
+
+        // Ensure dealer is an active player
+        const dealerAgent = this.agents[this.dealerSeatIndex];
+        if (!dealerAgent || (this.playerStates.get(dealerAgent.id)?.chips ?? 0) <= 0) {
+          for (let i = 0; i < this.agents.length; i++) {
+            const idx = (this.dealerSeatIndex + i) % this.agents.length;
+            if ((this.playerStates.get(this.agents[idx]?.id)?.chips ?? 0) > 0) {
+              this.dealerSeatIndex = idx;
+              break;
+            }
           }
         }
-      }
 
-      try {
-        await this.playHand(activePlayers);
-        consecutiveErrors = 0;
-      } catch (err) {
-        consecutiveErrors++;
-        console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
-        if (consecutiveErrors >= 5) {
-          this.running = false;
-          throw new Error(`Tournament aborted after ${consecutiveErrors} consecutive hand errors: ${String(err)}`);
+        try {
+          await this.playHand(activePlayers);
+          consecutiveErrors = 0;
+        } catch (err) {
+          if (!this.running) break;
+          consecutiveErrors++;
+          console.error(`[table:${this.id}] hand #${this.handNumber} error (${consecutiveErrors}/5):`, err);
+          if (consecutiveErrors >= 5) {
+            this.running = false;
+            throw new Error(`Tournament aborted after ${consecutiveErrors} consecutive hand errors: ${String(err)}`);
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
         }
-        await new Promise((r) => setTimeout(r, 2000));
-        continue;
-      }
-      this.checkEliminations();
+        this.checkEliminations();
 
-      const remaining = this.agents.filter(
-        (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
-      );
-      if (remaining.length < 2) {
-        this.running = false;
-        this.emitTournamentComplete();
-        break;
-      }
+        const remaining = this.agents.filter(
+          (a) => (this.playerStates.get(a.id)?.chips ?? 0) > 0
+        );
+        if (remaining.length < 2) {
+          this.running = false;
+          this.emitTournamentComplete();
+          break;
+        }
 
-      // Advance dealer to next active player
-      let nextDealer = this.dealerSeatIndex;
-      for (let i = 0; i < this.agents.length; i++) {
-        nextDealer = (nextDealer + 1) % this.agents.length;
-        if ((this.playerStates.get(this.agents[nextDealer]?.id)?.chips ?? 0) > 0) break;
+        // Advance dealer to next active player
+        let nextDealer = this.dealerSeatIndex;
+        for (let i = 0; i < this.agents.length; i++) {
+          nextDealer = (nextDealer + 1) % this.agents.length;
+          if ((this.playerStates.get(this.agents[nextDealer]?.id)?.chips ?? 0) > 0) break;
+        }
+        this.dealerSeatIndex = nextDealer;
+        const interHandDelayMs = this.config.interHandDelayMs ?? 3000;
+        if (interHandDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, interHandDelayMs));
+        }
       }
-      this.dealerSeatIndex = nextDealer;
-      await new Promise((r) => setTimeout(r, 3000));
+    } finally {
+      this.running = false;
+      wsAgentManager.cancelTableDecisions(this.id);
+      this.unlockMatchStyles();
     }
   }
 
   stop(): void {
     this.running = false;
+    wsAgentManager.cancelTableDecisions(this.id);
     this.unlockMatchStyles();
+    wsAgentManager.unregisterSnapshotSource(this.id);
   }
 
   private createAgent(
@@ -440,8 +724,7 @@ export class TableInstance {
       );
     }
 
-    // House bots execute the same declarative package runtime, but remain
-    // identifiable as non-ranked fillers/benchmarks.
+    // Preset Agents use the same declarative runtime and ranked competition.
     if (seat.type === "builtin") {
       const personality = PERSONALITIES.find((p) => p.id === seat.id);
       const strategy = builtinStrategies.get(seat.id)
@@ -550,6 +833,8 @@ export class TableInstance {
     let currentPhaseCards: Card[] = [];
     let currentPhase: "preflop" | "flop" | "turn" | "river" | "showdown" = "preflop";
     const holeCards = new Map<string, Card[]>();
+    const handId = `${this.id}:hand-${this.handNumber}`;
+    let turnSequence = 0;
 
     // Shadow state: tracks real bet/fold/allIn/chips within a hand
     const shadow = new Map<string, { chips: number; bet: number; folded: boolean; allIn: boolean }>();
@@ -610,6 +895,9 @@ export class TableInstance {
           minRaise,
           handNumber: this.handNumber,
           actionHistory: actionHistory.slice(-15),
+          tableId: this.id,
+          handId,
+          turnId: `${handId}:turn-${++turnSequence}`,
         };
 
         // Emit thinking event before decision
@@ -619,10 +907,13 @@ export class TableInstance {
           playerName: agent.name,
         });
 
+        this.syncSnapshotFromDecision(view, validActions, callAmount, minRaise);
         const rawDecision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
+        if (!this.running) throw new Error("Table stopped");
         const platformFallback = rawDecision.thought.message.startsWith("[Auto-pilot]");
         const decision = auditDecision(rawDecision, view, validActions, minRaise, {
           tableMode: this.config.mode,
+          strategyVersion: this.seats.find((seat) => seat.agent?.id === agent.id)?.agent?.strategyVersion,
           executionMode: agent.agentType === "builtin" ? "house_bot" : agent instanceof StrategyAgent ? "verified_package" : "remote_agent",
           runtime: platformFallback
             ? "platform_fallback"
@@ -673,7 +964,12 @@ export class TableInstance {
         actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount }, thought: decision.thought });
 
         if (agent.agentType !== "external") {
-          await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
+          const actionDelayMs = this.config.actionDelayMs;
+          if (actionDelayMs === undefined) {
+            await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
+          } else if (actionDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, actionDelayMs));
+          }
         }
 
         return { action: decision.action, thought: decision.thought, audit: decision.audit };
@@ -773,7 +1069,7 @@ export class TableInstance {
         ...(capturedShowdownResults?.map((r) => r.playerId) ?? []),
       ])];
 
-      // Try LLM commentary with timeout, fall back to rule-based
+      // Offline runs use the same rule commentary without a network dependency.
       const playerNames = new Map(this.agents.map((a) => [a.id, a.name]));
       const commentaryCtx: CommentaryContext = {
         handNumber: this.handNumber,
@@ -788,15 +1084,23 @@ export class TableInstance {
         winnerIds,
       };
       let commentary: string;
-      try {
-        commentary = await Promise.race([
-          generateCommentary(commentaryCtx),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("LLM timeout")), 15000)
-          ),
-        ]);
-      } catch {
-        commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
+      if (this.config.commentaryMode === "rule") {
+        commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults,
+          winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
+      } else {
+        let commentaryTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          commentary = await Promise.race([
+            generateCommentary(commentaryCtx),
+            new Promise<never>((_, reject) => {
+              commentaryTimer = setTimeout(() => reject(new Error("LLM timeout")), 15000);
+            }),
+          ]);
+        } catch {
+          commentary = this.buildLiveCommentary(reasons, actionHistory, capturedShowdownResults, winnerIds, potTotal, holeCards, currentPhaseCards, this.currentBigBlind);
+        } finally {
+          clearTimeout(commentaryTimer);
+        }
       }
 
       this.emit({
@@ -859,19 +1163,46 @@ export class TableInstance {
   private emitTournamentComplete(): void {
     const totalPlayers = this.agents.length;
     const rankings: { playerId: string; position: number; handsPlayed: number }[] = [];
+    const handsPlayed = new Map<string, number>();
+    for (const event of this.eventHistory) {
+      if (event.type !== "cards-dealt") continue;
+      for (const playerId of Object.keys(event.hands)) {
+        handsPlayed.set(playerId, (handsPlayed.get(playerId) ?? 0) + 1);
+      }
+    }
+
+    if (this.config.handLimit !== undefined && this.handNumber >= this.config.handLimit) {
+      const rankedAgents = this.agents.filter((agent) => !this.eliminationOrder.includes(agent.id)).sort((a, b) =>
+        (this.playerStates.get(b.id)?.chips ?? 0) - (this.playerStates.get(a.id)?.chips ?? 0)
+      );
+      rankedAgents.forEach((agent, index) => {
+        rankings.push({
+          playerId: agent.id,
+          position: index + 1,
+          handsPlayed: handsPlayed.get(agent.id) ?? 0,
+        });
+      });
+      for (let i = this.eliminationOrder.length - 1; i >= 0; i--) {
+        rankings.push({ playerId: this.eliminationOrder[i], position: totalPlayers - i,
+          handsPlayed: handsPlayed.get(this.eliminationOrder[i]) ?? 0 });
+      }
+      this.unlockMatchStyles();
+      this.emit({ type: "tournament-complete", rankings });
+      return;
+    }
 
     const survivor = this.agents.find(
       (a) => !this.eliminationOrder.includes(a.id)
     );
     if (survivor) {
-      rankings.push({ playerId: survivor.id, position: 1, handsPlayed: this.handNumber });
+      rankings.push({ playerId: survivor.id, position: 1, handsPlayed: handsPlayed.get(survivor.id) ?? 0 });
     }
 
     for (let i = this.eliminationOrder.length - 1; i >= 0; i--) {
       rankings.push({
         playerId: this.eliminationOrder[i],
         position: totalPlayers - i,
-        handsPlayed: this.handNumber,
+        handsPlayed: handsPlayed.get(this.eliminationOrder[i]) ?? 0,
       });
     }
 
@@ -1022,7 +1353,7 @@ export class TableInstance {
   getReplayData(): ReplayData {
     const players = new Map<string, { id: string; name: string; avatar: string; type: string; strategyVersion?: number }>();
     const hands: ReplayHand[] = [];
-    const rankings: { playerId: string; position: number }[] = [];
+    const rankings: { playerId: string; position: number; handsPlayed?: number }[] = [];
 
     let currentHand: ReplayHand | null = null;
     let currentPhase: string = "preflop";
@@ -1053,6 +1384,7 @@ export class TableInstance {
 
         case "hand-start": {
           currentHand = {
+            handId: `${this.id}:hand-${event.handNumber}`,
             handNumber: event.handNumber,
             smallBlind: activeSmallBlind,
             bigBlind: activeBigBlind,
@@ -1087,6 +1419,7 @@ export class TableInstance {
         case "action-taken": {
           if (currentHand) {
             const action: ReplayHandAction = {
+              turnId: event.audit?.turnId,
               playerId: event.playerId,
               phase: currentPhase as ReplayHandAction["phase"],
               action: event.action.type,
@@ -1116,7 +1449,11 @@ export class TableInstance {
 
         case "tournament-complete": {
           for (const r of event.rankings) {
-            rankings.push({ playerId: r.playerId, position: r.position });
+            rankings.push({
+              playerId: r.playerId,
+              position: r.position,
+              handsPlayed: r.handsPlayed,
+            });
           }
           break;
         }

@@ -3,7 +3,12 @@ import { Server } from "socket.io";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import crypto from "node:crypto";
-import type { ServerToClientEvents, ClientToServerEvents, BuiltinPersonalityInfo, AgentConfigV2 } from "@cybercasino/shared";
+import type {
+  ServerToClientEvents,
+  ClientToServerEvents,
+  BuiltinPersonalityInfo,
+  AgentConfigV2,
+} from "@cybercasino/shared";
 import { TableManager } from "./table-manager";
 import { UserStore, AgentStore, GameHistoryStore, initStores } from "./stores";
 import { PERSONALITIES } from "./agents/personalities";
@@ -11,6 +16,11 @@ import { validateStrategyConfig, validateStrategyPackage, validatePreview, creat
 import type { CreateAgentRequest } from "./api/agent-create";
 import { wsAgentManager } from "./agents/websocket-agent-manager";
 import { verifyJwt } from "./auth";
+import { MatchmakingService } from "./matchmaking-service";
+import type { MatchEntry } from "./matchmaking-service";
+import { MatchmakingController } from "./matchmaking-controller";
+import { loadBuiltinStrategies } from "./agents/strategy-loader";
+import { publicReplayFor } from "./agents/match-result-message";
 
 const PORT = parseInt(process.env.PORT ?? "3001");
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
@@ -34,7 +44,7 @@ function findAgentByToken(token: string, store: AgentStore): AgentConfigV2 | und
   return store.getV2ByToken(token);
 }
 
-const httpServer = createServer((req, res) => {
+export const httpServer = createServer((req, res) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -50,6 +60,38 @@ const httpServer = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  const summaryMatch = req.url?.match(/^\/api\/agents\/summary(?:\?(.+))?$/);
+  if (summaryMatch && req.method === "GET") {
+    const query = new URLSearchParams(summaryMatch[1] ?? "");
+    const userId = query.get("userId");
+    const session = authenticatedUser(req);
+    if (!session || !userId || session.userId !== userId) {
+      res.writeHead(401, { "Content-Type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    const agent = agentStore.getV2ByUserId(userId) ?? null;
+    const currentMatch = matchmakingService.getState(userId);
+    const activeTableVersion = currentMatch.tableId
+      ? tableManager.getAgentV2Configs(currentMatch.tableId)?.get(userId)?.strategyVersion
+      : undefined;
+    const standing = agent
+      ? gameHistoryStore.getLeaderboard().find((item) => item.agentId === agent.id)
+      : undefined;
+
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({
+      agent,
+      standing,
+      currentMatch,
+      currentMatchStrategyVersion: activeTableVersion,
+      externalAgentConnected: agent ? wsAgentManager.isConnected(agent.id) : undefined,
+      recentMatches: agent ? gameHistoryStore.getRecentMatchesForAgent(agent.id) : [],
+    }));
     return;
   }
 
@@ -130,7 +172,7 @@ const httpServer = createServer((req, res) => {
   }
 
   // Serve soul prompt to AI (permanent URL — always valid)
-  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/(user-[a-zA-Z0-9:-]+)$/);
+  const soulMatch = req.url?.match(/^\/api\/agents\/soul\/((?:user-|cc_)[a-zA-Z0-9:-]+)$/);
   if (soulMatch && req.method === "GET") {
     const key = soulMatch[1];
     const persistedAgent = agentStore.getV2ByToken(key);
@@ -319,21 +361,13 @@ ${configJson}
   const replayMatch = req.url?.match(/^\/api\/replay\/(.+)$/);
   if (replayMatch && req.method === "GET") {
     const tableId = replayMatch[1];
-    const table = tableManager.getTable(tableId);
 
-    // Live table: reconstruct from memory
-    if (table && table.getStatus() === "finished") {
-      const replayData = table.getReplayData();
-      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify(replayData));
-      return;
-    }
-
-    // Archived: check persistent storage (stored as ReplayData)
+    // Only archived history is authoritative for replay reads. A finished
+    // in-memory table may still be waiting for persistence.
     const archived = gameHistoryStore.get(tableId);
     if (archived) {
       res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify(archived.events));
+      res.end(JSON.stringify(publicReplayFor(archived.events)));
       return;
     }
 
@@ -415,14 +449,38 @@ ${configJson}
 {"type":"update_style","style":"激进型，喜欢bluff"}
 
 ## 回合决策
-当收到 {"type":"your_turn",...} 消息时，调用你的 LLM 分析牌局，返回：
-{"type":"action","action":"raise","amount":400,"thought":"你的分析","isBluffing":false}
+当收到 your_turn 或 pending_decision 消息时，保存其中的
+table_id、hand_id、turn_id 和 turn_token，调用你的 LLM 分析牌局，
+然后返回：
+{"type":"action","table_id":"从消息复制","hand_id":"从消息复制","turn_id":"从消息复制","turn_token":"从消息复制","client_action_id":"新生成UUID","action":"raise","amount":400,"thought":"你的分析","isBluffing":false}
+
+amount 是本街加注到的总额，必须为 minRaiseTo 到 maxRaiseTo 之间的整数。
+非 raise 动作不要发送 amount。deadline_at 是毫秒时间戳，重连不会延长原截止时间。
+
+服务端会返回 action_ack。如果网络响应丢失，使用同一个
+client_action_id、同一个回合上下文和同一个 turn_token 重试；不要生成新的
+动作 ID，也不能更改 thought 等字段。收到 action_rejected 时，按照 reason 处理，不能把旧回合动作当作新回合动作发送。
+ACK 只确认协议层接受；缓存仅在当前进程内保留 5 分钟、每 Agent 最多 1024 条。
+
+如果本地牌桌状态丢失，发送
+{"type":"resync","table_id":"从已知牌桌上下文复制","last_seen_seq":0}
+请求完整 table_snapshot。收到快照后以 table_seq 和 state_hash 覆盖本地状态。
+只有快照包含 turn 时才能继续出牌；其他玩家的手牌不会出现在快照中。
 
 ## 查询历史
 GET ${apiUrl}/hands?limit=20 (Header: Authorization: Bearer ${token})
 
 ## 查询统计
-GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})`;
+GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})
+
+## 比赛结果
+完成归档后会收到 match_result，其中包含完整排名、参赛 Agent、策略版本和 replay。
+保留完整 replay，分析关键决策后向用户汇报本场表现和下一场建议。平台没有独立结果页。
+离线结果仅在当前服务进程内缓存 24 小时，每 Agent 最多 32 场；重连认证后补发，
+按 table_id 去重，不要假设存在结果 ACK 或服务重启后的补发保证。
+
+## 心跳
+每 15 秒发送 {"type":"ping"}；处理 pong 并在断线后重新认证。`;
 
         const soulLink = JSON.stringify({
           token,
@@ -551,10 +609,13 @@ wsAgentManager.setStyleUpdateCallback((agentId, style, profile, status) => {
   agentStore.updateStylePrompt(agentId, style, profile, status);
 });
 
-const tableManager = new TableManager();
+export const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
 const gameHistoryStore = new GameHistoryStore();
+const matchmakingService = new MatchmakingService();
+const automaticTableIds = new Set<string>();
+const builtinStrategies = loadBuiltinStrategies();
 tableManager.setHistoryStore(gameHistoryStore);
 wsAgentManager.setAuthenticationResolver((token) => {
   const agent = findAgentByToken(token, agentStore);
@@ -603,6 +664,52 @@ function createNextRankedTable(): void {
   broadcastLobby();
 }
 
+const matchmakingController = new MatchmakingController({
+  service: matchmakingService,
+  getAgent: (userId, agentId) => {
+    const agents = agentStore.getAllV2ByUserId(userId);
+    return agentId ? agents.find((agent) => agent.id === agentId) : agents[agents.length - 1];
+  },
+  isAgentPlaying: (agentId) => tableManager.isAgentPlaying(agentId),
+  getFillEntries: () => createBuiltinMatchEntries(),
+  createTable: (entries) => {
+    const table = tableManager.createMatchedTable(entries);
+    automaticTableIds.add(table.id);
+    wireTableEvents(table.id);
+    return table;
+  },
+  removeTable: (tableId) => {
+    automaticTableIds.delete(tableId);
+    tableManager.removeTable(tableId);
+    broadcastLobby();
+  },
+  startTable: (table, entries) => {
+    io.to(`table:${table.id}`).emit("table:started", table.id);
+    broadcastLobby();
+    const match = tableManager.getTable(table.id)?.start(
+      "zh",
+      tableManager.getAgentV2Configs(table.id),
+    );
+    match?.catch((err) => abortFailedTable(table.id, err));
+  },
+  emitState: (userId, state) => {
+    const socketId = userSocketMap.get(userId);
+    if (socketId) io.sockets.sockets.get(socketId)?.emit("matchmaking:state", state);
+  },
+  emitMatched: (userId, tableId, agentId) => {
+    const socketId = userSocketMap.get(userId);
+    if (socketId) {
+      const userSocket = io.sockets.sockets.get(socketId);
+      userSocket?.emit("matchmaking:matched", { tableId, agentId });
+    }
+  },
+  emitError: (userId, error) => {
+    if (!userId) return;
+    const socketId = userSocketMap.get(userId);
+    if (socketId) io.sockets.sockets.get(socketId)?.emit("matchmaking:error", error);
+  },
+});
+
 function wireTableEvents(tableId: string) {
   const table = tableManager.getTable(tableId);
   if (!table) return;
@@ -613,20 +720,70 @@ function wireTableEvents(tableId: string) {
 
   table.onEvent((event) => {
     if (event.type === "tournament-complete") {
+      const replay = table.getReplayData();
       void tableManager.archiveFinishedTable(tableId).then((archived) => {
         if (!archived) return;
+        wsAgentManager.sendMatchResult(
+          replay.players
+            .filter((player) => player.type !== "builtin")
+            .map((player) => player.id),
+          {
+            table_id: tableId,
+            finished_at: Date.now(),
+            total_hands: replay.totalHands,
+            rankings: event.rankings.map((ranking) => ({
+              player_id: ranking.playerId,
+              position: ranking.position,
+              hands_played: ranking.handsPlayed,
+            })),
+            players: replay.players,
+            replay,
+          },
+        );
         io.to(`table:${tableId}`).emit("game:reset");
         for (const completedEvent of table.getEventHistory()) {
           io.to(`table:${tableId}`).emit("game:event", completedEvent);
         }
-        createNextRankedTable();
+        if (automaticTableIds.delete(tableId)) {
+          matchmakingController.completeTable(tableId);
+        } else {
+          createNextRankedTable();
+        }
+        broadcastLobby();
       }).catch((err) => {
         console.error(`[table:${tableId}] failed to persist completed match:`, err);
+        tableManager.removeTable(tableId);
         io.to(`table:${tableId}`).emit("table:error", "比赛结果保存失败，本场暂未计入排名，请稍后重试。");
-        createNextRankedTable();
+        io.to(`table:${tableId}`).emit("table:stopped", tableId);
+        if (automaticTableIds.delete(tableId)) {
+          matchmakingController.failTable(tableId);
+        } else {
+          createNextRankedTable();
+        }
+        broadcastLobby();
       });
     }
   });
+}
+
+function createBuiltinMatchEntries(): MatchEntry[] {
+  return PERSONALITIES.map((personality) => ({
+    userId: `builtin:${personality.id}`,
+    agent: {
+      id: personality.id,
+      userId: `builtin:${personality.id}`,
+      name: personality.name,
+      avatar: personality.avatar,
+      description: personality.systemPrompt,
+      strategy: builtinStrategies.get(personality.id) ?? ({} as AgentConfigV2["strategy"]),
+      strategyVersion: 1,
+      executionMode: "verified_package",
+      createdAt: 0,
+      updatedAt: 0,
+    },
+    enteredAt: Date.now(),
+    autoRequeue: false,
+  }));
 }
 
 function abortFailedTable(tableId: string, err: unknown): void {
@@ -635,7 +792,12 @@ function abortFailedTable(tableId: string, err: unknown): void {
   io.to(`table:${tableId}`).emit("table:error", "比赛异常终止，本场不计入排名，请返回大厅重新加入。");
   io.to(`table:${tableId}`).emit("table:stopped", tableId);
   tableManager.removeTable(tableId);
-  createNextRankedTable();
+  if (automaticTableIds.delete(tableId)) {
+    matchmakingController.failTable(tableId);
+  } else {
+    createNextRankedTable();
+  }
+  broadcastLobby();
 }
 
 // Create initial preset table on startup
@@ -678,11 +840,17 @@ io.on("connection", (socket) => {
     userSocketMap.set(userId, socket.id);
     socket.emit("user:registered", identity);
     socket.emit("lobby:personalities", personalitiesInfo);
+    matchmakingController.status(userId);
   });
 
   socket.on("agent:delete", (agentId) => {
     const userId = socketUserMap.get(socket.id);
     if (!userId) { socket.emit("table:error", "Not registered"); return; }
+    const matchmakingState = matchmakingService.getState(userId);
+    if (matchmakingState.status !== "idle" && matchmakingState.agentId === agentId) {
+      socket.emit("table:error", "请先退出匹配后再删除 Agent");
+      return;
+    }
     if (tableManager.isAgentPlaying(agentId)) {
       socket.emit("table:error", "比赛进行中不能删除正在参赛的 Agent");
       return;
@@ -696,6 +864,19 @@ io.on("connection", (socket) => {
     socket.join("lobby");
     socket.emit("lobby:tables", tableManager.getHomepageTables());
     socket.emit("lobby:personalities", personalitiesInfo);
+    matchmakingController.status(socketUserMap.get(socket.id));
+  });
+
+  socket.on("matchmaking:join", (agentId) => {
+    matchmakingController.join(socketUserMap.get(socket.id), agentId);
+  });
+
+  socket.on("matchmaking:leave", () => {
+    matchmakingController.leave(socketUserMap.get(socket.id));
+  });
+
+  socket.on("matchmaking:status", () => {
+    matchmakingController.status(socketUserMap.get(socket.id));
   });
 
   // --- Table lifecycle ---
@@ -855,11 +1036,15 @@ io.on("connection", (socket) => {
   });
 });
 
-initStores().then(() => {
+export const serverReady = initStores().then(async () => {
   agentStore.activatePendingStylesAfterRestart();
   tableManager.loadPersistedHistory();
-  httpServer.listen(PORT, () => {
-    console.log(`CyberCasino server running on port ${PORT}`);
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(PORT, () => {
+      console.log(`CyberCasino server running on port ${PORT}`);
+      resolve();
+    });
   });
 }).catch((err) => {
   console.error("[startup] Failed to initialize stores:", err);
