@@ -86,15 +86,34 @@ export const httpServer = createServer((req, res) => {
     const standing = agent
       ? gameHistoryStore.getLeaderboard().find((item) => item.agentId === agent.id)
       : undefined;
+    const seasonEntry = agent ? seasonStore.get(agent.id) : undefined;
+    const cashSittings = agent ? seasonStore.recentSittings(agent.id).map((sitting) => ({
+      tableId: sitting.tableId,
+      tableName: "现金桌",
+      finishedAt: sitting.endedAt,
+      position: 0,
+      totalPlayers: 0,
+      handsPlayed: sitting.countedHands,
+      totalHands: sitting.countedHands,
+      replayAvailable: false,
+      format: "cash" as const,
+      netChips: sitting.netChips,
+    })) : [];
+    const tournamentMatches = agent ? gameHistoryStore.getRecentMatchesForAgent(agent.id) : [];
 
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
     res.end(JSON.stringify({
       agent,
       standing,
-      currentMatch,
+      currentMatch: seasonEntry ? {
+        ...currentMatch,
+        seasonEquity: seasonEntry.bankroll + seasonEntry.tableStack,
+        seasonHands: seasonEntry.countedHands,
+        seasonBbPer100: bbPer100(seasonEntry),
+      } : currentMatch,
       currentMatchStrategyVersion: activeTableVersion,
       externalAgentConnected: agent ? wsAgentManager.isConnected(agent.id) : undefined,
-      recentMatches: agent ? gameHistoryStore.getRecentMatchesForAgent(agent.id) : [],
+      recentMatches: [...cashSittings, ...tournamentMatches].slice(0, 20),
     }));
     return;
   }

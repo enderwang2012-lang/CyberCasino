@@ -120,11 +120,7 @@ export function AgentControlPanel({
 
             {currentMatch.status === "queued" && (
               <p className="text-text-secondary text-[13px] mt-2">
-                {t("agentConsole.queuePosition", {
-                  position: currentMatch.position ?? 0,
-                  count: currentMatch.queueSize,
-                  required: currentMatch.requiredPlayers,
-                })}
+                {t("agentConsole.queuePosition")}
               </p>
             )}
             {inMatch && (
@@ -185,25 +181,31 @@ export function AgentControlPanel({
                   >
                     {t("lobby.openTable")}
                   </button>}
-                  {currentMatch.autoRequeue && <button
+                  <button
                     onClick={onLeaveMatchmaking}
                     disabled={!connected}
                     aria-describedby="stop-match-description"
                     className="flex-1 border border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-50 py-3 rounded-full font-medium text-[15px] transition-colors"
                   >
                     {t("agentConsole.stopAfterCurrent")}
-                  </button>}
+                  </button>
                 </>
               )}
             </div>
-            {inMatch && currentMatch.autoRequeue && (
+            {inMatch && (
               <p id="stop-match-description" className="text-text-secondary text-[12px] mt-2">
                 {t("agentConsole.stopAfterCurrentDescription")}
               </p>
             )}
           </div>
 
-          {summary?.standing && (
+          {currentMatch.seasonHands != null ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-separator mt-5 pt-4">
+              <Stat label={t("agentConsole.seasonEquity")} value={currentMatch.seasonEquity ?? 0} />
+              <Stat label={t("agentConsole.seasonHandsLabel")} value={currentMatch.seasonHands} />
+              <Stat label="bb/100" value={currentMatch.seasonBbPer100 == null ? t("agentConsole.seasonProvisional") : currentMatch.seasonBbPer100.toFixed(1)} />
+            </div>
+          ) : summary?.standing && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-separator mt-5 pt-4">
               <Stat label={t("agentConsole.rating")} value={summary.standing.rating} />
               <Stat label={t("agentConsole.games")} value={summary.standing.gamesPlayed} />
@@ -211,7 +213,7 @@ export function AgentControlPanel({
               <Stat label={t("agentConsole.averagePosition")} value={summary.standing.averageFinish.toFixed(1)} />
             </div>
           )}
-          {!summary.standing && <p className="text-text-secondary text-[13px] mt-5">{t("lobby.noRankedResults")}</p>}
+          {currentMatch.seasonHands == null && !summary.standing && <p className="text-text-secondary text-[13px] mt-5">{t("lobby.noRankedResults")}</p>}
           {summary.standing?.provisional && (
             <p className="text-text-secondary text-[12px] mt-2">
               {t("lobby.provisionalRank", { games: summary.standing.ratedGames ?? 0 })}

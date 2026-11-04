@@ -31,15 +31,24 @@ export function AgentMatchHistory({ matches, onOpenReplay }: AgentMatchHistoryPr
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h3 className="text-text-primary text-[15px] font-medium break-all">{match.tableName}</h3>
-                    <span className="text-text-secondary text-[13px]">{t("agentConsole.place", { position: match.position })}</span>
+                    <span className="text-text-secondary text-[13px]">
+                      {match.format === "cash"
+                        ? t("agentConsole.cashResult", {
+                          chips: `${(match.netChips ?? 0) > 0 ? "+" : ""}${match.netChips ?? 0}`,
+                          hands: match.handsPlayed,
+                        })
+                        : t("agentConsole.place", { position: match.position })}
+                    </span>
                   </div>
-                  <p className="text-text-secondary text-[13px] mt-1">
-                    {t("agentConsole.matchStats", {
-                      players: match.totalPlayers,
-                      hands: match.handsPlayed,
-                      totalHands: match.totalHands,
-                    })}
-                  </p>
+                  {match.format !== "cash" && (
+                    <p className="text-text-secondary text-[13px] mt-1">
+                      {t("agentConsole.matchStats", {
+                        players: match.totalPlayers,
+                        hands: match.handsPlayed,
+                        totalHands: match.totalHands,
+                      })}
+                    </p>
+                  )}
                   <div className="text-text-secondary text-[12px] mt-1 flex flex-wrap gap-x-3">
                     <span>{match.finishedAt != null ? formatTime(match.finishedAt, language) : t("agentConsole.finishedTimeUnknown")}</span>
                     {match.strategyVersion != null && <span>{t("agentConsole.matchVersion", { version: match.strategyVersion })}</span>}

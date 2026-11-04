@@ -29,12 +29,22 @@ export interface SeasonStanding {
   bbPer100: number | null;
 }
 
+export interface CashSittingRecord {
+  agentId: string;
+  tableId: string;
+  endedAt: number;
+  countedHands: number;
+  netChips: number;
+}
+
 interface SeasonFile {
   startedAt: number;
   endsAt: number;
   entries: StoredSeasonEntry[];
   hands: SeasonHandRecord[];
   frozen: StoredSeasonEntry[];
+  sittings?: CashSittingRecord[];
+  baselines?: Array<{ agentId: string; equity: number; hands: number; tableId?: string }>;
 }
 
 export class SeasonStore {
@@ -43,6 +53,8 @@ export class SeasonStore {
   private entries = new Map<string, StoredSeasonEntry>();
   private hands = new Map<string, Record<string, number>>();
   private frozen: StoredSeasonEntry[] = [];
+  private sittings: CashSittingRecord[] = [];
+  private baselines = new Map<string, { equity: number; hands: number; tableId?: string }>();
 
   constructor(private readonly file?: string) {
     if (!file || !existsSync(file)) return;
@@ -50,6 +62,8 @@ export class SeasonStore {
     this.startedAt = parsed.startedAt;
     this.endsAt = parsed.endsAt;
     this.frozen = parsed.frozen ?? [];
+    this.sittings = parsed.sittings ?? [];
+    for (const baseline of parsed.baselines ?? []) this.baselines.set(baseline.agentId, baseline);
     for (const entry of parsed.entries ?? []) this.entries.set(entry.agentId, entry);
     for (const hand of parsed.hands ?? []) {
       this.hands.set(this.handKey(hand.seasonId, hand.tableId, hand.handNumber), hand.stacks);
@@ -76,11 +90,36 @@ export class SeasonStore {
   }
 
   save(entry: SeasonEntry): void {
-    this.entries.set(entry.agentId, {
-      ...entry,
-      tableId: entry.tableStack > 0 ? this.entries.get(entry.agentId)?.tableId : undefined,
-    });
+    const previous = this.entries.get(entry.agentId);
+    const tableId = entry.tableStack > 0
+      ? previous?.tableId
+      : undefined;
+    if (entry.tableStack > 0 && (!previous || previous.tableStack === 0)) {
+      this.baselines.set(entry.agentId, {
+        equity: entry.bankroll + entry.tableStack,
+        hands: entry.countedHands,
+        tableId,
+      });
+    }
+    if (previous && previous.tableStack > 0 && entry.tableStack === 0) {
+      const baseline = this.baselines.get(entry.agentId);
+      const equity = entry.bankroll + entry.tableStack;
+      this.sittings.unshift({
+        agentId: entry.agentId,
+        tableId: previous.tableId ?? baseline?.tableId ?? "cash",
+        endedAt: Date.now(),
+        countedHands: Math.max(0, entry.countedHands - (baseline?.hands ?? entry.countedHands)),
+        netChips: baseline ? equity - baseline.equity : 0,
+      });
+      this.sittings = this.sittings.slice(0, 20);
+      this.baselines.delete(entry.agentId);
+    }
+    this.entries.set(entry.agentId, { ...entry, tableId });
     this.persist();
+  }
+
+  recentSittings(agentId: string): CashSittingRecord[] {
+    return this.sittings.filter((sitting) => sitting.agentId === agentId);
   }
 
   get(agentId: string): StoredSeasonEntry | undefined {
@@ -192,6 +231,8 @@ export class SeasonStore {
       entries: [...this.entries.values()],
       hands,
       frozen: this.frozen,
+      sittings: this.sittings,
+      baselines: [...this.baselines.entries()].map(([agentId, baseline]) => ({ agentId, ...baseline })),
     };
     writeFileSync(this.file, JSON.stringify(body));
   }

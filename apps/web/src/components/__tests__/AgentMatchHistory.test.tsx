@@ -47,4 +47,18 @@ describe("AgentMatchHistory", () => {
 
     expect(screen.queryByRole("button", { name: "查看完整回放" })).not.toBeInTheDocument();
   });
+
+  it("shows the chip change for a cash sitting instead of a finishing place", () => {
+    render(
+      <LanguageProvider>
+        <AgentMatchHistory
+          matches={[{ ...match, format: "cash", netChips: 1500, handsPlayed: 12, position: 0 }]}
+          onOpenReplay={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+
+    expect(screen.getByText("+1500 · 12 手")).toBeInTheDocument();
+    expect(screen.queryByText("第 2 名")).not.toBeInTheDocument();
+  });
 });

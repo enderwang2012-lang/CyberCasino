@@ -59,7 +59,7 @@ describe("Lobby matchmaking controls", () => {
   it("shows the join action for an idle configured Agent", () => {
     renderLobby(state());
 
-    expect(screen.getByRole("button", { name: /进入匹配/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /入座/ })).toBeInTheDocument();
   });
 
   it("shows queue position and a leave action while queued", () => {
@@ -71,8 +71,8 @@ describe("Lobby matchmaking controls", () => {
       autoRequeue: true,
     }));
 
-    expect(screen.getByText(/排队第 3 位/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /退出匹配/ })).toBeInTheDocument();
+    expect(screen.getByText(/正在等一张有空位的现金桌/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /取消等待/ })).toBeInTheDocument();
   });
 
   it("calls join and leave callbacks from the primary control", async () => {
@@ -81,7 +81,7 @@ describe("Lobby matchmaking controls", () => {
     const onLeaveMatchmaking = vi.fn();
 
     renderLobby(state(), { onJoinMatchmaking });
-    await user.click(screen.getByRole("button", { name: /进入匹配/ }));
+    await user.click(screen.getByRole("button", { name: /入座/ }));
     expect(onJoinMatchmaking).toHaveBeenCalledWith("agent-1");
 
     renderLobby(state({
@@ -91,7 +91,7 @@ describe("Lobby matchmaking controls", () => {
       queueSize: 1,
       autoRequeue: true,
     }), { onLeaveMatchmaking });
-    await user.click(screen.getByRole("button", { name: /退出匹配/ }));
+    await user.click(screen.getByRole("button", { name: /取消等待/ }));
     expect(onLeaveMatchmaking).toHaveBeenCalledTimes(1);
   });
 
@@ -104,7 +104,7 @@ describe("Lobby matchmaking controls", () => {
       autoRequeue: true,
     }));
 
-    expect(screen.getByText(/比赛进行中/)).toBeInTheDocument();
+    expect(screen.getByText("在座")).toBeInTheDocument();
     expect(screen.getByText(/table-9/)).toBeInTheDocument();
   });
 
