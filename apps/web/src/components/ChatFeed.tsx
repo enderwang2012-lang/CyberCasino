@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useMemo, useState } from "react";
 import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
+import { chipsToCommit } from "./PixelTable/logic/events-to-state";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
@@ -397,12 +398,22 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
     let holeCards = new Map<string, Card[]>();
     let communityCards: Card[] = [];
     let currentChips = new Map<string, number>();
+    let streetBet = new Map<string, number>();
     let blindInfo: BlindInfo | undefined;
+
+    const commit = (playerId: string, target: number) => {
+      const already = streetBet.get(playerId) ?? 0;
+      const chips = currentChips.get(playerId) ?? 0;
+      const cost = chipsToCommit(already, target, chips);
+      currentChips.set(playerId, chips - cost);
+      streetBet.set(playerId, already + cost);
+    };
 
     for (const event of visibleEvents) {
       if (event.type === "hand-start") {
         chipsBeforeHand = new Map(event.players.map((p) => [p.id, p.chips]));
         currentChips = new Map(event.players.map((p) => [p.id, p.chips]));
+        streetBet = new Map();
         holeCards = new Map();
         communityCards = [];
         blindInfo = undefined;
@@ -414,6 +425,11 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
           smallBlind: event.smallBlind,
           bigBlind: event.bigBlind,
         };
+        commit(event.smallBlindPlayerId, event.smallBlind);
+        commit(event.bigBlindPlayerId, event.bigBlind);
+      }
+      if (event.type === "phase-change") {
+        streetBet = new Map();
       }
       if (event.type === "cards-dealt") {
         for (const [id, cards] of Object.entries(event.hands)) {
@@ -425,10 +441,11 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
       }
       if (event.type === "action-taken") {
         const { action, playerId } = event;
-        if (action.type === "call" || action.type === "raise") {
-          const chips = currentChips.get(playerId) ?? 0;
-          const cost = action.amount ?? 0;
-          currentChips.set(playerId, Math.max(0, chips - cost));
+        if (action.type === "raise") {
+          commit(playerId, action.amount ?? streetBet.get(playerId) ?? 0);
+        } else if (action.type === "call") {
+          const target = [...streetBet.values()].reduce((max, bet) => Math.max(max, bet), 0);
+          commit(playerId, target);
         }
       }
       if (event.type === "hand-complete") {

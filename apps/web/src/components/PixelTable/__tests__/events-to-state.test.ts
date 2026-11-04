@@ -58,6 +58,31 @@ describe("eventsToTableState - decisions", () => {
     expect(state.seats[0].status).toBe("thinking");
   });
 
+  it("deducts blinds and the extra chips of a call", () => {
+    const thought = { message: "call", confidence: 0.5, isBluffing: false, thinkingSource: "rule" as const };
+    const events: GameEvent[] = [
+      { type: "hand-start", handNumber: 1, players: [player("sb", 0, 1000), player("bb", 1, 1000)], dealerSeatIndex: 0 },
+      { type: "blinds-posted", smallBlindPlayerId: "sb", bigBlindPlayerId: "bb", smallBlind: 50, bigBlind: 100 },
+      { type: "action-taken", playerId: "sb", action: { type: "call" }, thought },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.seats[0].chips).toBe(900);
+    expect(state.seats[0].currentBet).toBe(100);
+    expect(state.seats[1].chips).toBe(900);
+    expect(state.seats[1].currentBet).toBe(100);
+  });
+
+  it("subtracts only the newly added chips on a second raise", () => {
+    const thought = { message: "go", confidence: 0.9, isBluffing: false, thinkingSource: "rule" as const };
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 200 }, thought },
+      { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 600 }, thought },
+    ];
+    expect(eventsToTableState(events).seats[0].chips).toBe(400);
+    expect(eventsToTableState(events).seats[0].currentBet).toBe(600);
+  });
+
   it("records lastDecision and updates bet/chips on action-taken (raise)", () => {
     const events: GameEvent[] = [
       handStart(),

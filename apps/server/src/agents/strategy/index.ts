@@ -1,4 +1,4 @@
-export { decidePreflop, matchesRange } from "./preflop";
+export { decidePreflop, matchesRange, sizingScale } from "./preflop";
 export type { PreflopDecision } from "./preflop";
 
 export { decidePostflop, classifyHand, matchRules, resolveAction } from "./postflop";

@@ -7,6 +7,7 @@ import type {
   ActionType,
 } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
+import { sizingScale } from "./preflop";
 
 export interface PostflopContext {
   myCards: Card[];
@@ -37,15 +38,23 @@ export function classifyHand(ctx: PostflopContext): PostflopCondition[] {
   const allCards = [...myCards, ...communityCards];
   const evaluated = evaluateHand(allCards);
 
+  // 河牌已经能单独成牌，而自己的手牌没有把它变得更大时，这是公牌，不是自己的牌。
+  if (communityCards.length >= 5) {
+    const boardOnly = evaluateHand(communityCards);
+    if (evaluated.score === boardOnly.score) return ["board"];
+  }
+
   // ----- Flush draw detection -----
   const suitCounts = new Map<string, number>();
   for (const c of allCards) {
     suitCounts.set(c.suit, (suitCounts.get(c.suit) || 0) + 1);
   }
-  const hasFlushDraw =
-    [...suitCounts.values()].some((count) => count >= 4) &&
-    evaluated.rank !== "flush" &&
-    evaluated.rank !== "royal-flush";
+  const madeFlush = evaluated.rank === "flush"
+    || evaluated.rank === "royal-flush"
+    || evaluated.rank === "straight-flush";
+  const hasFlushDraw = !madeFlush && [...suitCounts.entries()].some(([suit, count]) =>
+    count >= 4 && myCards.some((card) => card.suit === suit),
+  );
 
   // ----- Monster detection (strong made hands) -----
   const monsterRanks = new Set([
@@ -85,18 +94,11 @@ export function classifyHand(ctx: PostflopContext): PostflopCondition[] {
   const isOverpair = isPocketPair && myRanks[0] > boardMax;
 
   // ----- Made hand conditions -----
-  if (isOverpair) {
-    conditions.push("overpair");
-  } else if (evaluated.rank === "three-of-a-kind") {
+  // 两对和三条优先于超对。AA 碰到 KK7 是两对，不能再当成只有超对。
+  if (evaluated.rank === "three-of-a-kind") {
     conditions.push("three-of-a-kind");
   } else if (evaluated.rank === "two-pair") {
-    // Determine if top two pair
-    const boardPairCount = new Map<number, number>();
-    for (const r of boardRanks) boardPairCount.set(r, (boardPairCount.get(r) || 0) + 1);
-    const boardPairs = [...boardPairCount.entries()].filter(([, c]) => c >= 2).map(([r]) => r);
-
     const myPairsOnBoard = myRanks.filter((r) => boardRankSet.has(r));
-    const usesBoardPair = boardPairs.length > 0 && myRanks.some((r) => !boardRankSet.has(r));
 
     // Top two pair: my two cards each pair with the two highest board cards
     if (
@@ -108,6 +110,8 @@ export function classifyHand(ctx: PostflopContext): PostflopCondition[] {
     } else {
       conditions.push("two-pair");
     }
+  } else if (isOverpair) {
+    conditions.push("overpair");
   } else if (pairedWithBoard.length > 0) {
     // We have at least one pair — classify by strength
     const pairRank = Math.max(...pairedWithBoard);
@@ -146,25 +150,24 @@ export function classifyHand(ctx: PostflopContext): PostflopCondition[] {
     conditions.push("flush-draw");
   }
 
-  // Straight draw detection (use plain numbers to allow ace-low wheel)
+  // 听牌必须用到自己的牌。公牌自己已经四张连着时，不算自己的顺子听牌。
   const allRankNums = new Set<number>(allCards.map((c) => c.rank));
-  // Add low ace for wheel detection
   if (allRankNums.has(14)) allRankNums.add(1);
+  const holeRankNums = new Set<number>(myRanks);
+  if (holeRankNums.has(14)) holeRankNums.add(1);
   const sortedUnique = [...allRankNums].sort((a, b) => a - b);
 
   let hasOpenEnded = false;
   let hasGutshot = false;
 
-  // Check all 4-card windows
   for (let i = 0; i <= sortedUnique.length - 4; i++) {
     const window = sortedUnique.slice(i, i + 4);
+    if (!window.some((rank) => holeRankNums.has(rank))) continue;
     const span = window[3] - window[0];
 
     if (span === 3) {
-      // Four consecutive → open-ended straight draw
       hasOpenEnded = true;
     } else if (span === 4) {
-      // One gap → gutshot
       hasGutshot = true;
     }
   }
@@ -236,11 +239,19 @@ export function resolveAction(
   potSize: number,
   currentBet: number,
   minRaise: number,
+  callAmount = 0,
+  sizingPressure?: number,
 ): { type: ActionType; amount?: number } {
-  const raiseTo = (ratio: number) => ({
-    type: "raise" as const,
-    amount: Math.max(currentBet + minRaise, currentBet + Math.round(potSize * ratio)),
-  });
+  // 加注额按“跟注之后的底池”计算。面对下注时，一倍底池要先把跟注算进去。
+  const scale = sizingScale(sizingPressure);
+  const raiseTo = (ratio: number) => {
+    const potAfterCall = potSize + Math.max(0, callAmount);
+    const raiseBy = Math.round(potAfterCall * ratio * scale);
+    return {
+      type: "raise" as const,
+      amount: Math.max(currentBet + minRaise, currentBet + raiseBy),
+    };
+  };
   switch (action) {
     case "value-bet-small":
       return raiseTo(0.33);
@@ -290,12 +301,13 @@ export function decidePostflop(
   minRaise: number,
   validActions: ActionType[],
   random: () => number = Math.random,
+  sizingPressure?: number,
 ): PostflopDecision {
   const conditions = classifyHand(ctx);
   const matchedRule = matchRules(conditions, rules, ctx, random);
 
   if (matchedRule) {
-    const resolved = resolveAction(matchedRule.action, ctx.potSize, currentBet, minRaise);
+    const resolved = resolveAction(matchedRule.action, ctx.potSize, currentBet, minRaise, ctx.callAmount, sizingPressure);
 
     // If the resolved action is not valid, try to adapt
     if (!validActions.includes(resolved.type)) {

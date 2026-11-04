@@ -115,6 +115,13 @@ function randomInRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
+/** 0.5 保持基准，0 缩小两成，1 放大两成。 */
+export function sizingScale(pressure?: number): number {
+  if (pressure == null || !Number.isFinite(pressure)) return 1;
+  const clamped = Math.min(1, Math.max(0, pressure));
+  return 1 + (clamped - 0.5) * 0.4;
+}
+
 export function matchesRange(hand: Card[], range: string[]): boolean {
   const key = handToKey(hand);
   const rangeSet = buildRangeSet(range);
@@ -304,6 +311,7 @@ export function decidePreflop(
   bigBlind: number,
   currentBet: number,
   view?: AgentGameView,
+  sizingPressure?: number,
 ): PreflopDecision | null {
   const posRange = config.ranges[position];
   if (!posRange) return null;
@@ -342,16 +350,19 @@ export function decidePreflop(
     if (isPushFold && view) {
       raiseAmount = view.myBet + view.myChips;
     } else if (currentBet <= bigBlind) {
-      // 开池加注：BB 倍数区间 [multiplier * 0.7, multiplier * 1.3]
-      const base = parseFloat(config.sizing.openRaise) || 2.5;
-      const multiplier = randomInRange(base * 0.7, base * 1.3);
+      // 开池加注到大盲的倍数。下限不低于 2.2bb，避免随机结果被收成最小加注。
+      const base = (parseFloat(config.sizing.openRaise) || 2.5) * sizingScale(sizingPressure);
+      const low = Math.max(2.2, base * 0.7);
+      const high = Math.max(low, base * 1.3);
+      const multiplier = randomInRange(low, high);
       raiseAmount = Math.max(minTotalBet, Math.round(bigBlind * multiplier));
     } else {
-      // 3-bet / 4-bet：前一个押注的倍数区间
-      // base 控制中位数，实际在 ±30% 内随机
-      const base = parseFloat(config.sizing.threeBet) || 3.0;
-      const ratio = randomInRange(base * 0.6, base * 1.2);
-      raiseAmount = Math.max(minTotalBet, Math.round(currentBet * (1 + ratio * 0.45)));
+      // 再加注直接乘以前一个押注。已有两次加注时用 4-bet 倍数，否则用 3-bet 倍数。
+      const priorRaises = view?.actionHistory.filter((record) => record.action.type === "raise").length ?? 0;
+      const configured = priorRaises >= 2 ? config.sizing.fourBet : config.sizing.threeBet;
+      const base = (parseFloat(configured) || (priorRaises >= 2 ? 2.5 : 3)) * sizingScale(sizingPressure);
+      const multiplier = randomInRange(base * 0.7, base * 1.3);
+      raiseAmount = Math.max(minTotalBet, Math.round(currentBet * multiplier));
     }
     return {
       action: "raise",
