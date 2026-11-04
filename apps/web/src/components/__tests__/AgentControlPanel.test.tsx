@@ -63,11 +63,11 @@ describe("AgentControlPanel", () => {
 
     expect(screen.getByText("远程 Agent")).toBeInTheDocument();
     expect(screen.getByText("当前生效 v4")).toBeInTheDocument();
-    expect(screen.getByText("下一场生效 v5")).toBeInTheDocument();
-    expect(screen.getByText(/替换整个策略包前，请先退出匹配/)).toBeInTheDocument();
-    expect(screen.getByText(/风格更新将在下一场生效/)).toBeInTheDocument();
+    expect(screen.getByText("下一手生效 v5")).toBeInTheDocument();
+    expect(screen.getByText(/换策略包前先离座/)).toBeInTheDocument();
+    expect(screen.getByText(/风格会在下一手生效/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "进入匹配" }));
+    await user.click(screen.getByRole("button", { name: "入座" }));
     expect(onJoinMatchmaking).toHaveBeenCalledWith("agent-1");
   });
 
@@ -88,10 +88,10 @@ describe("AgentControlPanel", () => {
       currentMatchStrategyVersion: 4,
     }), { onLeaveMatchmaking });
 
-    expect(screen.getByText("本场冻结 v4")).toBeInTheDocument();
-    expect(screen.getByText("当前比赛会继续，完成后不自动进入下一场。")).toBeInTheDocument();
+    expect(screen.getByText("这一手使用 v4")).toBeInTheDocument();
+    expect(screen.getByText("当前这手会打完，然后离开牌桌，筹码回到赛季钱包。")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "停止后续匹配" }));
+    await user.click(screen.getByRole("button", { name: "打完这手离桌" }));
     expect(onLeaveMatchmaking).toHaveBeenCalledTimes(1);
   });
 });

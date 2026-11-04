@@ -764,6 +764,8 @@ export interface AgentMatchSummary {
   totalHands: number;
   strategyVersion?: number;
   replayAvailable: boolean;
+  format?: "cash" | "tournament";
+  netChips?: number;
 }
 
 export interface AgentArenaSummary {
