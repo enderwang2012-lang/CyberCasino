@@ -83,6 +83,7 @@ export class TableInstance {
   private blindSchedule: BlindSchedule;
   private autoStart: boolean;
   private language: "zh" | "en" = "zh";
+  private v2Configs?: Map<string, AgentConfigV2>;
   private lockedStyleAgentIds = new Set<string>();
   private snapshotSeq = 0;
   private snapshotStatus: AgentSnapshotState["status"] = "waiting";
@@ -575,6 +576,31 @@ export class TableInstance {
     return this.spectatorTable;
   }
 
+  refreshCashRoster(): void {
+    if (!this.running) return;
+    const occupied = new Set(
+      this.seats.flatMap((seat) => seat.status === "occupied" && seat.agent ? [seat.agent.id] : []),
+    );
+    this.agents = this.agents.filter((agent) => occupied.has(agent.id));
+    for (const seat of this.seats) {
+      if (seat.status !== "occupied" || !seat.agent) continue;
+      if (this.agents.some((agent) => agent.id === seat.agent!.id)) continue;
+      const agent = this.createAgent(seat.agent, this.v2Configs);
+      this.agents.push(agent);
+      if (agent instanceof WebSocketAgent) {
+        wsAgentManager.lockStyleForMatch(agent.id, this.id);
+        this.lockedStyleAgentIds.add(agent.id);
+      }
+      if (!this.playerStates.has(agent.id)) {
+        this.playerStates.set(agent.id, { chips: this.fundedStacks.get(agent.id) ?? 0 });
+      }
+    }
+    this.emit({
+      type: "agent-roster",
+      agents: this.seats.flatMap((seat) => seat.status === "occupied" && seat.agent ? [seat.agent] : []),
+    });
+  }
+
   standUp(agentId: string): boolean {
     if (!this.canChangeSeats()) return false;
     const seat = this.seats.find((item) => item.agent?.id === agentId);
@@ -633,6 +659,7 @@ export class TableInstance {
     if (this.running) return;
     this.running = true;
     this.language = language;
+    this.v2Configs = v2Configs;
 
     if (this.autoStart) {
       const count = Math.min(this.config.maxPlayers, PERSONALITIES.length);
