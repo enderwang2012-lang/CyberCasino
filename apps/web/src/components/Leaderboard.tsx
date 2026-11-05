@@ -14,12 +14,13 @@ interface LeaderboardEntry {
   eliminatedAtHand?: number;
 }
 
-export function Leaderboard({ events }: { events: GameEvent[] }) {
+export function Leaderboard({ events, variant = "places" }: { events: GameEvent[]; variant?: "stacks" | "places" }) {
   const { t } = useLanguage();
+  const stackList = variant === "stacks";
 
   const entries = useMemo(() => {
     const roster: SeatAgent[] = [];
-    const rosterEvent = events.find((e) => e.type === "agent-roster");
+    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") {
       roster.push(...rosterEvent.agents);
     }
@@ -81,7 +82,7 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
   if (entries.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-[15px]">
-        {t("leaderboard.waitingForGame")}
+        {t(stackList ? "leaderboard.waitingForStacks" : "leaderboard.waitingForGame")}
       </div>
     );
   }
@@ -93,32 +94,34 @@ export function Leaderboard({ events }: { events: GameEvent[] }) {
       <div className="space-y-1.5">
         {entries.map((entry, idx) => {
           const rank = entry.eliminated ? entry.finishPosition : idx + 1;
-          const chipPercent = totalChips > 0 ? Math.round((entry.chips / totalChips) * 100) : 0;
+          const chipPercent = !stackList && totalChips > 0 ? Math.round((entry.chips / totalChips) * 100) : 0;
 
           return (
             <div
               key={entry.id}
               className="flex items-center gap-3 rounded-xl px-4 py-3 bg-white shadow-sm"
             >
-              <span className="text-text-secondary text-[13px] font-medium w-6 text-center">
-                {rank}
-              </span>
+              {!stackList && (
+                <span className="text-text-secondary text-[13px] font-medium w-6 text-center">
+                  {rank}
+                </span>
+              )}
               <span className="text-[24px]">{entry.avatar}</span>
               <div className="flex-1 min-w-0">
                 <div className="text-[15px] font-medium truncate text-text-primary">
                   {entry.name}
                 </div>
-                {entry.eliminated ? (
+                {!stackList && entry.eliminated ? (
                   <div className="text-[13px] text-text-secondary">
                     {t("leaderboard.eliminated", { position: entry.finishPosition ?? 0, hand: entry.eliminatedAtHand ?? 0 })}
                   </div>
                 ) : (
                   <div className="text-[13px] text-text-secondary">
-                    {entry.chips.toLocaleString()} · {chipPercent}%
+                    {entry.chips.toLocaleString()}{stackList ? "" : ` · ${chipPercent}%`}
                   </div>
                 )}
               </div>
-              {!entry.eliminated && (
+              {!stackList && !entry.eliminated && (
                 <div className="w-16 h-1.5 bg-surface-deep rounded-full overflow-hidden">
                   <div
                     className="h-full bg-accent rounded-full transition-all"
