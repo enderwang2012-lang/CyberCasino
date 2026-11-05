@@ -42,6 +42,7 @@ function renderLobby(matchmakingState: MatchmakingState, overrides: Record<strin
         agentV2={agent()}
         matchmakingState={matchmakingState}
         matchmakingError={null}
+        tableError={(overrides.tableError as string | undefined) ?? null}
         onJoinMatchmaking={(agentId) => (overrides.onJoinMatchmaking as (agentId: string) => void)?.(agentId)}
         onLeaveMatchmaking={() => (overrides.onLeaveMatchmaking as () => void)?.()}
       />
@@ -141,5 +142,10 @@ describe("Lobby matchmaking controls", () => {
     expect(screen.getByText("现金桌")).toBeInTheDocument();
     expect(screen.getByText(/两人开打/)).toBeInTheDocument();
     expect(screen.getByText("表演赛")).toBeInTheDocument();
+  });
+
+  it("shows a save failure on the console", () => {
+    renderLobby(state(), { tableError: "比赛结果多次保存失败，本场未计入排名。" });
+    expect(screen.getByRole("alert")).toHaveTextContent("未计入排名");
   });
 });

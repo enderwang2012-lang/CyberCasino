@@ -87,6 +87,33 @@ describe("cash table loop", () => {
     expect(table.getLiveEventHistory().some((event) => event.type === "blind-level-up")).toBe(false);
   });
 
+  it("buys back in and stays seated when the wallet still covers 5000", async () => {
+    Deck.prototype.shuffle = function shuffle() {};
+    const table = new TableInstance("cash-rebuy", cashConfig(3, 1));
+    table.useScriptedAgent(scripted("short", (_view, valid) => callOrCheck(valid)));
+    table.useScriptedAgent(scripted("caller", (_view, valid) => callOrCheck(valid)));
+    table.useScriptedAgent(scripted("blind", (_view, valid) => callOrCheck(valid)));
+    for (const id of ["short", "caller", "blind"]) {
+      table.sit({ id, userId: `user-${id}`, name: id, avatar: "" });
+    }
+    table.fund("short", 100);
+    table.fund("caller", 5_000);
+    table.fund("blind", 5_000);
+    table.attachSeason({
+      ...createSeasonEntry("s1", "short", "short", "user"),
+      bankroll: 10_000,
+      tableStack: 100,
+    });
+
+    await table.start("en");
+
+    expect(table.cashSettlements[0].seatedIds).toContain("short");
+    expect(table.cashSettlements[0].chips.short).toBe(5_000);
+    expect(table.cashSettlements[0].seasons.find((entry) => entry.agentId === "short")).toEqual(
+      expect.objectContaining({ bankroll: 5_000, tableStack: 5_000 }),
+    );
+  });
+
   it("skims a stack above 15000 back into the season bankroll", () => {
     const table = new TableInstance("cash-skim", cashConfig(2));
     table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });

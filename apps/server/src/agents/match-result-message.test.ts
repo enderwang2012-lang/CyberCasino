@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Card, GameEvent, ReplayData, ShowdownResult } from "@cybercasino/shared";
-import { matchResultMessageFor, publicReplayFor, sessionResultMessageFor } from "./match-result-message";
+import { matchResultMessageFor, publicReplayFor, sessionResultMessageFor, sittingReplay } from "./match-result-message";
 
 describe("match_result message", () => {
   it("sets the protocol identity and removes internal action audits from replay timeline", () => {
@@ -157,5 +157,30 @@ describe("match_result message", () => {
     expect(message.type).toBe("session_result");
     expect(message.net_chips).toBe(1_500);
     expect(JSON.stringify(message.replay)).not.toContain("secret");
+  });
+
+  it("keeps only the hands played after the player sat down", () => {
+    const replay = {
+      tableId: "cash",
+      tableName: "现金桌",
+      config: {} as ReplayData["config"],
+      players: [],
+      rankings: [],
+      totalHands: 2,
+      hands: [
+        { handNumber: 1, smallBlind: 50, bigBlind: 100, holeCards: {}, communityCards: [], actions: [], winners: [] },
+        { handNumber: 2, smallBlind: 50, bigBlind: 100, holeCards: {}, communityCards: [], actions: [], winners: [] },
+      ],
+      timeline: [
+        { type: "hand-start", handNumber: 1, players: [], dealerSeatIndex: 0 },
+        { type: "hand-complete", winners: [], players: [] },
+        { type: "hand-start", handNumber: 2, players: [], dealerSeatIndex: 0 },
+        { type: "hand-complete", winners: [], players: [] },
+      ],
+    } as ReplayData;
+
+    const sliced = sittingReplay(replay, 1, "replay-1");
+    expect(sliced.hands.map((hand) => hand.handNumber)).toEqual([2]);
+    expect(sliced.timeline?.filter((event) => event.type === "hand-start")).toHaveLength(1);
   });
 });

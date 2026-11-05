@@ -20,7 +20,7 @@ import { verifyJwt } from "./auth";
 import { MatchmakingService } from "./matchmaking-service";
 import { SeasonStore } from "./season-store";
 import { bbPer100 } from "./season-ledger";
-import { sessionResultMessageFor } from "./agents/match-result-message";
+import { sessionResultMessageFor, sittingReplay } from "./agents/match-result-message";
 import type { MatchEntry } from "./matchmaking-service";
 import { MatchmakingController } from "./matchmaking-controller";
 import { loadBuiltinStrategies } from "./agents/strategy-loader";
@@ -88,14 +88,14 @@ export const httpServer = createServer((req, res) => {
       : undefined;
     const seasonEntry = agent ? seasonStore.get(agent.id) : undefined;
     const cashSittings = agent ? seasonStore.recentSittings(agent.id).map((sitting) => ({
-      tableId: sitting.tableId,
+      tableId: sitting.replayId ?? sitting.tableId,
       tableName: "现金桌",
       finishedAt: sitting.endedAt,
       position: 0,
       totalPlayers: 0,
       handsPlayed: sitting.countedHands,
       totalHands: sitting.countedHands,
-      replayAvailable: false,
+      replayAvailable: Boolean(sitting.replayId),
       format: "cash" as const,
       netChips: sitting.netChips,
     })) : [];
@@ -387,7 +387,8 @@ ${configJson}
 
     // Only archived history is authoritative for replay reads. A finished
     // in-memory table may still be waiting for persistence.
-    const archived = gameHistoryStore.get(tableId);
+    const storedReplay = seasonStore.getReplay(tableId);
+    const archived = gameHistoryStore.get(tableId) ?? (storedReplay ? { events: storedReplay } : undefined);
     if (archived) {
       res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
       res.end(JSON.stringify(publicReplayFor(archived.events)));
@@ -641,9 +642,11 @@ export const tableManager = new TableManager();
 const userStore = new UserStore();
 const agentStore = new AgentStore();
 const gameHistoryStore = new GameHistoryStore();
+const dataDir = process.env.CYBERCASINO_DATA_DIR || join(import.meta.dirname, "..", "data");
 const seasonStore = SeasonStore.open({
-  file: join(process.env.CYBERCASINO_DATA_DIR || join(import.meta.dirname, "..", "data"), "season.json"),
+  file: join(dataDir, "season.json"),
 });
+wsAgentManager.useSessionResultFile(join(dataDir, "session-results.json"));
 tableManager.setSeasonStore(seasonStore);
 const matchmakingService = new MatchmakingService({ deferBatches: true });
 const automaticTableIds = new Set<string>();
@@ -738,18 +741,20 @@ function beginCashTable(table: TableInstance): void {
     const sitting = table.getSitting(agentId);
     if (entry && sitting) {
       const equity = entry.bankroll + entry.tableStack;
-      seasonStore.save(entry);
+      const replay = sittingReplay(publicReplayFor(table.getReplayData(), agentId), sitting.fromHand, table.id);
+      seasonStore.save(entry, replay);
+      const recorded = seasonStore.recentSittings(agentId)[0];
       wsAgentManager.sendSessionResult(agentId, sessionResultMessageFor({
-        table_id: table.id,
+        table_id: recorded?.replayId ?? table.id,
         season_id: entry.seasonId,
         started_at: sitting.at,
-        ended_at: Date.now(),
+        ended_at: recorded?.endedAt ?? Date.now(),
         counted_hands: Math.max(0, entry.countedHands - sitting.hands),
         sit_equity: sitting.equity,
         equity,
         net_chips: equity - sitting.equity,
         reason: table.getDepartureReason(agentId),
-        replay: table.getReplayData(),
+        replay,
       }, agentId));
     }
     const userId = matchmakingService.releaseAgent(agentId);
@@ -996,7 +1001,7 @@ io.on("connection", (socket) => {
 
     const table = tableManager.getTable(tableId);
     if (!table) {
-      const replay = gameHistoryStore.get(tableId)?.events;
+      const replay = gameHistoryStore.get(tableId)?.events ?? seasonStore.getReplay(tableId);
       const eventCount = replay?.timeline?.length ?? 0;
       console.log(`[table:join] ${tableId} not in memory, sending ${eventCount} history events`);
       for (const event of publicTimelineFor(replay?.timeline ?? [])) {
