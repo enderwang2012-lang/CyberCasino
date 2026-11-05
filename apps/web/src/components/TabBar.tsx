@@ -9,14 +9,15 @@ interface TabBarProps {
   onTabChange: (tab: TabId) => void;
   hasNewHighlight?: boolean;
   showReplay?: boolean;
+  stackList?: boolean;
 }
 
-export function TabBar({ activeTab, onTabChange, hasNewHighlight }: TabBarProps) {
+export function TabBar({ activeTab, onTabChange, hasNewHighlight, stackList = false }: TabBarProps) {
   const { t } = useLanguage();
 
   const TABS: { id: TabId; label: string }[] = [
     { id: "highlights", label: `⭐ ${t("tabBar.highlights")}` },
-    { id: "leaderboard", label: `🏆 ${t("tabBar.leaderboard")}` },
+    { id: "leaderboard", label: stackList ? `🪙 ${t("tabBar.stacks")}` : `🏆 ${t("tabBar.leaderboard")}` },
   ];
 
   return (

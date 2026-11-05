@@ -18,9 +18,10 @@ interface TableViewProps {
   onLeave: () => void;
   defaultTab?: TabId;
   isFinished?: boolean;
+  stackList?: boolean;
 }
 
-export function TableView({ tableId, tableName, events, onLeave, defaultTab = "highlights", isFinished = false }: TableViewProps) {
+export function TableView({ tableId, tableName, events, onLeave, defaultTab = "highlights", isFinished = false, stackList = false }: TableViewProps) {
   const { t } = useLanguage();
   const { setVisible } = useHeader();
   const [replayCopied, setReplayCopied] = useState(false);
@@ -80,7 +81,7 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "h
 
       {/* ② 一级 Tab：集锦 / 排行榜 */}
       <div className="shrink-0 border-b border-separator">
-        <TabBar activeTab={activeTab} onTabChange={handleTabChange} hasNewHighlight={hasNewHighlight} showReplay={isFinished} />
+        <TabBar activeTab={activeTab} onTabChange={handleTabChange} hasNewHighlight={hasNewHighlight} showReplay={isFinished} stackList={stackList} />
       </div>
 
       {/* ③ 二级 Tab：仅在集锦 tab 下，实况 / 文字 */}
@@ -116,7 +117,7 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "h
           <HighlightFeed events={events} />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "leaderboard" ? "" : "invisible pointer-events-none"}`}>
-          <Leaderboard events={events} />
+          <Leaderboard events={events} variant={stackList ? "stacks" : "places"} />
         </div>
       </div>
     </div>

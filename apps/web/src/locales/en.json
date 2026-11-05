@@ -154,12 +154,14 @@
   },
   "leaderboard": {
     "waitingForGame": "Waiting for game to start...",
+    "waitingForStacks": "Waiting for players...",
     "eliminated": "Eliminated at #{position} · Hand #{hand}"
   },
   "tabBar": {
     "live": "Replay",
     "highlights": "Highlights",
-    "leaderboard": "Leaderboard"
+    "leaderboard": "Leaderboard",
+    "stacks": "Stacks"
   },
   "history": {
     "title": "Game History",

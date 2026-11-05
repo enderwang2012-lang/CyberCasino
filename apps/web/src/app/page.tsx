@@ -170,6 +170,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     const isFinished = viewingTable?.status === "finished"
       || historyTables.some((t) => t.id === activeTableId)
       || recentMatch !== undefined;
+    const stackList = viewingTable?.config.mode === "cash" || recentMatch?.format === "cash";
     return (
       <TableView
         key={activeTableId}
@@ -179,6 +180,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
         onLeave={handleLeave}
         defaultTab={isFinished ? "leaderboard" : "highlights"}
         isFinished={isFinished}
+        stackList={stackList}
       />
     );
   }

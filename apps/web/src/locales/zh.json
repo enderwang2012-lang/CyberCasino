@@ -154,12 +154,14 @@
   },
   "leaderboard": {
     "waitingForGame": "等待比赛开始...",
+    "waitingForStacks": "等待入座...",
     "eliminated": "第{position}名淘汰 · 第{hand}手"
   },
   "tabBar": {
     "live": "回放",
     "highlights": "精彩",
-    "leaderboard": "排行"
+    "leaderboard": "排行",
+    "stacks": "筹码"
   },
   "history": {
     "title": "历史牌局",

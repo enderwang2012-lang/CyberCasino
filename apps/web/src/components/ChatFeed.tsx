@@ -336,7 +336,7 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
   }, [events]);
 
   const roster = useMemo(() => {
-    const rosterEvent = events.find((e) => e.type === "agent-roster");
+    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") {
       return rosterEvent.agents;
     }

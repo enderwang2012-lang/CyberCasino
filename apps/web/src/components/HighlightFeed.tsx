@@ -20,7 +20,7 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   };
 
   const roster = useMemo(() => {
-    const rosterEvent = events.find((e) => e.type === "agent-roster");
+    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") return rosterEvent.agents;
     return [] as SeatAgent[];
   }, [events]);
