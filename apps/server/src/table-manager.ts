@@ -294,6 +294,7 @@ export class TableManager {
       }
     }
     this.seatAgents(table, move.sit, waiting, idlePresets, table.isSpectator());
+    if (table.getStatus() === "playing") table.refreshCashRoster();
     if (table.getOccupiedCount() < 2) {
       table.stop();
       this.tables.delete(table.id);

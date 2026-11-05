@@ -114,6 +114,38 @@ describe("cash table loop", () => {
     );
   });
 
+  it("deals the next hand to a user who takes a preset seat between hands", async () => {
+    Deck.prototype.shuffle = function shuffle() {};
+    const dealt = new Set<string>();
+    const table = new TableInstance("cash-yield", cashConfig(2, 2));
+    const remember = (id: string) => (_view: AgentGameView, valid: ActionType[]) => {
+      dealt.add(id);
+      return callOrCheck(valid);
+    };
+    table.useScriptedAgent(scripted("neon", remember("neon")));
+    table.useScriptedAgent(scripted("viper", remember("viper")));
+    table.useScriptedAgent(scripted("hero", remember("hero")));
+    table.sitBuiltin("neon");
+    table.sitBuiltin("viper");
+    table.fund("neon", 5_000);
+    table.fund("viper", 5_000);
+    let yielded = false;
+    table.setBetweenHandsHandler(() => {
+      if (yielded) return;
+      yielded = true;
+      table.standUp("viper");
+      table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
+      table.fund("hero", 5_000);
+      table.refreshCashRoster();
+    });
+
+    await table.start("en");
+
+    expect(dealt.has("hero")).toBe(true);
+    expect(table.cashSettlements.at(-1)?.seatedIds).toContain("hero");
+    expect(table.cashSettlements.at(-1)?.seatedIds).not.toContain("viper");
+  });
+
   it("skims a stack above 15000 back into the season bankroll", () => {
     const table = new TableInstance("cash-skim", cashConfig(2));
     table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
