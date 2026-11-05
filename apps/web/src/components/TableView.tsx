@@ -5,7 +5,7 @@ import type { GameEvent } from "@cybercasino/shared";
 import { TabBar, type TabId } from "./TabBar";
 import { HighlightFeed } from "./HighlightFeed";
 import { Leaderboard } from "./Leaderboard";
-import { PixelTableView } from "./PixelTable/PixelTableView";
+import { FeltTable } from "./FeltTable/FeltTable";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useHeader } from "@/contexts/HeaderContext";
 
@@ -111,7 +111,7 @@ export function TableView({ tableId, tableName, events, onLeave, defaultTab = "h
       {/* ④ 内容区 */}
       <div className="flex-1 min-h-0 relative">
         <div className={`absolute inset-0 flex flex-col ${activeTab === "highlights" && liveSubTab === "live" ? "" : "invisible pointer-events-none"}`}>
-          <PixelTableView events={events} />
+          <FeltTable events={events} />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "highlights" && liveSubTab === "text" ? "" : "invisible pointer-events-none"}`}>
           <HighlightFeed events={events} />

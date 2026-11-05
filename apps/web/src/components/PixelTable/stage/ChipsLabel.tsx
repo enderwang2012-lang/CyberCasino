@@ -11,8 +11,8 @@ interface ChipsLabelProps {
   dim?: boolean;
 }
 
-const NAME_STYLE = new TextStyle({ fontFamily: "system-ui", fontSize: 9, fontWeight: "600" });
-const CHIPS_STYLE = new TextStyle({ fontFamily: "ui-monospace", fontSize: 8, fill: 0x888888 });
+const NAME_STYLE = new TextStyle({ fontFamily: "system-ui", fontSize: 11, fontWeight: "700", fill: 0x1c1c1e });
+const CHIPS_STYLE = new TextStyle({ fontFamily: "ui-monospace", fontSize: 10, fontWeight: "600", fill: 0x1a6b45 });
 
 const ROLL_MS = 300;
 

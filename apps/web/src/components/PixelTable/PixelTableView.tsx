@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GameEvent } from "@cybercasino/shared";
+import { TextStyle } from "pixi.js";
+import type { GameEvent, GamePhase } from "@cybercasino/shared";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { TurnCard } from "../TurnCard";
 import { PixiStage } from "./stage/PixiStage";
 import { Table } from "./stage/Table";
@@ -28,7 +30,23 @@ function mapActionToKind(e: ActionTakenEvent): EmojiKind {
   return "raise";
 }
 
+const FELT_STYLE = new TextStyle({
+  fontFamily: "system-ui",
+  fontSize: 11,
+  fontWeight: "600",
+  fill: 0xf4fff8,
+});
+
+const STREET_LABEL: Record<GamePhase, { zh: string; en: string }> = {
+  preflop: { zh: "翻牌前", en: "Preflop" },
+  flop: { zh: "翻牌", en: "Flop" },
+  turn: { zh: "转牌", en: "Turn" },
+  river: { zh: "河牌", en: "River" },
+  showdown: { zh: "摊牌", en: "Showdown" },
+};
+
 export function PixelTableView({ events }: PixelTableViewProps) {
+  const { language } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ width: 360, height: 480 });
   const [bubbles, setBubbles] = useState<Record<string, string>>({});
@@ -136,8 +154,27 @@ export function PixelTableView({ events }: PixelTableViewProps) {
           flash={isAllInFlashing(state.allInFlashAt)}
         />
         <CommunityCards cards={state.communityCards} cx={ellipse.cx} cy={ellipse.cy} />
+        {state.handNumber > 0 && (
+          <pixiText
+            text={feltCaption(state, language)}
+            x={ellipse.cx}
+            y={ellipse.cy + 22}
+            anchor={0.5}
+            style={FELT_STYLE}
+          />
+        )}
         {placedSeats.map(({ seat, pos, bubble, isWinner }) => (
-          <Seat key={seat.playerId} seat={seat} x={pos.x} y={pos.y} bubble={bubble} isWinner={isWinner} />
+          <Seat
+            key={seat.playerId}
+            seat={seat}
+            x={pos.x}
+            y={pos.y}
+            bubble={bubble}
+            isWinner={isWinner}
+            isDealer={seat.seatIndex === state.dealerSeatIndex}
+            towardX={ellipse.cx - pos.x}
+            towardY={ellipse.cy - pos.y}
+          />
         ))}
       </PixiStage>
       <TurnCard
@@ -151,6 +188,13 @@ export function PixelTableView({ events }: PixelTableViewProps) {
       />
     </div>
   );
+}
+
+function feltCaption(state: { handNumber: number; phase: GamePhase | "idle"; smallBlind: number; bigBlind: number }, language: "zh" | "en"): string {
+  const street = state.phase === "idle" ? "" : STREET_LABEL[state.phase][language];
+  const hand = language === "zh" ? `第 ${state.handNumber} 手` : `Hand ${state.handNumber}`;
+  const blinds = state.bigBlind > 0 ? `${state.smallBlind}/${state.bigBlind}` : "";
+  return [hand, street, blinds].filter(Boolean).join("  ·  ");
 }
 
 function extractDecisionHistory(events: GameEvent[]): SeatState[] {

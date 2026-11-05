@@ -18,6 +18,7 @@ describe("eventsToTableState - basics", () => {
     ];
     const state = eventsToTableState(events);
     expect(state.handNumber).toBe(1);
+    expect(state.dealerSeatIndex).toBe(0);
     expect(state.seats).toHaveLength(2);
     expect(state.seats[0].playerId).toBe("p1");
     expect(state.seats[0].chips).toBe(1000);
@@ -123,7 +124,23 @@ describe("eventsToTableState - decisions", () => {
       { type: "action-taken", playerId: "p1", action: { type: "raise", amount: 200 }, thought: { message: "x", confidence: 0.5, isBluffing: false, thinkingSource: "rule" } },
       { type: "phase-change", phase: "flop", communityCards: [] },
     ];
-    expect(eventsToTableState(events).seats[0].currentBet).toBe(0);
+    const state = eventsToTableState(events);
+    expect(state.seats[0].currentBet).toBe(0);
+    expect(state.seats[0].lastDecision).toBeNull();
+  });
+
+  it("keeps an all-in label into the next street and marks a short blind as all-in", () => {
+    const events: GameEvent[] = [
+      { type: "hand-start", handNumber: 1, players: [player("short", 0, 50), player("bb", 1, 1000)], dealerSeatIndex: 1 },
+      { type: "blinds-posted", smallBlindPlayerId: "short", bigBlindPlayerId: "bb", smallBlind: 50, bigBlind: 100 },
+      { type: "action-taken", playerId: "bb", action: { type: "check" }, thought: { message: "ok", confidence: 0.4, isBluffing: false, thinkingSource: "rule" } },
+      { type: "phase-change", phase: "flop", communityCards: [] },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.seats[0].status).toBe("all-in");
+    expect(state.seats[0].lastDecision?.amount).toBe(50);
+    expect(state.seats[1].lastDecision).toBeNull();
+    expect(state.currentThinkerId).toBeNull();
   });
 });
 

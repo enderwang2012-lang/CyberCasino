@@ -23,6 +23,9 @@ export interface SeatState {
 export interface PixelTableState {
   handNumber: number;
   phase: GamePhase | "idle";
+  dealerSeatIndex: number | null;
+  smallBlind: number;
+  bigBlind: number;
   communityCards: Card[];
   potTotal: number;
   seats: SeatState[];
@@ -35,6 +38,9 @@ export interface PixelTableState {
 export const EMPTY_PIXEL_TABLE_STATE: PixelTableState = {
   handNumber: 0,
   phase: "idle",
+  dealerSeatIndex: null,
+  smallBlind: 0,
+  bigBlind: 0,
   communityCards: [],
   potTotal: 0,
   seats: [],
