@@ -54,6 +54,22 @@ export function matchResultMessageFor(
  * highlight commentary (both live-only), and hole cards only for players who showed them at
  * showdown (plus the viewer's own cards).
  */
+export function sittingReplay(replay: ReplayData, fromHand: number, replayId: string): ReplayData {
+  const hands = replay.hands.filter((hand) => hand.handNumber > fromHand);
+  const included = new Set(hands.map((hand) => hand.handNumber));
+  const timeline: GameEvent[] = [];
+  const roster = replay.timeline?.find((event) => event.type === "agent-roster");
+  if (roster) timeline.push(roster);
+  let open = false;
+  for (const event of replay.timeline ?? []) {
+    if (event.type === "hand-start") open = included.has(event.handNumber);
+    if (!open || event.type === "agent-roster") continue;
+    timeline.push(event);
+    if (event.type === "hand-complete") open = false;
+  }
+  return { ...replay, tableId: replayId, hands, timeline, totalHands: hands.length, rankings: [] };
+}
+
 export function publicReplayFor(replay: ReplayData, viewerId?: string): ReplayData {
   return {
     ...replay,

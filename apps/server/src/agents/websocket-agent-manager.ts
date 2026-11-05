@@ -26,6 +26,7 @@ import {
   type ParsedActionMessage,
 } from "./external-agent-protocol";
 import { MatchResultDeliveryQueue } from "./match-result-delivery";
+import { SessionResultStore } from "./session-result-store";
 import { matchResultMessageFor, type SessionResultMessage } from "./match-result-message";
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ export class WebSocketAgentManager {
   private pendingStyleUpdates = new Map<string, PendingStyleUpdate>(); // agentId → next-match style
   private snapshotSources = new Map<string, SnapshotSource>(); // tableId → Agent-scoped snapshot source
   private readonly pendingMatchResults = new MatchResultDeliveryQueue();
-  private readonly pendingSessionResults = new Map<string, SessionResultMessage[]>();
+  private sessionResults = new SessionResultStore();
   private readonly inFlightMatchResults = new Map<WebSocket, {
     agentId: string;
     results: Map<string, ExternalAgentMatchResult>;
@@ -102,6 +103,10 @@ export class WebSocketAgentManager {
 
   constructor(options: { authTimeoutMs?: number } = {}) {
     this.authTimeoutMs = options.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS;
+  }
+
+  useSessionResultFile(file: string): void {
+    this.sessionResults = new SessionResultStore(file);
   }
 
   // Callback to persist style prompt to DB
@@ -302,6 +307,13 @@ export class WebSocketAgentManager {
 
         if (!authenticated) {
           ws.send(JSON.stringify({ type: "error", message: "Not authenticated" }));
+          return;
+        }
+        if (msg.type === "session_result_ack") {
+          const agentId = this.connections.get(connToken)?.agentId;
+          if (agentId && typeof msg.table_id === "string" && typeof msg.ended_at === "number") {
+            this.sessionResults.acknowledge(agentId, msg.table_id, msg.ended_at);
+          }
           return;
         }
         // A replaced socket may still deliver buffered messages before close.
@@ -592,10 +604,7 @@ export class WebSocketAgentManager {
   }
 
   sendSessionResult(agentId: string, message: SessionResultMessage): void {
-    const queued = this.pendingSessionResults.get(agentId) ?? [];
-    queued.push(message);
-    while (queued.length > 32) queued.shift();
-    this.pendingSessionResults.set(agentId, queued);
+    this.sessionResults.enqueue(agentId, message);
     const connection = this.getConnection(agentId);
     if (connection && connection.ws.readyState === WebSocket.OPEN) {
       this.sendPendingMatchResults(agentId, connection.ws);
@@ -619,15 +628,11 @@ export class WebSocketAgentManager {
   private sendPendingMatchResults(agentId: string, ws: WebSocket): void {
     if (ws.readyState !== WebSocket.OPEN) return;
 
-    const sessions = this.pendingSessionResults.get(agentId) ?? [];
-    this.pendingSessionResults.delete(agentId);
-    for (const message of sessions) {
+    for (const message of this.sessionResults.list(agentId)) {
       try {
         ws.send(JSON.stringify(message));
       } catch {
-        const queued = this.pendingSessionResults.get(agentId) ?? [];
-        queued.push(message);
-        this.pendingSessionResults.set(agentId, queued);
+        break;
       }
     }
 

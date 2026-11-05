@@ -21,6 +21,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
     getHistory, refreshLobby, joinMatchmaking, leaveMatchmaking,
     refreshMatchmaking, refreshAgentSummary, clearMatchedTable, clearTableError, deleteAgent,
     agentSummary, agentSummaryLoading, agentSummaryError,
+    tableError,
   } = useSocket(user.userId, { name: user.name, avatar: user.avatar, provider: user.provider });
 
   const [agentV2, setAgentV2] = useState<AgentConfigV2 | null>(null);
@@ -199,6 +200,7 @@ function AuthenticatedApp({ user }: { user: { userId: string; name: string; avat
       agentSummaryError={agentSummaryError}
       onRefresh={refreshConsole}
       onOpenReplay={handleJoinTable}
+      tableError={tableError}
     />
   );
 }

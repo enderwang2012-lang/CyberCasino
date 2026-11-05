@@ -28,6 +28,7 @@ interface LobbyProps {
   agentSummaryError?: boolean;
   onRefresh?: () => void;
   onOpenReplay?: (tableId: string) => void;
+  tableError?: string | null;
 }
 
 export function Lobby({
@@ -46,6 +47,7 @@ export function Lobby({
   agentSummaryError = false,
   onRefresh,
   onOpenReplay = onJoin,
+  tableError = null,
 }: LobbyProps) {
   const { t } = useLanguage();
   const [standings, setStandings] = useState<RankedStanding[]>([]);
@@ -121,6 +123,9 @@ export function Lobby({
       />
       {matchmakingError && (
         <p role="alert" className="w-full max-w-3xl text-danger text-[13px] mt-3">{matchmakingError}</p>
+      )}
+      {tableError && (
+        <p role="alert" className="w-full max-w-3xl text-danger text-[13px] mt-3">{tableError}</p>
       )}
 
       {agentSummary?.agent && (

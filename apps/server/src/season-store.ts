@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import type { ReplayData } from "@cybercasino/shared";
 import {
   bbPer100,
   cashOut,
@@ -35,6 +36,7 @@ export interface CashSittingRecord {
   endedAt: number;
   countedHands: number;
   netChips: number;
+  replayId?: string;
 }
 
 interface SeasonFile {
@@ -55,8 +57,15 @@ export class SeasonStore {
   private frozen: StoredSeasonEntry[] = [];
   private sittings: CashSittingRecord[] = [];
   private baselines = new Map<string, { equity: number; hands: number; tableId?: string }>();
+  private replays = new Map<string, ReplayData>();
+  private readonly replayFile?: string;
 
   constructor(private readonly file?: string) {
+    this.replayFile = file ? join(dirname(file), "cash-replays.json") : undefined;
+    if (this.replayFile && existsSync(this.replayFile)) {
+      const stored = JSON.parse(readFileSync(this.replayFile, "utf-8")) as Record<string, ReplayData>;
+      for (const [id, replay] of Object.entries(stored)) this.replays.set(id, replay);
+    }
     if (!file || !existsSync(file)) return;
     const parsed = JSON.parse(readFileSync(file, "utf-8")) as SeasonFile;
     this.startedAt = parsed.startedAt;
@@ -89,7 +98,12 @@ export class SeasonStore {
     this.ensureSeason(now);
   }
 
-  save(entry: SeasonEntry): void {
+  getReplay(replayId: string): ReplayData | undefined {
+    const replay = this.replays.get(replayId);
+    return replay ? structuredClone(replay) : undefined;
+  }
+
+  save(entry: SeasonEntry, replay?: ReplayData): void {
     const previous = this.entries.get(entry.agentId);
     const tableId = entry.tableStack > 0
       ? previous?.tableId
@@ -104,12 +118,17 @@ export class SeasonStore {
     if (previous && previous.tableStack > 0 && entry.tableStack === 0) {
       const baseline = this.baselines.get(entry.agentId);
       const equity = entry.bankroll + entry.tableStack;
+      const endedAt = Date.now();
+      const tableId = previous.tableId ?? baseline?.tableId ?? "cash";
+      const replayId = replay ? `${tableId}:${entry.agentId}:${endedAt}` : undefined;
+      if (replay && replayId) this.rememberReplay(replayId, { ...replay, tableId: replayId });
       this.sittings.unshift({
         agentId: entry.agentId,
-        tableId: previous.tableId ?? baseline?.tableId ?? "cash",
-        endedAt: Date.now(),
+        tableId,
+        endedAt,
         countedHands: Math.max(0, entry.countedHands - (baseline?.hands ?? entry.countedHands)),
         netChips: baseline ? equity - baseline.equity : 0,
+        replayId,
       });
       this.sittings = this.sittings.slice(0, 20);
       this.baselines.delete(entry.agentId);
@@ -215,6 +234,22 @@ export class SeasonStore {
 
   private handKey(seasonId: string, tableId: string, handNumber: number): string {
     return `${seasonId}:${tableId}:${handNumber}`;
+  }
+
+  private rememberReplay(replayId: string, replay: ReplayData): void {
+    this.replays.set(replayId, replay);
+    while (this.replays.size > 40) {
+      const oldest = this.replays.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.replays.delete(oldest);
+    }
+    this.persistReplays();
+  }
+
+  private persistReplays(): void {
+    if (!this.replayFile) return;
+    mkdirSync(dirname(this.replayFile), { recursive: true });
+    writeFileSync(this.replayFile, JSON.stringify(Object.fromEntries(this.replays)));
   }
 
   private persist(): void {

@@ -104,7 +104,6 @@ export class TableInstance {
   private readonly scriptedAgents = new Map<string, IPokerAgent>();
   private readonly fundedStacks = new Map<string, number>();
   private readonly seasonEntries = new Map<string, SeasonEntry>();
-  private readonly stayingAgents = new Set<string>();
   private spectatorTable = false;
   private stopNewHands = false;
   private closingReason: "left" | "season_broke" | "table_closed" | "season_ended" = "table_closed";
@@ -116,7 +115,7 @@ export class TableInstance {
   private onBetweenHands?: () => void;
   private onSeatVacated?: (agentId: string) => void;
   private seasonRecorder?: (entries: SeasonEntry[], handNumber: number) => void;
-  private readonly sittings = new Map<string, { equity: number; at: number; hands: number }>();
+  private readonly sittings = new Map<string, { equity: number; at: number; hands: number; fromHand: number }>();
   readonly cashSettlements: CashSettlement[] = [];
 
   constructor(id: string, config: TableConfig, creatorUserId?: string, autoStart = false) {
@@ -540,12 +539,13 @@ export class TableInstance {
         equity: entry.bankroll + entry.tableStack,
         at: Date.now(),
         hands: entry.countedHands,
+        fromHand: this.handNumber,
       });
     }
     this.seasonEntries.set(entry.agentId, { ...entry });
   }
 
-  getSitting(agentId: string): { equity: number; at: number; hands: number } | undefined {
+  getSitting(agentId: string): { equity: number; at: number; hands: number; fromHand: number } | undefined {
     const sitting = this.sittings.get(agentId);
     return sitting ? { ...sitting } : undefined;
   }
@@ -607,7 +607,6 @@ export class TableInstance {
   requestCashLeave(agentId: string): boolean {
     this.leavingAgents.add(agentId);
     this.departureReasons.set(agentId, "left");
-    this.stayingAgents.delete(agentId);
     if (this.running && !this.acceptingSeatChanges) return false;
     const left = this.standUp(agentId);
     if (left) {
@@ -859,35 +858,17 @@ export class TableInstance {
       if (chips > 0) continue;
       const entry = this.seasonEntries.get(agent.id);
       const cashed = entry ? cashOut(entry) : undefined;
-      const seatIndex = this.seatIndexFor(agent.id);
-      this.vacateAgent(agent.id);
-      if (!cashed || !this.stayingAgents.has(agent.id)) {
-        if (cashed) this.seasonEntries.set(agent.id, cashed);
-        this.departureReasons.set(agent.id, cashed && cashed.bankroll < 5_000 ? "season_broke" : "left");
-        this.notifyVacated(agent.id);
-        continue;
-      }
-      const rebought = buyIn(cashed);
-      if (!rebought.ok) {
+      const rebought = cashed ? buyIn(cashed) : undefined;
+      if (rebought?.ok) {
+        this.playerStates.set(agent.id, { chips: rebought.entry.tableStack });
         this.seasonEntries.set(agent.id, rebought.entry);
+        this.fundedStacks.set(agent.id, rebought.entry.tableStack);
         continue;
       }
-      const seat = this.seats.find((item) => item.seatIndex === seatIndex && item.status === "empty");
-      if (!seat) {
-        this.seasonEntries.set(agent.id, cashOut(rebought.entry));
-        continue;
-      }
-      seat.status = "occupied";
-      seat.agent = {
-        id: agent.id,
-        name: agent.name,
-        avatar: agent.avatar,
-        type: agent.agentType === "builtin" ? "builtin" : "custom",
-      };
-      this.agents.push(agent);
-      this.playerStates.set(agent.id, { chips: rebought.entry.tableStack });
-      this.seasonEntries.set(agent.id, rebought.entry);
-      this.fundedStacks.set(agent.id, rebought.entry.tableStack);
+      if (cashed) this.seasonEntries.set(agent.id, cashed);
+      this.vacateAgent(agent.id);
+      this.departureReasons.set(agent.id, cashed && cashed.bankroll < 5_000 ? "season_broke" : "left");
+      this.notifyVacated(agent.id);
     }
 
     this.acceptingSeatChanges = true;
