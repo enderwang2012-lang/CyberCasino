@@ -22,6 +22,7 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         ...next,
         handNumber: e.handNumber,
         phase: "preflop",
+        dealerSeatIndex: e.dealerSeatIndex,
         communityCards: [],
         potTotal: 0,
         currentThinkerId: null,
@@ -41,6 +42,8 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
     case "blinds-posted":
       return {
         ...next,
+        smallBlind: e.smallBlind,
+        bigBlind: e.bigBlind,
         seats: next.seats.map((s) => {
           const posted = s.playerId === e.smallBlindPlayerId
             ? e.smallBlind
@@ -49,7 +52,18 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
               : 0;
           if (posted <= 0) return s;
           const cost = chipsToCommit(s.currentBet, posted, s.chips);
-          return { ...s, chips: s.chips - cost, currentBet: s.currentBet + cost };
+          const chips = s.chips - cost;
+          const currentBet = s.currentBet + cost;
+          const allIn = chips === 0 && cost > 0;
+          return {
+            ...s,
+            chips,
+            currentBet,
+            status: allIn ? "all-in" : s.status,
+            lastDecision: allIn
+              ? { action: "call", amount: currentBet, handNumber: state.handNumber, timestamp: index }
+              : s.lastDecision,
+          };
         }),
       };
     case "pot-updated":
@@ -59,7 +73,13 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         ...next,
         phase: e.phase,
         communityCards: e.communityCards,
-        seats: next.seats.map((s) => ({ ...s, currentBet: 0 })),
+        currentThinkerId: null,
+        seats: next.seats.map((s) => ({
+          ...s,
+          currentBet: 0,
+          status: s.status === "thinking" ? "active" : s.status,
+          lastDecision: s.status === "folded" || s.status === "all-in" || s.status === "out" ? s.lastDecision : null,
+        })),
       };
 
     case "action-required":
@@ -83,14 +103,15 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
             ? toCall
             : s.currentBet;
         const cost = isFold ? 0 : chipsToCommit(s.currentBet, target, s.chips);
+        const currentBet = s.currentBet + cost;
         return {
           ...s,
-          currentBet: s.currentBet + cost,
+          currentBet,
           chips: s.chips - cost,
           status: isFold ? "folded" : isAllIn ? "all-in" : "active",
           lastDecision: {
             action: e.action.type,
-            amount: e.action.amount,
+            amount: e.action.type === "fold" || e.action.type === "check" ? undefined : currentBet,
             thought: e.thought,
             handNumber: state.handNumber,
             timestamp: index,
@@ -108,6 +129,8 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
     case "showdown":
       return {
         ...next,
+        phase: "showdown",
+        currentThinkerId: null,
         seats: next.seats.map((s) => {
           const r = e.results.find((x) => x.playerId === s.playerId);
           return r ? { ...s, holeCards: r.holeCards } : s;
