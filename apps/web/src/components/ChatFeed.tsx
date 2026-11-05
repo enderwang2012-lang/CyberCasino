@@ -5,6 +5,7 @@ import type { GameEvent, Card, SeatAgent } from "@cybercasino/shared";
 import { evaluateHand } from "@cybercasino/engine";
 import { chipsToCommit } from "./PixelTable/logic/events-to-state";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { latestByType } from "@/lib/latest-event";
 
 const SUIT_SYMBOLS: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 const RANK_NAMES: Record<number, string> = {
@@ -336,7 +337,7 @@ export function ChatFeed({ events, tableId }: { events: GameEvent[]; tableId?: s
   }, [events]);
 
   const roster = useMemo(() => {
-    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
+    const rosterEvent = latestByType(events, "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") {
       return rosterEvent.agents;
     }

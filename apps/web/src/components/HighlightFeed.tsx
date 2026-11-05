@@ -3,6 +3,7 @@
 import { useMemo, useEffect, useRef } from "react";
 import type { GameEvent, HighlightReason, SeatAgent } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { latestByType } from "@/lib/latest-event";
 
 export function HighlightFeed({ events }: { events: GameEvent[] }) {
   const { t, language } = useLanguage();
@@ -20,7 +21,7 @@ export function HighlightFeed({ events }: { events: GameEvent[] }) {
   };
 
   const roster = useMemo(() => {
-    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
+    const rosterEvent = latestByType(events, "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") return rosterEvent.agents;
     return [] as SeatAgent[];
   }, [events]);

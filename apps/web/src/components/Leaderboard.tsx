@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { GameEvent, SeatAgent } from "@cybercasino/shared";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { latestByType } from "@/lib/latest-event";
 
 interface LeaderboardEntry {
   id: string;
@@ -20,7 +21,7 @@ export function Leaderboard({ events, variant = "places" }: { events: GameEvent[
 
   const entries = useMemo(() => {
     const roster: SeatAgent[] = [];
-    const rosterEvent = events.findLast((e) => e.type === "agent-roster");
+    const rosterEvent = latestByType(events, "agent-roster");
     if (rosterEvent && rosterEvent.type === "agent-roster") {
       roster.push(...rosterEvent.agents);
     }
