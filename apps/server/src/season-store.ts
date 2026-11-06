@@ -94,6 +94,10 @@ export class SeasonStore {
     return now >= this.endsAt - 5 * 60 * 1000 && now < this.endsAt;
   }
 
+  seasonEndsAt(): number {
+    return this.endsAt;
+  }
+
   refresh(now = Date.now()): void {
     this.ensureSeason(now);
   }

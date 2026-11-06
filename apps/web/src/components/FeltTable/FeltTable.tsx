@@ -278,9 +278,9 @@ function actionLabel(seat: SeatState, zh: boolean, winAmount: number): { text: s
 }
 
 function HolePair({ cards, hidden, folded }: { cards: Card[] | null; hidden: boolean; folded: boolean }) {
-  if (folded) return null;
+  if (folded && !cards) return null;
   return (
-    <div className="flex -space-x-1">
+    <div className={`flex -space-x-1 ${folded ? "opacity-40" : ""}`}>
       {hidden ? (
         <>
           <CardBack />

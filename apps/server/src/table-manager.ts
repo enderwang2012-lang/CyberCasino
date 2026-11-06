@@ -100,6 +100,12 @@ export class TableManager {
     return this.showcaseTableId === id;
   }
 
+  noteShowcase(id: string): void {
+    const existing = this.showcaseTableId ? this.tables.get(this.showcaseTableId) : undefined;
+    if (existing && existing.getStatus() !== "finished" && existing.isSpectator()) return;
+    this.showcaseTableId = id;
+  }
+
   createMatchedTable(
     entries: MatchEntry[],
     runOptions: Pick<TableConfig, "handLimit" | "interHandDelayMs" | "actionDelayMs" | "commentaryMode"> = {},

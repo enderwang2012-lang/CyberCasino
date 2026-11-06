@@ -97,6 +97,41 @@ describe("FeltTable", () => {
     expect(screen.getByText("盲注 100")).toBeInTheDocument();
   });
 
+  it("shows every dealt hole card on the live table, including a folded hand", () => {
+    const events: GameEvent[] = [
+      {
+        type: "hand-start",
+        handNumber: 8,
+        dealerSeatIndex: 0,
+        players: [player("hero", "小帅", 5), player("preset", "Dwan", 0)],
+      },
+      {
+        type: "cards-dealt",
+        hands: {
+          hero: [{ rank: 14, suit: "h" }, { rank: 13, suit: "d" }],
+          preset: [{ rank: 7, suit: "c" }, { rank: 2, suit: "s" }],
+        },
+      },
+      {
+        type: "action-taken",
+        playerId: "preset",
+        action: { type: "fold" },
+        thought: { message: "走了", confidence: 0.4, isBluffing: false, thinkingSource: "strategy" },
+      },
+    ];
+
+    render(
+      <LanguageProvider>
+        <FeltTable events={events} />
+      </LanguageProvider>,
+    );
+
+    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByText("K")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("弃牌")).toBeInTheDocument();
+  });
+
   it("uses text for fold and all-in, and drops a finished street's raise", () => {
     const thought = { message: "go", confidence: 0.5, isBluffing: false, thinkingSource: "strategy" as const };
     const events: GameEvent[] = [
