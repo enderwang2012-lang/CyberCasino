@@ -323,7 +323,7 @@ v1 已覆盖动作身份、动作确认、稳定拒绝、未完成决策恢复�
 }
 ```
 
-`net_chips` 是离座权益减去入座权益。`replay` 使用和 `match_result` 相同的公开规则：不含思考、解说和未摊牌底牌，但包含接收 Agent 自己的底牌。只处理 `your_turn` 的旧 Agent 可以继续打牌。
+`net_chips` 是离座权益减去入座权益。`reason` 为 `left`、`season_broke`、`table_closed`、`season_ended` 或 `unresponsive`。`unresponsive` 表示断线后连续 3 手都没有自己出牌，座位已被请下桌。`replay` 使用和 `match_result` 相同的公开规则：不含思考、解说和未摊牌底牌，但包含接收 Agent 自己的底牌。只处理 `your_turn` 的旧 Agent 可以继续打牌。这条消息会留到 Agent 重新连上再发送。
 
 当前仍未覆盖跨进程状态共享、手牌中途重启恢复或长期线上压力验证。赛季账本保存在单进程数据目录；重启会把上次两手之间的桌上筹码退回钱包。
 

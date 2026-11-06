@@ -115,8 +115,10 @@ export class TableInstance {
   private readonly seasonEntries = new Map<string, SeasonEntry>();
   private spectatorTable = false;
   private stopNewHands = false;
-  private closingReason: "left" | "season_broke" | "table_closed" | "season_ended" = "table_closed";
-  private readonly departureReasons = new Map<string, "left" | "season_broke" | "table_closed" | "season_ended">();
+  private closingReason: "left" | "season_broke" | "table_closed" | "season_ended" | "unresponsive" = "table_closed";
+  private readonly departureReasons = new Map<string, "left" | "season_broke" | "table_closed" | "season_ended" | "unresponsive">();
+  private readonly handResponses = new Map<string, { asked: number; missed: number }>();
+  private readonly absentStreak = new Map<string, number>();
   private readonly vacatedAgents = new Set<string>();
   private acceptingSeatChanges = false;
   private readonly leavingAgents = new Set<string>();
@@ -639,7 +641,7 @@ export class TableInstance {
     this.closingReason = "season_ended";
   }
 
-  getDepartureReason(agentId: string): "left" | "season_broke" | "table_closed" | "season_ended" {
+  getDepartureReason(agentId: string): "left" | "season_broke" | "table_closed" | "season_ended" | "unresponsive" {
     return this.departureReasons.get(agentId) ?? this.closingReason;
   }
 
@@ -872,6 +874,7 @@ export class TableInstance {
   }
 
   private settleCashBetweenHands(): void {
+    this.finishAbsentHands();
     for (const agent of [...this.agents]) {
       const chips = this.playerStates.get(agent.id)?.chips ?? 0;
       const entry = this.seasonEntries.get(agent.id);
@@ -947,6 +950,29 @@ export class TableInstance {
       smallBlind: this.currentSmallBlind,
       bigBlind: this.currentBigBlind,
     });
+  }
+
+  private noteExternalResponse(agent: IPokerAgent, thought: string): void {
+    if (!(agent instanceof WebSocketAgent)) return;
+    const record = this.handResponses.get(agent.id) ?? { asked: 0, missed: 0 };
+    record.asked += 1;
+    if (thought.startsWith("[Auto-pilot]") && !wsAgentManager.isConnected(agent.id)) {
+      record.missed += 1;
+    }
+    this.handResponses.set(agent.id, record);
+  }
+
+  private finishAbsentHands(): void {
+    for (const [agentId, record] of this.handResponses) {
+      if (record.asked === 0) continue;
+      const streak = record.missed === record.asked ? (this.absentStreak.get(agentId) ?? 0) + 1 : 0;
+      this.absentStreak.set(agentId, streak);
+      if (streak >= 3 && this.seats.some((seat) => seat.agent?.id === agentId)) {
+        this.departureReasons.set(agentId, "unresponsive");
+        this.leavingAgents.add(agentId);
+      }
+    }
+    this.handResponses.clear();
   }
 
   private hasSeatedUser(): boolean {
@@ -1275,6 +1301,7 @@ export class TableInstance {
         actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount }, thought: decision.thought });
 
         await this.paceDecision(Date.now() - thinkStarted);
+        this.noteExternalResponse(agent, decision.thought.message);
 
         return { action: decision.action, thought: decision.thought, audit: decision.audit };
       }

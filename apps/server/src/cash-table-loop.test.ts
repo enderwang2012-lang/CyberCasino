@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { ActionType, AgentDecision, AgentGameView, TableConfig } from "@cybercasino/shared";
+import type { ActionType, AgentConfigV2, AgentDecision, AgentGameView, TableConfig } from "@cybercasino/shared";
 import { Deck } from "@cybercasino/engine";
 import type { IPokerAgent } from "./agents/agent-interface";
 import { createSeasonEntry } from "./season-ledger";
@@ -229,5 +229,29 @@ describe("cash table loop", () => {
     table.applyBetweenHands();
     expect(records).toBe(1);
     expect(table.isSpectator()).toBe(true);
+  });
+
+  it("removes a disconnected agent after three hands without a response", async () => {
+    Deck.prototype.shuffle = function shuffle() {};
+    const table = new TableInstance("cash-away", cashConfig(2, 3));
+    table.useScriptedAgent(scripted("neon", (_view, valid) => callOrCheck(valid)));
+    table.sitBuiltin("neon");
+    table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
+    table.fund("neon", 5_000);
+    table.fund("hero", 5_000);
+    const hero = {
+      id: "hero",
+      userId: "user-hero",
+      name: "hero",
+      avatar: "",
+      executionMode: "remote_agent",
+      createdAt: 0,
+      updatedAt: 0,
+    } as AgentConfigV2;
+
+    await table.start("en", new Map([["user-hero", hero]]));
+
+    expect(table.getSeats().some((seat) => seat.agent?.id === "hero")).toBe(false);
+    expect(table.getDepartureReason("hero")).toBe("unresponsive");
   });
 });

@@ -20,7 +20,7 @@ export interface SessionResultMessage {
   sit_equity: number;
   equity: number;
   net_chips: number;
-  reason: "left" | "season_broke" | "table_closed" | "season_ended";
+  reason: "left" | "season_broke" | "table_closed" | "season_ended" | "unresponsive";
   replay: ReplayData;
 }
 
