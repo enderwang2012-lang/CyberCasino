@@ -101,23 +101,35 @@ export function FeltTable({ events }: { events: GameEvent[] }) {
       )}
 
       <ThoughtStrip
-        seat={history[handIndex] ?? null}
+        seat={cardSeat(state, history, handIndex)}
+        thinking={handIndex === 0 && state.currentThinkerId !== null}
+        liveThought={state.liveThought}
         index={handIndex}
-        total={history.length}
+        total={history.length + (state.currentThinkerId ? 1 : 0)}
         zh={zh}
-        onPrev={() => setHandIndex((i) => Math.min(i + 1, history.length - 1))}
+        onPrev={() => setHandIndex((i) => Math.min(i + 1, history.length + (state.currentThinkerId ? 1 : 0) - 1))}
         onNext={() => setHandIndex((i) => Math.max(0, i - 1))}
-        canPrev={handIndex < history.length - 1}
+        canPrev={handIndex < history.length + (state.currentThinkerId ? 1 : 0) - 1}
         canNext={handIndex > 0}
       />
     </div>
   );
 }
 
+function cardSeat(state: { currentThinkerId: string | null; seats: SeatState[] }, history: SeatState[], handIndex: number): SeatState | null {
+  if (handIndex === 0 && state.currentThinkerId) {
+    return state.seats.find((seat) => seat.playerId === state.currentThinkerId) ?? null;
+  }
+  const historyIndex = state.currentThinkerId ? handIndex - 1 : handIndex;
+  return history[historyIndex] ?? null;
+}
+
 function ThoughtStrip({
-  seat, index, total, zh, onPrev, onNext, canPrev, canNext,
+  seat, thinking, liveThought, index, total, zh, onPrev, onNext, canPrev, canNext,
 }: {
   seat: SeatState | null;
+  thinking: boolean;
+  liveThought: string | null;
   index: number;
   total: number;
   zh: boolean;
@@ -126,7 +138,9 @@ function ThoughtStrip({
   canPrev: boolean;
   canNext: boolean;
 }) {
-  const thought = seat?.lastDecision?.thought?.message ?? "";
+  const thought = thinking
+    ? liveThought
+    : seat?.lastDecision?.thought?.message || (zh ? "等待出牌" : "Waiting for an action");
   return (
     <div className="absolute bottom-3 left-3 right-3 flex items-stretch gap-1.5">
       <PagerButton label="‹" onClick={onPrev} enabled={canPrev} />
@@ -138,9 +152,9 @@ function ThoughtStrip({
               <span className="truncate text-[13px] font-semibold text-neutral-900">{seat.name}</span>
               <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{index + 1}/{Math.max(1, total)}</span>
             </div>
-            <p className="line-clamp-3 text-[13px] leading-snug text-neutral-500">
-              {thought || (zh ? "等待出牌" : "Waiting for an action")}
-            </p>
+            {thinking && !liveThought ? <ThoughtLoading zh={zh} /> : (
+              <p className="line-clamp-3 text-[13px] leading-snug text-neutral-500">{thought}</p>
+            )}
           </>
         ) : (
           <p className="text-center text-[13px] text-neutral-400">{zh ? "等待出牌" : "Waiting for an action"}</p>
@@ -148,6 +162,20 @@ function ThoughtStrip({
       </div>
       <PagerButton label="›" onClick={onNext} enabled={canNext} />
     </div>
+  );
+}
+
+function ThoughtLoading({ zh }: { zh: boolean }) {
+  return (
+    <span className="inline-flex h-5 items-center gap-1" role="status" aria-label={zh ? "正在思考" : "Thinking"}>
+      {[0, 1, 2].map((dot) => (
+        <span
+          key={dot}
+          className="thought-dot h-1.5 w-1.5 rounded-full bg-sky-400"
+          style={{ animationDelay: `${dot * 0.15}s` }}
+        />
+      ))}
+    </span>
   );
 }
 

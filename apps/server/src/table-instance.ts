@@ -35,6 +35,14 @@ import { detectHighlights } from "./highlight-detector";
 import { generateCommentary, type CommentaryContext } from "./highlight-commentary";
 import type { AgentSnapshotAction, AgentSnapshotState } from "./agents/external-agent-protocol";
 
+// Live tables use this pace. Tests set actionDelayMs or interHandDelayMs to 0 to skip it.
+const LIVE_PACE = {
+  thinkMs: 4_000,
+  afterActionMs: 1_500,
+  streetMs: 2_000,
+  betweenHandsMs: 6_000,
+};
+
 const DEFAULT_BLIND_SCHEDULE: BlindSchedule = {
   handsPerLevel: 10,
   levels: [
@@ -791,7 +799,7 @@ export class TableInstance {
           }
           this.dealerSeatIndex = nextDealer;
         }
-        const interHandDelayMs = this.config.interHandDelayMs ?? 3000;
+        const interHandDelayMs = this.config.interHandDelayMs ?? LIVE_PACE.betweenHandsMs;
         if (interHandDelayMs > 0) {
           await new Promise((r) => setTimeout(r, interHandDelayMs));
         }
@@ -1177,6 +1185,7 @@ export class TableInstance {
         });
 
         this.syncSnapshotFromDecision(view, validActions, callAmount, minRaise);
+        const thinkStarted = Date.now();
         const rawDecision = await agent.decide(view, validActions, callAmount, minRaise, this.language);
         if (!this.running) throw new Error("Table stopped");
         const platformFallback = rawDecision.thought.message.startsWith("[Auto-pilot]");
@@ -1232,14 +1241,7 @@ export class TableInstance {
         }
         actionHistory.push({ playerId, phase: currentPhase, action: { type: action.type as ActionType, amount: action.amount }, thought: decision.thought });
 
-        if (agent.agentType !== "external") {
-          const actionDelayMs = this.config.actionDelayMs;
-          if (actionDelayMs === undefined) {
-            await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
-          } else if (actionDelayMs > 0) {
-            await new Promise((r) => setTimeout(r, actionDelayMs));
-          }
-        }
+        await this.paceDecision(Date.now() - thinkStarted);
 
         return { action: decision.action, thought: decision.thought, audit: decision.audit };
       }
@@ -1313,6 +1315,10 @@ export class TableInstance {
       }
 
       this.emit(event);
+      if (this.config.actionDelayMs === undefined) {
+        if (event.type === "action-taken") await this.holdPace(LIVE_PACE.afterActionMs);
+        if (event.type === "phase-change" && event.phase !== "preflop") await this.holdPace(LIVE_PACE.streetMs);
+      }
     }
 
     // Highlights are recorded without an external commentary call while the
@@ -1381,6 +1387,21 @@ export class TableInstance {
         involvedPlayerIds,
       });
     }
+  }
+
+  private async paceDecision(elapsedMs: number): Promise<void> {
+    const configured = this.config.actionDelayMs;
+    if (configured === 0) return;
+    if (configured !== undefined) {
+      await this.holdPace(configured);
+      return;
+    }
+    await this.holdPace(LIVE_PACE.thinkMs - elapsedMs);
+  }
+
+  private holdPace(ms: number): Promise<void> {
+    if (ms <= 0 || !this.running) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private checkBlindLevel(): void {

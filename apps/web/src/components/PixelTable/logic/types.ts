@@ -30,6 +30,7 @@ export interface PixelTableState {
   potTotal: number;
   seats: SeatState[];
   currentThinkerId: string | null;
+  liveThought: string | null;
   winners: { playerId: string; amount: number }[];
   allInFlashAt: number | null;       // 时间戳；用于触发底池红光（>0 = 触发中）
   lastEventIndex: number;            // 已消费到的 events 下标
@@ -45,6 +46,7 @@ export const EMPTY_PIXEL_TABLE_STATE: PixelTableState = {
   potTotal: 0,
   seats: [],
   currentThinkerId: null,
+  liveThought: null,
   winners: [],
   allInFlashAt: null,
   lastEventIndex: -1,
