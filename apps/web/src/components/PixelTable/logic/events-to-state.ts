@@ -26,6 +26,7 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         communityCards: [],
         potTotal: 0,
         currentThinkerId: null,
+        liveThought: null,
         winners: [],
         seats: e.players.map<SeatState>((p) => ({
           playerId: p.id,
@@ -74,6 +75,7 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         phase: e.phase,
         communityCards: e.communityCards,
         currentThinkerId: null,
+        liveThought: null,
         seats: next.seats.map((s) => ({
           ...s,
           currentBet: 0,
@@ -86,10 +88,15 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
       return {
         ...next,
         currentThinkerId: e.playerId,
+        liveThought: null,
         seats: next.seats.map((s) =>
           s.playerId === e.playerId && s.status === "active" ? { ...s, status: "thinking" } : s,
         ),
       };
+
+    case "ai:thought":
+      if (next.currentThinkerId !== e.playerId) return next;
+      return { ...next, liveThought: e.thought.message };
 
     case "action-taken": {
       const isAllIn = e.allIn === true;
@@ -122,6 +129,7 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         ...next,
         seats,
         currentThinkerId: state.currentThinkerId === e.playerId ? null : state.currentThinkerId,
+        liveThought: state.currentThinkerId === e.playerId ? null : state.liveThought,
         allInFlashAt: isAllIn ? Date.now() : state.allInFlashAt,
       };
     }
@@ -131,6 +139,7 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
         ...next,
         phase: "showdown",
         currentThinkerId: null,
+        liveThought: null,
         seats: next.seats.map((s) => {
           const r = e.results.find((x) => x.playerId === s.playerId);
           return r ? { ...s, holeCards: r.holeCards } : s;

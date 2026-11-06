@@ -57,6 +57,19 @@ describe("eventsToTableState - decisions", () => {
     const state = eventsToTableState(events);
     expect(state.currentThinkerId).toBe("p1");
     expect(state.seats[0].status).toBe("thinking");
+    expect(state.liveThought).toBeNull();
+  });
+
+  it("shows the thought while that player is still thinking", () => {
+    const events: GameEvent[] = [
+      handStart(),
+      { type: "action-required", playerId: "p1", validActions: ["fold", "call", "raise"], currentBet: 50, minRaise: 100, callAmount: 50 },
+      { type: "ai:thought", playerId: "p1", thought: { message: "牌面够强", confidence: 0.7, isBluffing: false, thinkingSource: "strategy" }, action: { type: "call" } },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.currentThinkerId).toBe("p1");
+    expect(state.liveThought).toBe("牌面够强");
+    expect(state.seats[0].lastDecision).toBeNull();
   });
 
   it("deducts blinds and the extra chips of a call", () => {

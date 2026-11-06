@@ -25,12 +25,18 @@ describe("FeltTable", () => {
         bigBlind: 100,
       },
       {
+        type: "action-taken",
+        playerId: "preset",
+        action: { type: "raise", amount: 300 },
+        thought: { message: "先走", confidence: 0.4, isBluffing: false, thinkingSource: "strategy" },
+      },
+      {
         type: "action-required",
         playerId: "hero",
         validActions: ["fold", "call", "raise"],
-        currentBet: 100,
+        currentBet: 300,
         minRaise: 100,
-        callAmount: 0,
+        callAmount: 200,
       },
     ];
 
@@ -41,10 +47,32 @@ describe("FeltTable", () => {
     );
 
     expect(screen.getByText("底池")).toBeInTheDocument();
-    expect(screen.getByText("小帅")).toBeInTheDocument();
+    expect(screen.getAllByText("小帅").length).toBeGreaterThan(1);
     expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在思考" })).toBeInTheDocument();
+    expect(screen.queryByText("先走")).not.toBeInTheDocument();
     expect(screen.getByText("D")).toBeInTheDocument();
     expect(screen.queryByText("A")).not.toBeInTheDocument();
+
+    rerender(
+      <LanguageProvider>
+        <FeltTable events={[
+          ...events,
+          {
+            type: "ai:thought",
+            playerId: "hero",
+            thought: { message: "牌面够强", confidence: 0.7, isBluffing: false, thinkingSource: "strategy" },
+            action: { type: "call" },
+          },
+        ]} />
+      </LanguageProvider>,
+    );
+
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "正在思考" })).not.toBeInTheDocument();
+    expect(screen.getByText("牌面够强")).toBeInTheDocument();
+    expect(screen.queryByText("先走")).not.toBeInTheDocument();
+    expect(screen.queryByText(/跟注/)).not.toBeInTheDocument();
 
     rerender(
       <LanguageProvider>
