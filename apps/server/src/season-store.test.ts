@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buyIn, createSeasonEntry, settleHandStacks } from "./season-ledger";
+import { buyIn, createSeasonEntry, SEASON_LENGTH_MS, settleHandStacks } from "./season-ledger";
 import { SeasonStore } from "./season-store";
 
 const dirs: string[] = [];
@@ -64,9 +64,9 @@ describe("season store", () => {
   it("opens the next season at 20000 instead of adding the old balance", () => {
     const started = Date.parse("2026-11-04T00:00:00.000Z");
     const store = SeasonStore.open({ now: started });
-    const hero = store.getOrCreate("hero", "Hero", "user");
+    const hero = store.getOrCreate("hero", "Hero", "user", started);
     store.recordHand("table-1", 1, [{ ...hero, bankroll: 30_000, tableStack: 0, countedHands: 500 }]);
-    store.restoreAfterRestart(started + 14 * 24 * 60 * 60 * 1000);
+    store.restoreAfterRestart(started + SEASON_LENGTH_MS);
 
     expect(store.get("hero")).toEqual(expect.objectContaining({
       bankroll: 20_000,
@@ -79,7 +79,7 @@ describe("season store", () => {
   it("reports wind-down during the last five minutes and not after rollover", () => {
     const started = Date.parse("2026-11-04T00:00:00.000Z");
     const store = SeasonStore.open({ now: started });
-    const ends = started + 14 * 24 * 60 * 60 * 1000;
+    const ends = started + SEASON_LENGTH_MS;
     expect(store.isWindingDown(ends - 5 * 60 * 1000)).toBe(true);
     expect(store.isWindingDown(ends - 5 * 60 * 1000 - 1)).toBe(false);
     expect(store.isWindingDown(ends)).toBe(false);

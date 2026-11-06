@@ -680,6 +680,8 @@ function startShowcaseTable(): void {
   syncCashArena();
 }
 
+let seasonResumeTimer: ReturnType<typeof setTimeout> | undefined;
+
 function syncCashArena(): void {
   const now = Date.now();
   if (seasonStore.isWindingDown(now)) {
@@ -687,6 +689,7 @@ function syncCashArena(): void {
       const table = tableManager.getTable(info.id);
       if (table?.config.mode === "cash") table.requestSeasonWindDown();
     }
+    scheduleSeasonResume(seasonStore.seasonEndsAt());
     return;
   }
   seasonStore.refresh(now);
@@ -718,6 +721,15 @@ function syncCashArena(): void {
   broadcastLobby();
 }
 
+function scheduleSeasonResume(endsAt: number): void {
+  if (seasonResumeTimer || endsAt <= 0) return;
+  const delay = Math.max(0, endsAt - Date.now()) + 1_000;
+  seasonResumeTimer = setTimeout(() => {
+    seasonResumeTimer = undefined;
+    syncCashArena();
+  }, delay);
+}
+
 function findTableIdForAgent(agentId: string): string | undefined {
   return tableManager.getActiveTableInfos().find((info) =>
     info.seats.some((seat) => seat.agent?.id === agentId))?.id;
@@ -728,6 +740,7 @@ function beginCashTable(table: TableInstance): void {
   automaticTableIds.add(table.id);
   wireTableEvents(table.id);
   table.setBetweenHandsHandler(() => syncCashArena());
+  table.setSpectatorHandler(() => tableManager.noteShowcase(table.id));
   table.setSeasonRecorder((entries, handNumber) => {
     if (table.isSpectator()) return;
     try {

@@ -7,6 +7,7 @@ import {
   settleHandStacks,
   openNextSeason,
   seasonWindow,
+  SEASON_LENGTH_MS,
   skim,
 } from "./season-ledger";
 
@@ -64,7 +65,7 @@ describe("season ledger", () => {
   it("opens the wind-down five minutes before the season ends", () => {
     const start = Date.parse("2026-11-04T00:00:00.000Z");
     const season = seasonWindow(start);
-    expect(season.endsAt - season.startedAt).toBe(14 * 24 * 60 * 60 * 1000);
+    expect(season.endsAt - season.startedAt).toBe(SEASON_LENGTH_MS);
     expect(season.windingDown(season.endsAt - 300_000)).toBe(true);
     expect(season.windingDown(season.endsAt - 300_001)).toBe(false);
   });

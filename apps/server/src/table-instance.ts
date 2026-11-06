@@ -122,6 +122,7 @@ export class TableInstance {
   private readonly leavingAgents = new Set<string>();
   private readonly deferredSeatChanges: Array<() => void> = [];
   private onBetweenHands?: () => void;
+  private onBecameSpectator?: () => void;
   private onSeatVacated?: (agentId: string) => void;
   private seasonRecorder?: (entries: SeasonEntry[], handNumber: number) => void;
   private readonly sittings = new Map<string, { equity: number; at: number; hands: number; fromHand: number }>();
@@ -629,6 +630,10 @@ export class TableInstance {
     this.onBetweenHands = handler;
   }
 
+  setSpectatorHandler(handler: () => void): void {
+    this.onBecameSpectator = handler;
+  }
+
   requestSeasonWindDown(): void {
     this.stopNewHands = true;
     this.closingReason = "season_ended";
@@ -642,12 +647,14 @@ export class TableInstance {
     this.leavingAgents.add(agentId);
     this.departureReasons.set(agentId, "left");
     if (this.running && !this.acceptingSeatChanges) return false;
+    const chips = this.playerStates.get(agentId)?.chips ?? this.seasonEntries.get(agentId)?.tableStack ?? 0;
     const left = this.standUp(agentId);
-    if (left) {
-      this.leavingAgents.delete(agentId);
-      this.notifyVacated(agentId);
-    }
-    return left;
+    if (!left) return false;
+    const entry = this.seasonEntries.get(agentId);
+    if (entry) this.seasonEntries.set(agentId, cashOut({ ...entry, tableStack: chips }));
+    this.leavingAgents.delete(agentId);
+    this.notifyVacated(agentId);
+    return true;
   }
 
   private canChangeSeats(): boolean {
@@ -906,15 +913,26 @@ export class TableInstance {
       this.notifyVacated(agent.id);
     }
 
+    const countThisHand = !this.spectatorTable;
     this.acceptingSeatChanges = true;
     try {
       this.onBetweenHands?.();
     } finally {
       this.acceptingSeatChanges = false;
     }
-    if (!this.spectatorTable) {
+    if (!this.spectatorTable && !this.hasSeatedUser()) {
+      this.cashOutSeasonSeats();
+      for (const agent of this.agents) {
+        this.playerStates.set(agent.id, { chips: this.config.startingChips });
+        this.fundedStacks.set(agent.id, this.config.startingChips);
+      }
+      this.markSpectator(true);
+      this.onBecameSpectator?.();
+    }
+    if (countThisHand) {
       this.seasonRecorder?.([...this.seasonEntries.values()].map((entry) => ({ ...entry })), this.handNumber);
     }
+    if (this.spectatorTable) this.seasonEntries.clear();
     this.advanceCashDealer();
     if (!this.running) return;
     const chips: Record<string, number> = {};
@@ -929,6 +947,21 @@ export class TableInstance {
       smallBlind: this.currentSmallBlind,
       bigBlind: this.currentBigBlind,
     });
+  }
+
+  private hasSeatedUser(): boolean {
+    return this.seats.some((seat) => seat.agent && seat.agent.type !== "builtin");
+  }
+
+  private cashOutSeasonSeats(): void {
+    for (const agent of this.agents) {
+      const entry = this.seasonEntries.get(agent.id);
+      if (!entry) continue;
+      this.seasonEntries.set(agent.id, cashOut({
+        ...entry,
+        tableStack: this.playerStates.get(agent.id)?.chips ?? entry.tableStack,
+      }));
+    }
   }
 
   private notifyVacated(agentId: string): void {

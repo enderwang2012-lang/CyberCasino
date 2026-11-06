@@ -4,7 +4,8 @@ export const CASH_TABLE_CAP = 15_000;
 export const CASH_BIG_BLIND = 100;
 export const CASH_SMALL_BLIND = 50;
 export const SEASON_MIN_HANDS = 500;
-export const SEASON_LENGTH_MS = 14 * 24 * 60 * 60 * 1000;
+// Temporary: one day, so a full season can be watched. Restore to 14 days after.
+export const SEASON_LENGTH_MS = 24 * 60 * 60 * 1000;
 export const SEASON_WIND_DOWN_MS = 300_000;
 
 export interface SeasonEntry {

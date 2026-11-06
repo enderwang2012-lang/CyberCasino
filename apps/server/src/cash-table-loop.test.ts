@@ -201,4 +201,33 @@ describe("cash table loop", () => {
     expect(table.getSeats().find((seat) => seat.seatIndex === 5)?.status).toBe("empty");
     expect(table.getDealerSeatIndex()).toBe(0);
   });
+
+  it("keeps the presets playing as a spectator table after the last user leaves", () => {
+    const table = new TableInstance("cash-flow", cashConfig(2));
+    table.sitBuiltin("neon");
+    table.sit({ id: "hero", userId: "user-hero", name: "hero", avatar: "" });
+    table.fund("neon", 5_000);
+    table.fund("hero", 5_000);
+    table.attachSeason(createSeasonEntry("s1", "neon", "neon", "preset"));
+    table.attachSeason(createSeasonEntry("s1", "hero", "hero", "user"));
+    let records = 0;
+    table.setSeasonRecorder((entries) => {
+      records += 1;
+      const neon = entries.find((entry) => entry.agentId === "neon");
+      expect(neon).toEqual(expect.objectContaining({ tableStack: 0, countedHands: 1, bankroll: 25_000 }));
+    });
+
+    table.requestCashLeave("hero");
+    table.applyBetweenHands();
+
+    expect(table.isSpectator()).toBe(true);
+    expect(table.getSeats().some((seat) => seat.agent?.id === "neon")).toBe(true);
+    expect(table.getSeats().some((seat) => seat.agent?.id === "hero")).toBe(false);
+    expect(table.getPlayerChips("neon")).toBe(5_000);
+    expect(records).toBe(1);
+
+    table.applyBetweenHands();
+    expect(records).toBe(1);
+    expect(table.isSpectator()).toBe(true);
+  });
 });
