@@ -567,6 +567,7 @@ export interface AgentConfigV2 {
   pendingStylePrompt?: string;
   pendingStyleProfile?: StyleProfile;
   pendingStrategyVersion?: number;
+  pendingStrategyPackage?: StrategyPackage;
   skillId?: string;
   createdAt: number;
   updatedAt: number;

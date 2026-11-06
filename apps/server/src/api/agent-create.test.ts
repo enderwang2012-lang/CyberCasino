@@ -35,6 +35,26 @@ describe("agent strategy versioning", () => {
     expect(upgraded.strategyVersions?.map((version) => version.version)).toEqual([1, 2]);
   });
 
+  it("keeps the active package until next season after the agent has entered", () => {
+    const first = createAgentFromAI("user-1", { config: strategy, preview }, () => "agent-1", "soul-1");
+    const deferred = createAgentFromAI(
+      "user-1",
+      { config: strategy, preview },
+      () => "agent-2",
+      "soul-1",
+      undefined,
+      first,
+      { deferToNextSeason: true },
+    );
+
+    expect(deferred.id).toBe("agent-1");
+    expect(deferred.strategyVersion).toBe(1);
+    expect(deferred.strategy).toEqual(first.strategy);
+    expect(deferred.pendingStrategyVersion).toBe(2);
+    expect(deferred.pendingStrategyPackage?.manifest.version).toBe(2);
+    expect(deferred.pendingStrategyPackage?.manifest.basedOnVersion).toBe(1);
+  });
+
   const existingCases: Array<{
     name: string;
     fields: Partial<AgentConfigV2>;

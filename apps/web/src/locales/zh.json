@@ -58,10 +58,10 @@
     "externalUnknown": "外部 Agent 连接状态未知",
     "currentVersion": "当前生效 v{version}",
     "versionUnknown": "策略版本未提供",
-    "pendingVersion": "下一手生效 v{version}",
+    "pendingVersion": "下赛季生效 v{version}",
     "edit": "管理 Agent",
-    "packageUpdateHint": "换策略包前先离座。正在打牌时，先打完这一手再换。",
-    "styleUpdateHint": "风格会在下一手生效，不改变正在打的这一手。",
+    "packageUpdateHint": "本赛季的策略包已锁定。现在提交的新版本，下一季第一手才生效。",
+    "styleUpdateHint": "风格也锁到本季结束。下一季才会换成新的说法。",
     "matchStatus": "牌桌状态",
     "status": {
       "idle": "未入座",

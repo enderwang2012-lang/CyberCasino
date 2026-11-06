@@ -110,8 +110,13 @@ export class WebSocketAgentManager {
   }
 
   // Callback to persist style prompt to DB
+  private seasonEntered?: (agentId: string) => boolean;
   private onStyleUpdate?: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void;
   private resolveToken?: (token: string) => AuthenticatedAgent | undefined;
+
+  setSeasonEntered(check: (agentId: string) => boolean): void {
+    this.seasonEntered = check;
+  }
 
   setStyleUpdateCallback(cb: (agentId: string, style: string, profile: StyleProfile, status: "active" | "pending" | "activate_pending") => void) {
     this.onStyleUpdate = cb;
@@ -132,6 +137,16 @@ export class WebSocketAgentManager {
   loadStylePrompt(agentId: string, style: string, profile?: StyleProfile) {
     this.stylePrompts.set(agentId, style);
     this.styleProfiles.set(agentId, profile ?? parseStyleInput({ text: style }));
+  }
+
+  applySeasonStyle(agentId: string, style: string, profile?: StyleProfile): void {
+    this.pendingStyleUpdates.delete(agentId);
+    this.loadStylePrompt(agentId, style, profile);
+    const conn = this.getConnection(agentId);
+    if (conn) {
+      conn.stylePrompt = style;
+      conn.styleProfile = this.styleProfiles.get(agentId);
+    }
   }
 
   getStyleProfile(agentId: string): StyleProfile | undefined {
@@ -157,7 +172,7 @@ export class WebSocketAgentManager {
     this.activeMatchLocks.delete(agentId);
 
     const pending = this.pendingStyleUpdates.get(agentId);
-    if (!pending) return;
+    if (!pending || this.seasonEntered?.(agentId)) return;
 
     this.pendingStyleUpdates.delete(agentId);
     this.applyActiveStyle(agentId, pending.stylePrompt, pending.styleProfile);
@@ -181,11 +196,11 @@ export class WebSocketAgentManager {
     agentId: string,
     stylePrompt: string,
     styleProfile: StyleProfile,
-  ): "applied" | "deferred" {
-    if (this.isStyleLocked(agentId)) {
+  ): "applied" | "deferred" | "deferred_season" {
+    if (this.isStyleLocked(agentId) || this.seasonEntered?.(agentId)) {
       this.pendingStyleUpdates.set(agentId, { stylePrompt, styleProfile });
       this.onStyleUpdate?.(agentId, stylePrompt, styleProfile, "pending");
-      return "deferred";
+      return this.seasonEntered?.(agentId) ? "deferred_season" : "deferred";
     }
 
     this.applyActiveStyle(agentId, stylePrompt, styleProfile);
@@ -513,13 +528,13 @@ export class WebSocketAgentManager {
               : styleInput.profile ? JSON.stringify(styleInput.profile) : "");
 
           const updateStatus = this.updateStyle(conn.agentId, styleText, styleProfile);
-          const responsePayload = updateStatus === "deferred"
-            ? {
+          const responsePayload = updateStatus === "applied"
+            ? { type: "style_updated" as const, profile: { ...styleProfile } }
+            : {
                 type: "style_update_deferred" as const,
-                appliesTo: "next_match" as const,
+                appliesTo: updateStatus === "deferred_season" ? "next_season" as const : "next_match" as const,
                 profile: { ...styleProfile },
-              }
-            : { type: "style_updated" as const, profile: { ...styleProfile } };
+              };
           const jsonStr = JSON.stringify(responsePayload);
           console.log(`[ws-agent] sending ${responsePayload.type} response:`, jsonStr);
           ws.send(jsonStr);

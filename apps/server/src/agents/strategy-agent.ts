@@ -20,6 +20,7 @@ import type {
 import type { PostflopContext } from "./strategy/postflop";
 import type { IPokerAgent } from "./agent-interface";
 import type { PsychologicalState } from "./imperfection/psychological-state";
+import { applyBuiltinStyle } from "./builtin-style";
 import { decidePreflop, sizingScale } from "./strategy";
 import { decidePostflop, classifyHand } from "./strategy";
 import { calculateDifficulty, estimateHandStrength } from "./imperfection/decision-difficulty";
@@ -77,6 +78,9 @@ export class StrategyAgent implements IPokerAgent {
 
   private config: StrategyConfig;
   private readonly sizingPressure: number;
+  private readonly looseness: number;
+  private readonly aggression: number;
+  private readonly bluffAppetite: number;
   private readonly strategyPackage: StrategyPackage;
   private actionHistory: ActionRecord[] = [];
   private profiles: Map<string, PlayerProfile> = new Map();
@@ -97,6 +101,9 @@ export class StrategyAgent implements IPokerAgent {
     );
     this.config = this.strategyPackage.strategy;
     this.sizingPressure = agentConfig.styleProfile?.sizingPressure ?? 0.5;
+    this.looseness = agentConfig.styleProfile?.preflopLooseness ?? 0.5;
+    this.aggression = agentConfig.styleProfile?.aggression ?? 0.5;
+    this.bluffAppetite = agentConfig.styleProfile?.bluffAppetite ?? 0.3;
     this.psychState = createInitialState();
   }
 
@@ -131,6 +138,8 @@ export class StrategyAgent implements IPokerAgent {
     let strategicAction: ActionType;
     let strategicAmount: number | undefined;
     let preflopAdjustments: string[] | undefined;
+    let preflopMargin: "raise" | "call" | "fold-edge" | "fold" | undefined;
+    let bluffLine = false;
 
     if (view.phase === "preflop") {
       const result = decidePreflop(
@@ -149,6 +158,7 @@ export class StrategyAgent implements IPokerAgent {
         strategicAction = result.action;
         strategicAmount = result.amount;
         preflopAdjustments = result.adjustments;
+        preflopMargin = result.margin;
       } else {
         strategicAction = "fold";
       }
@@ -176,6 +186,34 @@ export class StrategyAgent implements IPokerAgent {
 
       strategicAction = postflopDecision.action;
       strategicAmount = postflopDecision.amount;
+      bluffLine = postflopDecision.matchedRule?.action.startsWith("bluff")
+        || postflopDecision.matchedRule?.action.startsWith("semi-bluff")
+        || false;
+    }
+
+    const styled = applyBuiltinStyle({
+      action: strategicAction,
+      phase: view.phase,
+      looseness: this.looseness,
+      aggression: this.aggression,
+      bluffAppetite: this.bluffAppetite,
+      validActions,
+      callAmount,
+      bigBlind: view.bigBlind,
+      margin: preflopMargin,
+      bluffLine,
+      random,
+    });
+    if (styled !== strategicAction) {
+      if (styled === "raise" && strategicAmount == null) {
+        const potAfterCall = view.pots.reduce((sum, pot) => sum + pot.amount, 0) + Math.max(0, callAmount);
+        strategicAmount = Math.max(
+          view.currentBet + minRaise,
+          view.currentBet + Math.round(potAfterCall * 0.33 * sizingScale(this.sizingPressure)),
+        );
+      }
+      if (styled !== "raise") strategicAmount = undefined;
+      strategicAction = styled;
     }
 
     if (!validActions.includes(strategicAction)) {
@@ -224,8 +262,7 @@ export class StrategyAgent implements IPokerAgent {
       if (finalAction === strategicAction && strategicAmount != null) {
         raiseAmount = Math.max(minTotalBet, strategicAmount);
       } else {
-        // Mistake-raise: default to pot-sized
-        raiseAmount = Math.max(minTotalBet, view.currentBet + Math.round((potSize + callAmount) * 0.5 * sizingScale(this.sizingPressure)));
+        raiseAmount = minTotalBet;
       }
     }
 

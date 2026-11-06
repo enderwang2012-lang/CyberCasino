@@ -110,6 +110,7 @@ export class WebSocketAgent implements IPokerAgent {
             avatar: this.avatar,
             strategy: this.strategy,
             executionMode: "remote_agent",
+            styleProfile: this.styleProfile,
             createdAt: 0,
             updatedAt: 0,
           },

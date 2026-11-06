@@ -48,6 +48,7 @@ export async function ensureSchema() {
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_style_prompt TEXT`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_style_profile JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_strategy_version INTEGER`;
+  await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS pending_strategy_package JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_package JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_versions JSONB`;
   await sql`ALTER TABLE agents_v2 ADD COLUMN IF NOT EXISTS strategy_version INTEGER DEFAULT 1`;
