@@ -17,7 +17,7 @@ export interface LocalDecisionDistribution {
  * action but with mistake probability proportional to decision difficulty and
  * tilt level.
  *
- * - difficulty < 0.2: optimal action gets 97 % weight, remainder split evenly.
+ * - difficulty < 0.2 and not tilting: the strategy action is certain.
  * - Otherwise: mistake probability = baseMistakeRate * difficulty * (1 + tiltLevel * 0.5),
  *   capped at 0.4. The remaining weight goes to the optimal action. Mistake
  *   weight is distributed among non-optimal actions by tendency:
@@ -34,16 +34,9 @@ export function buildDecisionDistribution(
 ): LocalDecisionDistribution {
   const weights = new Map<ActionType, number>();
 
-  // Trivially easy decisions — almost always correct
-  if (difficulty < 0.2) {
-    weights.set(optimalAction, 0.97);
-    const others = validActions.filter((a) => a !== optimalAction);
-    if (others.length > 0) {
-      const perAction = 0.03 / others.length;
-      for (const action of others) {
-        weights.set(action, perAction);
-      }
-    }
+  // Easy spots stay on the strategy action. A recent big win or loss may still slip.
+  if (difficulty < 0.2 && tiltLevel <= 0.15) {
+    weights.set(optimalAction, 1);
     return { weights, difficulty, isMistake: false };
   }
 

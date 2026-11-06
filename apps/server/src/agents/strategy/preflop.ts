@@ -133,6 +133,7 @@ export interface PreflopDecision {
   amount?: number;
   confidence: number;
   adjustments?: string[];  // 动态调整原因列表，供 AI 思考表达使用
+  margin: "raise" | "call" | "fold-edge" | "fold";
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +342,13 @@ export function decidePreflop(
   }
 
   const handKey = handToKey(hand);
+  const margin = raiseSet.has(handKey)
+    ? "raise"
+    : callSet.has(handKey)
+      ? "call"
+      : playedSomewhereElse(handKey, config, position)
+        ? "fold-edge"
+        : "fold";
 
   if (raiseSet.has(handKey)) {
     const minTotalBet = currentBet + minRaise;
@@ -368,6 +376,7 @@ export function decidePreflop(
       action: "raise",
       amount: raiseAmount,
       confidence: 0.9,
+      margin,
       adjustments: adjustments.length > 0 ? adjustments : undefined,
     };
   }
@@ -376,6 +385,7 @@ export function decidePreflop(
     return {
       action: "call",
       confidence: 0.7,
+      margin,
       adjustments: adjustments.length > 0 ? adjustments : undefined,
     };
   }
@@ -383,6 +393,15 @@ export function decidePreflop(
   return {
     action: "fold",
     confidence: 0.8,
+    margin,
     adjustments: adjustments.length > 0 ? adjustments : undefined,
   };
+}
+
+function playedSomewhereElse(handKey: string, config: PreflopConfig, position: Position): boolean {
+  for (const [seat, range] of Object.entries(config.ranges)) {
+    if (seat === position || !range) continue;
+    if (buildRangeSet(range.raise).has(handKey) || buildRangeSet(range.call).has(handKey)) return true;
+  }
+  return false;
 }
