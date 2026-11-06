@@ -25,6 +25,19 @@ describe("eventsToTableState - basics", () => {
     expect(state.seats[0].status).toBe("active");
   });
 
+  it("puts dealt hole cards on the live seats", () => {
+    const events: GameEvent[] = [
+      { type: "hand-start", handNumber: 1, players: [player("p1", 0), player("p2", 1)], dealerSeatIndex: 0 },
+      { type: "cards-dealt", hands: {
+        p1: [{ rank: 14, suit: "h" }, { rank: 13, suit: "d" }],
+        p2: [{ rank: 7, suit: "c" }, { rank: 2, suit: "s" }],
+      } },
+    ];
+    const state = eventsToTableState(events);
+    expect(state.seats[0].holeCards?.map((card) => card.rank)).toEqual([14, 13]);
+    expect(state.seats[1].holeCards?.[0].rank).toBe(7);
+  });
+
   it("updates pot total on pot-updated", () => {
     const events: GameEvent[] = [
       { type: "hand-start", handNumber: 1, players: [player("p1", 0)], dealerSeatIndex: 0 },

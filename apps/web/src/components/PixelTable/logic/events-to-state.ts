@@ -67,6 +67,14 @@ function applyEvent(state: PixelTableState, e: GameEvent, index: number): PixelT
           };
         }),
       };
+    case "cards-dealt":
+      return {
+        ...next,
+        seats: next.seats.map((s) => ({
+          ...s,
+          holeCards: e.hands[s.playerId] ?? s.holeCards,
+        })),
+      };
     case "pot-updated":
       return { ...next, potTotal: e.pots.reduce((sum, pot) => sum + pot.amount, 0) };
     case "phase-change":
