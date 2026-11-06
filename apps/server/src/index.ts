@@ -242,7 +242,9 @@ ${configJson}
 1. 先快速总结当前牌手的风格特点（2-3 句）
 2. 然后问用户想怎么调整："想怎么改？比如调整松紧度、改变某个位置的起手牌范围、修改性格/语气、或者降低犯错率？"
 
-改动时**在现有策略基础上生成下一版 Strategy Package**，不要重新设计。用户没说改的部分保持原样，并在 manifest 中递增 version、填写 basedOnVersion。`;
+改动时**在现有策略基础上生成下一版 Strategy Package**，不要重新设计。用户没说改的部分保持原样，并在 manifest 中递增 version、填写 basedOnVersion。
+
+如果这个牌手本赛季已经打过或正在座上，告诉用户：这一季继续用现在的版本，新版本从下一季第一手才生效。还没打过本赛季的，新版本立即成为本季策略。`;
         template = template.replace("{CONFIG_CONTEXT}", editSection);
       } else {
         template = template.replace("{CONFIG_CONTEXT}", "");
@@ -355,21 +357,26 @@ ${configJson}
           }));
           return;
         }
-        if (existingAgent && tableManager.isAgentPlaying(existingAgent.id)) {
-          res.writeHead(409, { "Content-Type": "application/json", ...corsHeaders });
-          res.end(JSON.stringify({
-            error: "Agent is currently competing",
-            message: "比赛进行中不能修改该 Agent 的策略；请在比赛结束后提交新版本。",
-          }));
-          return;
-        }
-        const agent = createAgentFromAI(userId, { config, strategyPackage, executionMode, preview: finalPreview }, () => agentStore.nextV2Id(), soulKey, skillId, existingAgent);
+        const seasonEntry = existingAgent ? seasonStore.get(existingAgent.id) : undefined;
+        const enteredSeason = Boolean(
+          (seasonEntry && (seasonEntry.countedHands > 0 || seasonEntry.tableStack > 0))
+          || (existingAgent && tableManager.isAgentPlaying(existingAgent.id)),
+        );
+        const agent = createAgentFromAI(
+          userId,
+          { config, strategyPackage, executionMode, preview: finalPreview },
+          () => agentStore.nextV2Id(),
+          soulKey,
+          skillId,
+          existingAgent,
+          { deferToNextSeason: Boolean(existingAgent && enteredSeason) },
+        );
         agentStore.saveV2(agent);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({
           agentId: agent.id,
-          status: "active",
+          status: agent.pendingStrategyPackage ? "next_season" : "active",
           previewUrl: `/agents/${agent.id}`,
         }));
       } catch (err) {
@@ -461,7 +468,7 @@ ${configJson}
 
 ## 风格设置
 通过对话了解玩家的风格偏好，然后发送 update_style 设置风格。
-比赛开始后，本场使用的 platform fallback prompt 会被冻结。此时发送 update_style 会保存为下一场配置，并收到 style_update_deferred，不改变正在进行的比赛。
+本赛季已经开始后，风格和策略包都锁定。此时发送 update_style，或重新提交策略包，都会保存为下一季版本，并收到延期结果，不改变这一季正在打的牌。
 
 支持三种格式：
 
@@ -504,7 +511,7 @@ GET ${apiUrl}/stats (Header: Authorization: Bearer ${token})
 
 ## 比赛结果
 完成归档后会收到 match_result，其中包含完整排名、参赛 Agent、策略版本和 replay。
-保留完整 replay，分析关键决策后向用户汇报本场表现和下一场建议。平台没有独立结果页。
+保留完整 replay，分析关键决策后向用户汇报这段牌的表现，以及下一季可以怎么调。平台没有独立结果页。
 离线结果仅在当前服务进程内缓存 24 小时，每 Agent 最多 32 场；重连认证后补发，
 按 table_id 去重，不要假设存在结果 ACK 或服务重启后的补发保证。
 
@@ -648,6 +655,10 @@ const seasonStore = SeasonStore.open({
 });
 wsAgentManager.useSessionResultFile(join(dataDir, "session-results.json"));
 tableManager.setSeasonStore(seasonStore);
+wsAgentManager.setSeasonEntered((agentId) => {
+  const entry = seasonStore.get(agentId);
+  return Boolean(entry && (entry.countedHands > 0 || entry.tableStack > 0));
+});
 const matchmakingService = new MatchmakingService({ deferBatches: true });
 const automaticTableIds = new Set<string>();
 const builtinStrategies = loadBuiltinStrategies();
@@ -692,7 +703,13 @@ function syncCashArena(): void {
     scheduleSeasonResume(seasonStore.seasonEndsAt());
     return;
   }
+  const seasonBefore = seasonStore.currentSeasonId();
   seasonStore.refresh(now);
+  if (seasonStore.currentSeasonId() !== seasonBefore) {
+    agentStore.activatePendingForNewSeason((agentId, stylePrompt, styleProfile) => {
+      wsAgentManager.applySeasonStyle(agentId, stylePrompt, styleProfile);
+    });
+  }
   const waiting = matchmakingService.getQueueSnapshot()
     .filter((entry) => !entry.userId.startsWith("builtin:"));
   const presets = createBuiltinMatchEntries()

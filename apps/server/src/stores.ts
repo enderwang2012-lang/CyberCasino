@@ -54,6 +54,9 @@ function rowToAgentV2(r: any): AgentConfigV2 {
       ? (typeof r.pending_style_profile === "string" ? JSON.parse(r.pending_style_profile) : r.pending_style_profile)
       : undefined,
     pendingStrategyVersion: r.pending_strategy_version ? Number(r.pending_strategy_version) : undefined,
+    pendingStrategyPackage: r.pending_strategy_package
+      ? (typeof r.pending_strategy_package === "string" ? JSON.parse(r.pending_strategy_package) : r.pending_strategy_package)
+      : undefined,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -220,17 +223,44 @@ export class AgentStore {
 
   private persistV2(a: AgentConfigV2) {
     if (sql) {
-      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, strategy_package, strategy_versions, strategy_version, execution_mode, soul_key, style_prompt, style_profile, pending_style_prompt, pending_style_profile, pending_strategy_version, created_at, updated_at)
-          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.strategyPackage ? JSON.stringify(a.strategyPackage) : null}::jsonb, ${a.strategyVersions ? JSON.stringify(a.strategyVersions) : null}::jsonb, ${a.strategyVersion ?? a.strategyPackage?.manifest.version ?? 1}, ${a.executionMode ?? "remote_agent"}, ${a.soulKey ?? null}, ${a.stylePrompt ?? ""}, ${a.styleProfile ? JSON.stringify(a.styleProfile) : null}::jsonb, ${a.pendingStylePrompt ?? null}, ${a.pendingStyleProfile ? JSON.stringify(a.pendingStyleProfile) : null}::jsonb, ${a.pendingStrategyVersion ?? null}, ${a.createdAt}, ${a.updatedAt})
+      sql`INSERT INTO agents_v2 (id, user_id, name, avatar, description, strategy, strategy_package, strategy_versions, strategy_version, execution_mode, soul_key, style_prompt, style_profile, pending_style_prompt, pending_style_profile, pending_strategy_version, pending_strategy_package, created_at, updated_at)
+          VALUES (${a.id}, ${a.userId}, ${a.name}, ${a.avatar}, ${a.description ?? null}, ${JSON.stringify(a.strategy)}::jsonb, ${a.strategyPackage ? JSON.stringify(a.strategyPackage) : null}::jsonb, ${a.strategyVersions ? JSON.stringify(a.strategyVersions) : null}::jsonb, ${a.strategyVersion ?? a.strategyPackage?.manifest.version ?? 1}, ${a.executionMode ?? "remote_agent"}, ${a.soulKey ?? null}, ${a.stylePrompt ?? ""}, ${a.styleProfile ? JSON.stringify(a.styleProfile) : null}::jsonb, ${a.pendingStylePrompt ?? null}, ${a.pendingStyleProfile ? JSON.stringify(a.pendingStyleProfile) : null}::jsonb, ${a.pendingStrategyVersion ?? null}, ${a.pendingStrategyPackage ? JSON.stringify(a.pendingStrategyPackage) : null}::jsonb, ${a.createdAt}, ${a.updatedAt})
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name, avatar = EXCLUDED.avatar, description = EXCLUDED.description,
             strategy = EXCLUDED.strategy, strategy_package = EXCLUDED.strategy_package, strategy_versions = EXCLUDED.strategy_versions, strategy_version = EXCLUDED.strategy_version, execution_mode = EXCLUDED.execution_mode,
             soul_key = EXCLUDED.soul_key, style_prompt = EXCLUDED.style_prompt, style_profile = EXCLUDED.style_profile,
             pending_style_prompt = EXCLUDED.pending_style_prompt, pending_style_profile = EXCLUDED.pending_style_profile, pending_strategy_version = EXCLUDED.pending_strategy_version,
+            pending_strategy_package = EXCLUDED.pending_strategy_package,
             updated_at = EXCLUDED.updated_at`.catch(console.error);
     } else {
       const all = Array.from(agentsV2Map.values()).flat();
       saveJson(AGENTS_V2_FILE, all);
+    }
+  }
+
+  activatePendingForNewSeason(applyStyle: (agentId: string, stylePrompt: string, styleProfile: AgentConfigV2["styleProfile"]) => void): void {
+    for (const list of agentsV2Map.values()) {
+      for (const agent of list) {
+        if (!agent.pendingStrategyPackage && !agent.pendingStylePrompt) continue;
+        const pendingStyle = agent.pendingStylePrompt;
+        const pendingProfile = agent.pendingStyleProfile;
+        if (agent.pendingStrategyPackage) {
+          agent.strategy = agent.pendingStrategyPackage.strategy;
+          agent.strategyPackage = agent.pendingStrategyPackage;
+          agent.strategyVersion = agent.pendingStrategyPackage.manifest.version;
+          agent.pendingStrategyPackage = undefined;
+        }
+        if (pendingStyle) {
+          agent.stylePrompt = pendingStyle;
+          agent.styleProfile = pendingProfile ?? agent.styleProfile;
+          agent.pendingStylePrompt = undefined;
+          agent.pendingStyleProfile = undefined;
+        }
+        agent.pendingStrategyVersion = undefined;
+        agent.updatedAt = Date.now();
+        if (pendingStyle) applyStyle(agent.id, pendingStyle, agent.styleProfile);
+        this.persistV2(agent);
+      }
     }
   }
 

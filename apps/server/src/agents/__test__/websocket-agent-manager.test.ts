@@ -37,6 +37,22 @@ describe("match style configuration freeze", () => {
     expect(manager.getStyleProfile("agent-1")?.aggression).toBe(0.9);
     expect(saved).toEqual(["active:patient", "pending:maximum pressure", "activate_pending:maximum pressure"]);
   });
+
+  it("keeps a style change pending through the rest of the season", () => {
+    const manager = new WebSocketAgentManager();
+    const nextStyle = { ...STYLE_DEFAULTS, aggression: 0.9 };
+    manager.setSeasonEntered(() => true);
+    expect(manager.updateStyle("agent-1", "next season", nextStyle)).toBe("deferred_season");
+    expect(manager.getStylePrompt("agent-1")).toBe("");
+
+    manager.lockStyleForMatch("agent-1", "table-1");
+    manager.unlockStyleForMatch("agent-1", "table-1");
+    expect(manager.getStylePrompt("agent-1")).toBe("");
+
+    manager.applySeasonStyle("agent-1", "next season", nextStyle);
+    expect(manager.getStylePrompt("agent-1")).toBe("next season");
+    expect(manager.getStyleProfile("agent-1")?.aggression).toBe(0.9);
+  });
 });
 
 describe("connection authentication", () => {

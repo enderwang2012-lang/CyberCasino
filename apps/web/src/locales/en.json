@@ -58,10 +58,10 @@
     "externalUnknown": "External Agent connection unknown",
     "currentVersion": "Active v{version}",
     "versionUnknown": "Strategy version unavailable",
-    "pendingVersion": "Next hand v{version}",
+    "pendingVersion": "Next season v{version}",
     "edit": "Manage Agent",
-    "packageUpdateHint": "Leave the table before replacing the strategy package. Finish the current hand first if one is in progress.",
-    "styleUpdateHint": "Style updates take effect on the next hand.",
+    "packageUpdateHint": "This season's strategy package is locked. A new version takes effect on the first hand of the next season.",
+    "styleUpdateHint": "Style is locked until this season ends. The new wording starts next season.",
     "matchStatus": "Table status",
     "status": {
       "idle": "Not seated",

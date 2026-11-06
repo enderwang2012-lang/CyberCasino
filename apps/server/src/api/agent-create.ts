@@ -104,6 +104,7 @@ export function createAgentFromAI(
   soulKey?: string,
   skillId?: string,
   existingAgent?: AgentConfigV2,
+  options?: { deferToNextSeason?: boolean },
 ): AgentConfigV2 {
   const now = Date.now();
   const id = existingAgent?.id ?? nextId();
@@ -155,6 +156,15 @@ export function createAgentFromAI(
       createdAt: strategyPackage.manifest.createdAt,
     },
   ].filter((entry, index, entries) => entries.findIndex((item) => item.version === entry.version) === index);
+  if (options?.deferToNextSeason && existingAgent) {
+    return {
+      ...existingAgent,
+      strategyVersions,
+      pendingStrategyPackage: strategyPackage,
+      pendingStrategyVersion: strategyPackage.manifest.version,
+      updatedAt: now,
+    };
+  }
   return {
     ...existingAgent,
     id,
@@ -167,6 +177,8 @@ export function createAgentFromAI(
     strategyVersions,
     strategyVersion: strategyPackage.manifest.version,
     executionMode: request.executionMode ?? existingAgent?.executionMode ?? "remote_agent",
+    pendingStrategyPackage: undefined,
+    pendingStrategyVersion: undefined,
     soulKey: soulKey ?? existingAgent?.soulKey,
     skillId: skillId ?? existingAgent?.skillId,
     createdAt: existingAgent?.createdAt ?? now,

@@ -63,9 +63,9 @@ describe("AgentControlPanel", () => {
 
     expect(screen.getByText("远程 Agent")).toBeInTheDocument();
     expect(screen.getByText("当前生效 v4")).toBeInTheDocument();
-    expect(screen.getByText("下一手生效 v5")).toBeInTheDocument();
-    expect(screen.getByText(/换策略包前先离座/)).toBeInTheDocument();
-    expect(screen.getByText(/风格会在下一手生效/)).toBeInTheDocument();
+    expect(screen.getByText("下赛季生效 v5")).toBeInTheDocument();
+    expect(screen.getByText(/下一季第一手才生效/)).toBeInTheDocument();
+    expect(screen.getByText(/下一季才会换成新的说法/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "入座" }));
     expect(onJoinMatchmaking).toHaveBeenCalledWith("agent-1");
